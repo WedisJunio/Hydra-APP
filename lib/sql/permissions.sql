@@ -156,6 +156,26 @@ AS $$
 $$;
 
 
+-- ─── 1b. COLUNA role EM users — CHECK alinhado aos papéis da aplicação ─────
+-- Sem isso, atualizar perfil com "coordinator" / projetista falha com:
+--   new row for relation 'users' violates check constraint 'users_role_check'
+
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_role_check;
+
+ALTER TABLE public.users
+  ADD CONSTRAINT users_role_check CHECK (
+    role IN (
+      'admin',
+      'manager',
+      'coordinator',
+      'leader',
+      'employee',
+      'projetista',
+      'projetista_lider'
+    )
+  );
+
+
 -- ─── 2. HABILITAR RLS EM TODAS AS TABELAS ───────────────────────────────────
 
 ALTER TABLE public.users                ENABLE ROW LEVEL SECURITY;

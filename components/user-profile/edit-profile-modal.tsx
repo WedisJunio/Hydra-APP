@@ -98,7 +98,11 @@ export function EditProfileModal({
   ]);
 
   function set(field: keyof UserProfileUpdate, value: string | number | null) {
-    setFormData((prev) => ({ ...prev, [field]: value || undefined }));
+    setFormData((prev) => {
+      const cleared =
+        value === null || value === "" || (typeof value === "number" && Number.isNaN(value));
+      return { ...prev, [field]: cleared ? undefined : (value as never) };
+    });
   }
 
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
