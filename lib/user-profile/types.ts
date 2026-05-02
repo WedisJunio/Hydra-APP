@@ -40,6 +40,7 @@ export type UserProfileUpdate = Partial<
     | "work_end_time"
     | "availability_status"
     | "photo_url"
+    | "role"
   >
 >;
 
@@ -63,11 +64,4 @@ export const AVAILABILITY_COLORS: Record<
   offline: "var(--muted-fg)",
 };
 
-export const ROLE_LABELS: Record<string, string> = {
-  admin: "Administrador",
-  manager: "Gerente",
-  coordinator: "Coordenador",
-  leader: "Líder",
-  employee: "Funcionário",
-  member: "Membro",
-};
+export { ROLE_LABELS } from "@/lib/permissions";

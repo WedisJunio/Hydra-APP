@@ -6,7 +6,7 @@
 -- Apenas UMA linha aberta por usuário por vez.
 --
 -- COMO USAR:
--- 1. Rode antes o lib/sql/permissions.sql (helpers is_admin, current_app_user_id)
+-- 1. Rode antes o lib/sql/permissions.sql (helpers: current_app_user_id, has_full_portfolio_access, is_admin)
 -- 2. Cole este arquivo no Supabase Studio → SQL Editor → Run
 --
 -- IDEMPOTENTE: pode rodar várias vezes.
@@ -69,14 +69,13 @@ DROP POLICY IF EXISTS "time_entries: update own or admin"
 DROP POLICY IF EXISTS "time_entries: delete own or admin"
   ON public.time_entries;
 
--- SELECT: o próprio usuário vê suas batidas; admin vê todas.
+-- SELECT: o próprio usuário vê suas batidas; perfis com portfólio completo veem todas.
 CREATE POLICY "time_entries: select own or admin"
   ON public.time_entries
   FOR SELECT
   USING (
     user_id = public.current_app_user_id()
-    OR public.is_admin()
-    OR public.is_manager_or_above()
+    OR public.has_full_portfolio_access()
   );
 
 -- INSERT: usuário só pode inserir batida pra si mesmo (admin pode pra qualquer um).
@@ -88,26 +87,26 @@ CREATE POLICY "time_entries: insert own"
     OR public.is_admin()
   );
 
--- UPDATE: usuário pode atualizar a própria batida; admin pode qualquer uma.
+-- UPDATE: própria batida; admin ou portfólio completo podem ajustar.
 CREATE POLICY "time_entries: update own or admin"
   ON public.time_entries
   FOR UPDATE
   USING (
     user_id = public.current_app_user_id()
-    OR public.is_admin()
+    OR public.has_full_portfolio_access()
   )
   WITH CHECK (
     user_id = public.current_app_user_id()
-    OR public.is_admin()
+    OR public.has_full_portfolio_access()
   );
 
--- DELETE: usuário pode apagar a própria; admin pode qualquer uma.
+-- DELETE: própria; admin ou portfólio completo.
 CREATE POLICY "time_entries: delete own or admin"
   ON public.time_entries
   FOR DELETE
   USING (
     user_id = public.current_app_user_id()
-    OR public.is_admin()
+    OR public.has_full_portfolio_access()
   );
 
 -- ─── 5. VIEW DE RESUMO (opcional, para relatórios) ──────────────────────────

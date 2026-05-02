@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { getCurrentProfile, type CurrentProfile } from "@/lib/supabase/profile";
+import { canAccessPontoTeamViews } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase/client";
 import {
   clockIn,
@@ -206,8 +207,7 @@ export default function PontoPage() {
     });
   }, []);
 
-  const isAdmin =
-    profile?.role === "admin" || profile?.role === "manager";
+  const canTeamViews = canAccessPontoTeamViews(profile?.role);
 
   if (loadingProfile) {
     return (
@@ -234,7 +234,7 @@ export default function PontoPage() {
         description="Registre seu expediente em duas batidas: iniciar e encerrar."
       />
 
-      {isAdmin && (
+      {canTeamViews && (
         <div className="tabs" style={{ alignSelf: "flex-start" }}>
           <button
             className="tab"
@@ -264,8 +264,8 @@ export default function PontoPage() {
       )}
 
       {tab === "me" && <MyPontoTab profile={profile} />}
-      {tab === "admin" && isAdmin && <TeamTab />}
-      {tab === "report" && isAdmin && <MonthlyReportTab />}
+      {tab === "admin" && canTeamViews && <TeamTab />}
+      {tab === "report" && canTeamViews && <MonthlyReportTab />}
     </div>
   );
 }

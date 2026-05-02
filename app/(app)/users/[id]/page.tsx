@@ -6,6 +6,8 @@ import { getUserProfile, getColleaguesByDepartment, getColleaguesByFloor, calcul
 import type { UserProfile } from "@/lib/user-profile/types";
 import { AVAILABILITY_LABELS, AVAILABILITY_COLORS, ROLE_LABELS } from "@/lib/user-profile/types";
 import { EditProfileModal } from "@/components/user-profile/edit-profile-modal";
+import { getCurrentProfile } from "@/lib/supabase/profile";
+import { canAssignUserRoles } from "@/lib/permissions";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,7 +71,13 @@ export default function UserProfilePage() {
   const [floorColleagues, setFloorColleagues] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [viewer, setViewer] = useState<{ id: string; role: string | null } | null>(null);
 
+  useEffect(() => {
+    getCurrentProfile().then((p) => {
+      if (p) setViewer({ id: p.id, role: p.role ?? null });
+    });
+  }, []);
   useEffect(() => {
     const load = async () => {
       if (!userId) return;
@@ -117,6 +125,9 @@ export default function UserProfilePage() {
   const nextBirthday = getNextBirthday(profile.date_of_birth);
   const deptColleagues = colleagues.filter(c => c.id !== profile.id);
   const floorPeers = floorColleagues.filter(c => c.id !== profile.id);
+  const canOpenEdit =
+    viewer != null &&
+    (viewer.id === profile.id || canAssignUserRoles(viewer.role));
 
   return (
     <div className="container max-w-2xl py-6">
@@ -125,9 +136,13 @@ export default function UserProfilePage() {
         <Button variant="ghost" size="sm" onClick={() => router.back()} leftIcon={<ArrowLeft size={14} />}>
           Voltar
         </Button>
-        <Button variant="secondary" size="sm" leftIcon={<Pencil size={14} />} onClick={() => setEditModalOpen(true)}>
-          Editar Perfil
-        </Button>
+        {canOpenEdit ? (
+          <Button variant="secondary" size="sm" leftIcon={<Pencil size={14} />} onClick={() => setEditModalOpen(true)}>
+            Editar Perfil
+          </Button>
+        ) : (
+          <span />
+        )}
       </div>
 
       {/* Hero */}
@@ -377,6 +392,7 @@ export default function UserProfilePage() {
 
       <EditProfileModal
         profile={profile}
+        viewerRole={viewer?.role ?? null}
         isOpen={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         onSave={(updated) => setProfile(updated)}
