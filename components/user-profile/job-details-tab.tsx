@@ -42,7 +42,7 @@ export function JobDetailsTab({ profile }: { profile: UserProfile }) {
           {profile.role && (
             <div>
               <div className="text-xs text-muted mb-2">Nível</div>
-              <Badge variant="secondary">
+              <Badge variant="neutral">
                 {ROLE_LABELS[profile.role] || profile.role}
               </Badge>
             </div>

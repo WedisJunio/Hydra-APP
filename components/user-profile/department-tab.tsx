@@ -67,8 +67,8 @@ export function DepartmentTab({ profile }: { profile: UserProfile }) {
                   className="flex items-center gap-2 p-2 bg-surface rounded"
                 >
                   <Avatar
+                    name={manager.name}
                     src={manager.photo_url}
-                    fallback={manager.name.charAt(0).toUpperCase()}
                     size="sm"
                   />
                   <div className="min-w-0 flex-1">
@@ -112,8 +112,8 @@ export function DepartmentTab({ profile }: { profile: UserProfile }) {
                 className="flex items-center gap-3 p-2 hover:bg-surface rounded transition-colors"
               >
                 <Avatar
+                  name={colleague.name}
                   src={colleague.photo_url}
-                  fallback={colleague.name.charAt(0).toUpperCase()}
                   size="sm"
                 />
                 <div className="min-w-0 flex-1">

@@ -142,8 +142,8 @@ export default function UserProfilePage() {
       >
         <div className="flex items-start gap-4">
           <Avatar
+            name={profile.name}
             src={profile.photo_url}
-            fallback={profile.name.charAt(0).toUpperCase()}
             size="xl"
             style={{ width: 72, height: 72, borderRadius: "var(--radius-lg)", flexShrink: 0 }}
           />
@@ -171,7 +171,7 @@ export default function UserProfilePage() {
                 </div>
               )}
               {profile.role && (
-                <Badge variant="secondary">{ROLE_LABELS[profile.role] || profile.role}</Badge>
+                <Badge variant="neutral">{ROLE_LABELS[profile.role] || profile.role}</Badge>
               )}
             </div>
           </div>
@@ -282,7 +282,7 @@ export default function UserProfilePage() {
                   <Users size={15} className="text-muted flex-shrink-0" />
                   <div>
                     <div className="text-xs text-muted">Nível</div>
-                    <Badge variant="secondary">{ROLE_LABELS[profile.role] || profile.role}</Badge>
+                    <Badge variant="neutral">{ROLE_LABELS[profile.role] || profile.role}</Badge>
                   </div>
                 </div>
               )}
@@ -339,7 +339,7 @@ export default function UserProfilePage() {
                 <div className="flex flex-wrap gap-2">
                   {floorPeers.slice(0, 6).map((c) => (
                     <div key={c.id} className="flex items-center gap-2 px-2 py-1 rounded" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-                      <Avatar src={c.photo_url} fallback={c.name.charAt(0)} size="xs" />
+                      <Avatar name={c.name} src={c.photo_url} size="xs" />
                       <span className="text-xs">{c.name}</span>
                     </div>
                   ))}
@@ -359,7 +359,7 @@ export default function UserProfilePage() {
             <div className="space-y-2">
               {deptColleagues.slice(0, 5).map((c) => (
                 <div key={c.id} className="flex items-center gap-3">
-                  <Avatar src={c.photo_url} fallback={c.name.charAt(0)} size="sm" />
+                  <Avatar name={c.name} src={c.photo_url} size="sm" />
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{c.name}</div>
                     {c.job_title && <div className="text-xs text-muted truncate">{c.job_title}</div>}

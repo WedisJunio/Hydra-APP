@@ -144,8 +144,8 @@ export function EditProfileModal({
         <div className="flex flex-col items-center mb-2">
           <div style={{ position: "relative", display: "inline-block" }}>
             <Avatar
+              name={formData.full_name || profile.name}
               src={formData.photo_url}
-              fallback={profile.name.charAt(0).toUpperCase()}
               size="xl"
               style={{ width: 90, height: 90, borderRadius: "var(--radius-lg)" }}
             />

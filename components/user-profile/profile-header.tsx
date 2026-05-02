@@ -11,8 +11,8 @@ export function ProfileHeader({ profile }: { profile: UserProfile }) {
     <div className="mb-6">
       <div className="flex items-start gap-4 mb-4">
         <Avatar
+          name={profile.name}
           src={profile.photo_url}
-          fallback={profile.name.charAt(0).toUpperCase()}
           size="xl"
           style={{
             width: 120,
@@ -52,7 +52,7 @@ export function ProfileHeader({ profile }: { profile: UserProfile }) {
               </div>
             )}
             {profile.role && (
-              <Badge variant="secondary">
+              <Badge variant="neutral">
                 {ROLE_LABELS[profile.role] || profile.role}
               </Badge>
             )}

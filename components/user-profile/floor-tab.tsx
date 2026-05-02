@@ -87,8 +87,8 @@ export function FloorTab({ profile }: { profile: UserProfile }) {
                 className="flex items-center gap-3 p-2 hover:bg-surface rounded transition-colors"
               >
                 <Avatar
+                  name={colleague.name}
                   src={colleague.photo_url}
-                  fallback={colleague.name.charAt(0).toUpperCase()}
                   size="sm"
                 />
                 <div className="min-w-0 flex-1">
