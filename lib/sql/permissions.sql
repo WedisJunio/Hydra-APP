@@ -9,7 +9,9 @@
 --   manager     — gerencia portfólio, cria projetos, cadastra clientes/usuários
 --   coordinator — gerencia projetos onde participa como coordenador
 --   leader      — lidera execução de projetos onde está como líder
---   employee    — colaborador; vê só o que participa, edita suas tarefas
+--   projetista_lider — cria projetos; edita projetos/tarefas como líder de projeto
+--   projetista  — escopo próprio (tarefas vinculadas); em projetos prioriza criar tarefas
+--   employee    — legado; tratado como projetista na aplicação
 --
 -- COMO USAR:
 -- 1. Rodar PRIMEIRO o arquivo lib/sql/saneamento-schema.sql (cria as tabelas)
@@ -18,6 +20,8 @@
 -- 4. Definir SEU usuário como admin (ver fim do arquivo)
 --
 -- IDEMPOTENTE: pode rodar múltiplas vezes sem quebrar.
+--
+-- Regras de interface (menu, botões) ficam em lib/permissions/ — mantenha alinhado ao RLS.
 -- ============================================================================
 
 
@@ -72,6 +76,36 @@ AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.users
     WHERE auth_user_id = auth.uid() AND role IN ('admin', 'manager')
+  );
+$$;
+
+-- Acesso ao portfólio completo (dashboard, ponto da equipe, etc.) — alinhar a lib/permissions/roles.ts
+CREATE OR REPLACE FUNCTION public.has_full_portfolio_access()
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.users
+    WHERE auth_user_id = auth.uid()
+      AND role IN ('admin', 'manager', 'coordinator', 'leader')
+  );
+$$;
+
+-- Pode atualizar qualquer linha em users (papel, perfil) — coordenação, líder, gerência ou admin.
+CREATE OR REPLACE FUNCTION public.can_update_any_user_profile()
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.users
+    WHERE auth_user_id = auth.uid()
+      AND role IN ('admin', 'manager', 'coordinator', 'leader')
   );
 $$;
 
@@ -140,8 +174,8 @@ ALTER TABLE public.meeting_participants ENABLE ROW LEVEL SECURITY;
 
 
 -- ─── 3. POLICIES — USERS ────────────────────────────────────────────────────
--- Todos veem todos (lista de colegas). Admin/manager criam. Cada um edita seu
--- próprio registro. Só admin exclui.
+-- Todos veem todos (lista de colegas). Admin/manager criam. Cada um edita o
+-- próprio registro; admin ou gestão (coord./líder/gerência) pode editar qualquer um. Só admin exclui.
 
 DROP POLICY IF EXISTS users_select  ON public.users;
 DROP POLICY IF EXISTS users_insert  ON public.users;
@@ -158,8 +192,16 @@ CREATE POLICY users_insert ON public.users
 
 CREATE POLICY users_update ON public.users
   FOR UPDATE TO authenticated
-  USING (public.is_admin() OR auth_user_id = auth.uid())
-  WITH CHECK (public.is_admin() OR auth_user_id = auth.uid());
+  USING (
+    public.is_admin()
+    OR auth_user_id = auth.uid()
+    OR public.can_update_any_user_profile()
+  )
+  WITH CHECK (
+    public.is_admin()
+    OR auth_user_id = auth.uid()
+    OR public.can_update_any_user_profile()
+  );
 
 CREATE POLICY users_delete ON public.users
   FOR DELETE TO authenticated
@@ -193,7 +235,7 @@ CREATE POLICY clients_delete ON public.clients
 
 -- ─── 5. POLICIES — PROJECTS ─────────────────────────────────────────────────
 -- SELECT: admin vê tudo; outros veem só projetos onde participam.
--- INSERT: admin / manager / coordinator.
+-- INSERT: admin / manager / coordinator / leader / projetista_lider.
 -- UPDATE: admin OU líder do projeto.
 -- DELETE: só admin.
 
@@ -212,7 +254,9 @@ CREATE POLICY projects_select ON public.projects
 CREATE POLICY projects_insert ON public.projects
   FOR INSERT TO authenticated
   WITH CHECK (
-    public.current_app_user_role() IN ('admin', 'manager', 'coordinator')
+    public.current_app_user_role() IN (
+      'admin', 'manager', 'coordinator', 'leader', 'projetista_lider'
+    )
   );
 
 CREATE POLICY projects_update ON public.projects

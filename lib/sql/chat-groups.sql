@@ -113,7 +113,9 @@ CREATE POLICY chat_groups_insert ON public.chat_groups
     -- grupos de projeto são automáticos via trigger; INSERT manual só avulso
     project_id IS NULL
     AND created_by = public.current_app_user_id()
-    AND public.current_app_user_role() IN ('admin', 'manager', 'coordinator')
+    AND public.current_app_user_role() IN (
+      'admin', 'manager', 'coordinator', 'leader', 'projetista_lider'
+    )
   );
 
 CREATE POLICY chat_groups_update ON public.chat_groups

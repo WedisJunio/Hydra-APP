@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
+import { canAssignUserRoles } from "@/lib/permissions";
 import type { UserProfile, UserProfileUpdate } from "./types";
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
@@ -49,8 +50,7 @@ export async function updateUserProfile(
     return { success: false, error: "Usuário não autenticado" };
   }
 
-  // Only allow users to update their own profile (unless admin)
-  if (currentUser.id !== userId && currentUser.role !== "admin") {
+  if (currentUser.id !== userId && !canAssignUserRoles(currentUser.role)) {
     return { success: false, error: "Permissão negada" };
   }
 

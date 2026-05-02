@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UserProfile, UserProfileUpdate } from "@/lib/user-profile/types";
 import { updateUserProfile } from "@/lib/user-profile/data";
-import { AVAILABILITY_LABELS } from "@/lib/user-profile/types";
+import { AVAILABILITY_LABELS, ROLE_LABELS } from "@/lib/user-profile/types";
+import { canAssignUserRoles, USER_ROLE_ASSIGN_OPTIONS } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -28,11 +29,14 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export function EditProfileModal({
   profile,
+  viewerRole,
   isOpen,
   onClose,
   onSave,
 }: {
   profile: UserProfile;
+  /** Papel de quem abriu o modal — define se pode alterar o campo "Nível" (role). */
+  viewerRole: string | null;
   isOpen: boolean;
   onClose: () => void;
   onSave: (updatedProfile: UserProfile) => void;
@@ -40,6 +44,8 @@ export function EditProfileModal({
   const [loading, setLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const canEditRole = canAssignUserRoles(viewerRole);
 
   const [formData, setFormData] = useState<UserProfileUpdate>({
     full_name: profile.full_name,
@@ -53,7 +59,43 @@ export function EditProfileModal({
     work_end_time: profile.work_end_time,
     availability_status: profile.availability_status,
     photo_url: profile.photo_url,
+    role: canAssignUserRoles(viewerRole) ? profile.role : undefined,
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData({
+      full_name: profile.full_name,
+      bio: profile.bio,
+      phone: profile.phone,
+      address: profile.address,
+      floor_number: profile.floor_number,
+      date_of_birth: profile.date_of_birth,
+      linkedin_url: profile.linkedin_url,
+      work_start_time: profile.work_start_time,
+      work_end_time: profile.work_end_time,
+      availability_status: profile.availability_status,
+      photo_url: profile.photo_url,
+      ...(canEditRole ? { role: profile.role } : {}),
+    });
+  }, [
+    isOpen,
+    profile.id,
+    profile.updated_at,
+    profile.full_name,
+    profile.bio,
+    profile.phone,
+    profile.address,
+    profile.floor_number,
+    profile.date_of_birth,
+    profile.linkedin_url,
+    profile.work_start_time,
+    profile.work_end_time,
+    profile.availability_status,
+    profile.photo_url,
+    profile.role,
+    canEditRole,
+  ]);
 
   function set(field: keyof UserProfileUpdate, value: string | number | null) {
     setFormData((prev) => ({ ...prev, [field]: value || undefined }));
@@ -92,11 +134,19 @@ export function EditProfileModal({
 
   async function handleSave() {
     setLoading(true);
-    const result = await updateUserProfile(profile.id, formData);
+    const payload: UserProfileUpdate = { ...formData };
+    if (!canEditRole) {
+      delete payload.role;
+    }
+    const result = await updateUserProfile(profile.id, payload);
 
     if (result.success) {
       showSuccessToast("Perfil atualizado com sucesso");
-      onSave({ ...profile, ...formData, updated_at: new Date().toISOString() } as UserProfile);
+      onSave({
+        ...profile,
+        ...payload,
+        updated_at: new Date().toISOString(),
+      } as UserProfile);
       onClose();
     } else {
       showErrorToast(result.error || "Erro ao atualizar perfil");
@@ -182,6 +232,29 @@ export function EditProfileModal({
             onChange={handlePhotoUpload}
           />
         </div>
+
+        {canEditRole && (
+          <>
+            <SectionTitle>Nível de acesso</SectionTitle>
+            <div className="space-y-3 mb-1">
+              <div>
+                <Label>Papel na plataforma</Label>
+                <select
+                  value={formData.role ?? profile.role}
+                  onChange={(e) => set("role", e.target.value)}
+                  className={inputClass(loading)}
+                  disabled={loading}
+                >
+                  {USER_ROLE_ASSIGN_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {ROLE_LABELS[value] || value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Informações Pessoais */}
         <SectionTitle>Informações Pessoais</SectionTitle>

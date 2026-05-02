@@ -28,6 +28,11 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
 import { getSupabaseErrorMessage } from "@/lib/supabase/errors";
+import {
+  canCreateProject,
+  canEditProjectShell,
+  isNarrowProjetista,
+} from "@/lib/permissions";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -97,11 +102,12 @@ function getLiveSeconds(task: Task) {
 }
 
 function getRoleLabel(role: string | null | undefined) {
-  if (role === "manager") return "Gerente";
+  if (role === "manager") return "Gerência";
   if (role === "coordinator") return "Coordenador";
   if (role === "leader") return "Líder";
   if (role === "admin") return "Administrador";
-  if (role === "employee") return "Colaborador";
+  if (role === "projetista_lider") return "Projetista líder";
+  if (role === "projetista" || role === "employee") return "Projetista";
   if (role === "member") return "Membro";
   return role || "Membro";
 }
@@ -365,11 +371,20 @@ export default function ProjectsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
   const [, setClock] = useState(0);
+  const [myRole, setMyRole] = useState<string | null>(null);
+
+  const projetistaSomenteTarefas = isNarrowProjetista(myRole);
+  const podeCriarProjeto = canCreateProject(myRole);
+  const podeEditarProjeto = canEditProjectShell(myRole);
 
   const hasRunningTimer = useMemo(
     () => tasks.some((task) => task.is_timer_running),
     [tasks]
   );
+
+  useEffect(() => {
+    getCurrentProfile().then((p) => setMyRole(p?.role ?? null));
+  }, []);
 
   useEffect(() => {
     if (!hasRunningTimer) return;
@@ -968,6 +983,8 @@ export default function ProjectsPage() {
               className="flex items-center gap-1"
               onClick={(e) => e.stopPropagation()}
             >
+              {podeEditarProjeto && (
+              <>
               <Button
                 size="sm"
                 variant="secondary"
@@ -992,6 +1009,8 @@ export default function ProjectsPage() {
               >
                 <Trash2 size={14} />
               </Button>
+              </>
+              )}
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -1188,6 +1207,7 @@ export default function ProjectsPage() {
                   ({projectMembers.length})
                 </span>
               </h4>
+              {podeEditarProjeto && (
               <Button
                 size="sm"
                 leftIcon={<UserPlus size={14} />}
@@ -1199,6 +1219,7 @@ export default function ProjectsPage() {
               >
                 Vincular pessoa
               </Button>
+              )}
             </div>
 
             {memberProjectId === project.id && (
@@ -1322,6 +1343,7 @@ export default function ProjectsPage() {
                             {user?.email || "Sem e-mail"}
                           </div>
                         </div>
+                        {podeEditarProjeto && (
                         <Button
                           size="icon-sm"
                           variant="danger-ghost"
@@ -1332,6 +1354,7 @@ export default function ProjectsPage() {
                         >
                           <Trash2 size={14} />
                         </Button>
+                        )}
                       </div>
 
                       <div
@@ -1485,18 +1508,28 @@ export default function ProjectsPage() {
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
+  useEffect(() => {
+    if (!podeCriarProjeto) setShowNewForm(false);
+  }, [podeCriarProjeto]);
+
   return (
     <div>
       <PageHeader
         title="Projetos"
-        description="Visão completa por projeto, com equipe, carga e indicadores de risco."
+        description={
+          projetistaSomenteTarefas
+            ? "Projetos onde você participa. Você pode criar e acompanhar tarefas; edição do projeto é feita por coordenação ou projetista líder."
+            : "Visão completa por projeto, com equipe, carga e indicadores de risco."
+        }
         actions={
-          <Button
-            leftIcon={<Plus size={16} />}
-            onClick={() => setShowNewForm((v) => !v)}
-          >
-            {showNewForm ? "Fechar" : "Novo projeto"}
-          </Button>
+          podeCriarProjeto ? (
+            <Button
+              leftIcon={<Plus size={16} />}
+              onClick={() => setShowNewForm((v) => !v)}
+            >
+              {showNewForm ? "Fechar" : "Novo projeto"}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -1551,7 +1584,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* ─── Form de novo projeto ───────────────────────────── */}
-      {showNewForm && (
+      {podeCriarProjeto && showNewForm && (
         <Card className="mb-4" padded={false}>
           <div
             style={{
@@ -1807,11 +1840,17 @@ export default function ProjectsPage() {
           <EmptyState
             icon={<FolderKanban size={22} />}
             title="Nenhum projeto cadastrado"
-            description="Crie seu primeiro projeto pra começar a medir produtividade da equipe."
+            description={
+              podeCriarProjeto
+                ? "Crie seu primeiro projeto pra começar a medir produtividade da equipe."
+                : "Quando você for adicionado a um projeto, ele aparecerá aqui. Você pode criar tarefas dentro dos projetos da sua equipe."
+            }
             action={
-              <Button leftIcon={<Plus size={16} />} onClick={() => setShowNewForm(true)}>
-                Novo projeto
-              </Button>
+              podeCriarProjeto ? (
+                <Button leftIcon={<Plus size={16} />} onClick={() => setShowNewForm(true)}>
+                  Novo projeto
+                </Button>
+              ) : undefined
             }
           />
         )}

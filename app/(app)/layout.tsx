@@ -15,27 +15,32 @@ import {
   ChevronRight,
   Moon,
   Sun,
-  type LucideIcon,
 } from "lucide-react";
 
 import AuthGuard from "@/components/auth-guard";
 import LogoutButton from "@/components/logout-button";
 import { Avatar } from "@/components/ui/avatar";
+import {
+  ROLE_LABELS,
+  filterSidebarMenuByRole,
+  isLegacyAppRole,
+  type SidebarMenuItem,
+} from "@/lib/permissions";
 import { supabase } from "@/lib/supabase/client";
 
-type MenuItem = {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-};
-
-const menuItems: MenuItem[] = [
+const menuItems: SidebarMenuItem[] = [
+  // Opcional: defina `minRole` para esconder itens (ex.: { ..., minRole: "leader" }).
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Saneamento", href: "/saneamento", icon: Droplets },
   { label: "Projetos", href: "/projects", icon: FolderKanban },
   { label: "Tarefas", href: "/tasks", icon: CheckSquare },
   { label: "Ponto", href: "/ponto", icon: Clock },
-  { label: "Usuários", href: "/users", icon: Users },
+  {
+    label: "Usuários",
+    href: "/users",
+    icon: Users,
+    showMenu: (r) => isLegacyAppRole(r),
+  },
   { label: "Chat", href: "/chat", icon: MessageSquare },
   { label: "Calendário", href: "/calendar", icon: CalendarIcon },
 ];
@@ -45,14 +50,6 @@ type CurrentUserProfile = {
   name: string | null;
   email: string | null;
   role: string | null;
-};
-
-const roleLabels: Record<string, string> = {
-  admin: "Administrador",
-  manager: "Gerente",
-  coordinator: "Coordenador",
-  leader: "Líder",
-  employee: "Colaborador",
 };
 
 export default function AppLayout({
@@ -109,6 +106,11 @@ export default function AppLayout({
     document.documentElement.style.colorScheme = nextTheme;
   }
 
+  const visibleMenuItems = useMemo(
+    () => filterSidebarMenuByRole(menuItems, currentUser?.role),
+    [currentUser?.role]
+  );
+
   const currentItem = useMemo(
     () => menuItems.find((item) => pathname?.startsWith(item.href)),
     [pathname]
@@ -116,7 +118,7 @@ export default function AppLayout({
 
   const displayName = currentUser?.name || authEmail || "Usuário";
   const displayRole =
-    (currentUser?.role && roleLabels[currentUser.role]) ||
+    (currentUser?.role && ROLE_LABELS[currentUser.role]) ||
     currentUser?.role ||
     "Membro da equipe";
 
@@ -134,7 +136,7 @@ export default function AppLayout({
 
           <nav className="sidebar-nav">
             <div className="sidebar-section">Menu</div>
-            {menuItems.map((item) => {
+            {visibleMenuItems.map((item) => {
               const isActive = pathname?.startsWith(item.href);
               const Icon = item.icon;
               return (

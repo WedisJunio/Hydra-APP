@@ -36,6 +36,13 @@ import {
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
+import { getCurrentProfile } from "@/lib/supabase/profile";
+import {
+  filterTasksForDashboard,
+  filterUsersForDashboard,
+  hasFullPortfolioAccess,
+  isNarrowProjetista,
+} from "@/lib/permissions";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -61,6 +68,7 @@ type Project = {
 type User = {
   id: string;
   name: string;
+  role?: string | null;
 };
 
 type Task = {
@@ -69,6 +77,7 @@ type Task = {
   status: string;
   project_id: string;
   assigned_to: string | null;
+  created_by?: string | null;
   planned_due_date: string | null;
   actual_completed_date: string | null;
   completed_at: string | null;
@@ -2658,6 +2667,7 @@ export default function DashboardPage() {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>("geral");
   const [period, setPeriod] = useState<PeriodKey>("30d");
   const [, setClock] = useState(0);
@@ -2678,6 +2688,14 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
 
+      const profile = await getCurrentProfile();
+      if (!profile) {
+        setError("Não foi possível carregar seu perfil. Faça login novamente.");
+        setLoading(false);
+        return;
+      }
+      setMyRole(profile.role);
+
       const [projectsResponse, tasksResponse, usersResponse, approvalsResponse, phasesResponse] =
         await Promise.all([
           supabase
@@ -2687,11 +2705,11 @@ export default function DashboardPage() {
           supabase
             .from("tasks")
             .select(
-              "id, title, status, project_id, assigned_to, planned_due_date, actual_completed_date, completed_at, created_at, time_spent_seconds, is_timer_running, started_at"
+              "id, title, status, project_id, assigned_to, created_by, planned_due_date, actual_completed_date, completed_at, created_at, time_spent_seconds, is_timer_running, started_at"
             ),
           supabase
             .from("users")
-            .select("id, name")
+            .select("id, name, role")
             .eq("is_active", true)
             .order("name", { ascending: true }),
           supabase
@@ -2715,11 +2733,27 @@ export default function DashboardPage() {
         return;
       }
 
+      const rawTasks = (tasksResponse.data as Task[]) || [];
+      const rawUsers =
+        (usersResponse.data as { id: string; name: string; role: string | null }[]) || [];
+
+      const viewTasks = filterTasksForDashboard(rawTasks, profile.id, profile.role) as Task[];
+      const viewUsersRows = filterUsersForDashboard(rawUsers, profile.id, profile.role);
+      const viewUsers: User[] = viewUsersRows.map((u) => ({
+        id: u.id,
+        name: u.name,
+        role: u.role,
+      }));
+
+      const projectIds = new Set((projectsResponse.data as Project[] | null)?.map((p) => p.id) ?? []);
+      const rawApprovals = (approvalsResponse.data as Approval[]) || [];
+      const rawPhases = (phasesResponse.data as Phase[]) || [];
+
       setProjects((projectsResponse.data as Project[]) || []);
-      setTasks((tasksResponse.data as Task[]) || []);
-      setUsers((usersResponse.data as User[]) || []);
-      setApprovals((approvalsResponse.data as Approval[]) || []);
-      setPhases((phasesResponse.data as Phase[]) || []);
+      setTasks(viewTasks);
+      setUsers(viewUsers);
+      setApprovals(rawApprovals.filter((a) => projectIds.has(a.project_id)));
+      setPhases(rawPhases.filter((ph) => projectIds.has(ph.project_id)));
       setLoading(false);
     }
 
@@ -2740,7 +2774,13 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title="Dashboard"
-        description="Produtividade, tempo, tarefas e desempenho da equipe em um só lugar."
+        description={
+          !loading && myRole && !hasFullPortfolioAccess(myRole)
+            ? isNarrowProjetista(myRole)
+              ? "Visão restrita: apenas projetos e tarefas vinculados a você."
+              : "Rendimento da sua equipe (projetistas e projetistas líderes); cargos acima do seu não entram nos gráficos por pessoa."
+            : "Produtividade, tempo, tarefas e desempenho da equipe em um só lugar."
+        }
         actions={
           !loading && projects.length > 0 ? (
             <PeriodFilter value={period} onChange={setPeriod} />

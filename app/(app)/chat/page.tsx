@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { canCreateChatGroup } from "@/lib/permissions";
 import { getTodayLocalISO } from "@/lib/utils";
 import { downloadChatTranscriptPdf } from "@/lib/chat-export-pdf";
 
@@ -101,10 +102,7 @@ export default function ChatPage() {
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const canCreateGroup =
-    currentUserRole === "admin" ||
-    currentUserRole === "manager" ||
-    currentUserRole === "coordinator";
+  const canCreateGroup = canCreateChatGroup(currentUserRole);
 
   async function loadCurrentProfile() {
     const profile = await getCurrentProfile();

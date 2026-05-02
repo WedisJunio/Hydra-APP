@@ -14,6 +14,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
+import { getCurrentProfile } from "@/lib/supabase/profile";
+import { ROLE_LABELS, canCreateAppUsers, isLegacyAppRole } from "@/lib/permissions";
 
 type User = {
   id: string;
@@ -52,18 +54,10 @@ const emptyForm: NewUserForm = {
   linkedin_url: "",
 };
 
-const roleLabels: Record<string, string> = {
-  admin: "Administrador",
-  manager: "Gerente",
-  coordinator: "Coordenador",
-  leader: "Líder",
-  employee: "Colaborador",
-};
-
 function getRoleVariant(role: string): "primary" | "info" | "neutral" | "warning" {
   if (role === "admin") return "warning";
   if (role === "manager" || role === "coordinator") return "primary";
-  if (role === "leader") return "info";
+  if (role === "leader" || role === "projetista_lider") return "info";
   return "neutral";
 }
 
@@ -87,6 +81,8 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
 
+  const [myRole, setMyRole] = useState<string | null>(null);
+
   function setField(field: keyof NewUserForm, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
@@ -109,6 +105,10 @@ export default function UsersPage() {
   }
 
   async function handleCreateUser() {
+    if (!canCreateAppUsers(myRole)) {
+      showErrorToast("Sem permissão para cadastrar usuários.");
+      return;
+    }
     if (!form.name.trim() || !form.email.trim()) return;
     setCreating(true);
 
@@ -147,8 +147,17 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
-    loadUsers();
+    getCurrentProfile().then((p) => setMyRole(p?.role ?? null));
   }, []);
+
+  useEffect(() => {
+    if (myRole == null) return;
+    if (!isLegacyAppRole(myRole)) {
+      router.replace("/dashboard");
+      return;
+    }
+    loadUsers();
+  }, [myRole, router]);
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -167,21 +176,29 @@ export default function UsersPage() {
     active: users.filter((u) => u.is_active).length,
   }), [users]);
 
+  const allowCreate = canCreateAppUsers(myRole);
+
   const hasFilter = !!(search || roleFilter);
 
   return (
     <div>
       <PageHeader
         title="Usuários"
-        description="Gerencie perfis internos, papéis e o status da equipe."
+        description={
+          myRole != null && !allowCreate
+            ? "Diretório da equipe. Cadastro de novos usuários é restrito a administradores e gerentes."
+            : "Gerencie perfis internos, papéis e o status da equipe."
+        }
         actions={
-          <Button leftIcon={<Plus size={16} />} onClick={() => setShowForm((v) => !v)}>
-            {showForm ? "Fechar" : "Novo usuário"}
-          </Button>
+          allowCreate ? (
+            <Button leftIcon={<Plus size={16} />} onClick={() => setShowForm((v) => !v)}>
+              {showForm ? "Fechar" : "Novo usuário"}
+            </Button>
+          ) : undefined
         }
       />
 
-      {showForm && (
+      {allowCreate && showForm && (
         <Card className="mb-4">
           {/* Acesso */}
           <SectionLabel>Acesso</SectionLabel>
@@ -207,7 +224,9 @@ export default function UsersPage() {
                 <option value="manager">Gerente</option>
                 <option value="coordinator">Coordenador</option>
                 <option value="leader">Líder</option>
-                <option value="employee">Colaborador</option>
+                <option value="projetista_lider">Projetista líder</option>
+                <option value="projetista">Projetista</option>
+                <option value="employee">Projetista (legado)</option>
               </Select>
             </Field>
           </div>
@@ -331,7 +350,9 @@ export default function UsersPage() {
             <option value="manager">Gerente</option>
             <option value="coordinator">Coordenador</option>
             <option value="leader">Líder</option>
-            <option value="employee">Colaborador</option>
+            <option value="projetista_lider">Projetista líder</option>
+            <option value="projetista">Projetista</option>
+            <option value="employee">Projetista (legado)</option>
           </Select>
           {hasFilter && (
             <Button
@@ -411,7 +432,7 @@ export default function UsersPage() {
                     <td className="text-muted">{user.email}</td>
                     <td>
                       <Badge variant={getRoleVariant(user.role)}>
-                        {roleLabels[user.role] || user.role}
+                        {ROLE_LABELS[user.role] || user.role}
                       </Badge>
                     </td>
                     <td>

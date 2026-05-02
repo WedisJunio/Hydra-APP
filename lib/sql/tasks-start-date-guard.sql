@@ -3,7 +3,7 @@
 -- ============================================================================
 -- Regras:
 -- 1) start_date sempre nasce com a data de criação da tarefa.
--- 2) somente líder/coordenador (ou admin) pode alterar start_date depois.
+-- 2) admin, gerência, coordenador, líder ou projetista_lider pode alterar start_date depois.
 -- ============================================================================
 
 -- Sempre define data de início na criação com a data atual
@@ -33,8 +33,8 @@ DECLARE
 BEGIN
   IF NEW.start_date IS DISTINCT FROM OLD.start_date THEN
     v_role := public.current_app_user_role();
-    IF v_role NOT IN ('admin', 'coordinator', 'leader') THEN
-      RAISE EXCEPTION 'Somente líder ou coordenador pode alterar a data de início da tarefa.';
+    IF v_role NOT IN ('admin', 'manager', 'coordinator', 'leader', 'projetista_lider') THEN
+      RAISE EXCEPTION 'Somente gestão do projeto ou perfil autorizado pode alterar a data de início da tarefa.';
     END IF;
   END IF;
   RETURN NEW;
