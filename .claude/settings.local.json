@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s http://localhost:3001/users/test)",
+      "Bash(curl -s http://localhost:3000/saneamento)",
+      "Bash(curl -s http://localhost:3001/saneamento)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object OwningProcess | ForEach-Object { Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, MainWindowTitle, CommandLine })",
+      "PowerShell(Get-Process -Id 30476)",
+      "Bash(curl -s \"http://localhost:3000/users/caf69338-8369-466b-b7ca-a31966ddfcee\")",
+      "Bash(curl -s http://localhost:3000/users)"
+    ]
+  }
+}
