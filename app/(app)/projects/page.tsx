@@ -23,6 +23,8 @@ import {
   Sparkles,
   Activity,
   TrendingUp,
+  Droplets,
+  BarChart3,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -52,6 +54,7 @@ import {
   PeriodFilter,
   getLiveSeconds as getDashLiveSeconds,
 } from "@/components/dashboard/engine";
+import { SaneamentoListContent } from "@/app/(app)/saneamento/page";
 import type {
   Approval,
   Phase,
@@ -394,6 +397,7 @@ export default function ProjectsPage() {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [period, setPeriod] = useState<PeriodKey>("30d");
   const [activeProjectsTab, setActiveProjectsTab] = useState<"todos" | string>("todos");
+  const [activeSaneamentoView, setActiveSaneamentoView] = useState<"dashboard" | "portfolio">("dashboard");
 
   const projetistaSomenteTarefas = isNarrowProjetista(myRole);
   const podeCriarProjeto = canCreateProject(myRole);
@@ -742,6 +746,12 @@ export default function ProjectsPage() {
   const disciplines = useMemo(
     () => [...new Set(projects.map((p) => p.discipline).filter(Boolean))] as string[],
     [projects]
+  );
+  const isSaneamentoTab = useMemo(
+    () =>
+      activeProjectsTab !== "todos" &&
+      activeProjectsTab.toLowerCase().includes("saneamento"),
+    [activeProjectsTab]
   );
 
   const globalStats = useMemo(() => {
@@ -1599,12 +1609,17 @@ export default function ProjectsPage() {
       <PageHeader
         title="Projetos"
         description={
-          projetistaSomenteTarefas
+          isSaneamentoTab
+            ? activeSaneamentoView === "dashboard"
+              ? "Painel de saneamento com gráficos, desempenho e acompanhamento por projeto."
+              : "Visão operacional dos projetos de saneamento, igual ao fluxo atual da área."
+            : projetistaSomenteTarefas
             ? "Projetos onde você participa. Você pode criar e acompanhar tarefas; edição do projeto é feita por coordenação ou projetista líder."
             : "Visão completa por projeto, com equipe, carga e indicadores de risco."
         }
         actions={
-          activeProjectsTab !== "todos" ? (
+          activeProjectsTab !== "todos" &&
+          (!isSaneamentoTab || activeSaneamentoView === "dashboard") ? (
             <PeriodFilter value={period} onChange={setPeriod} />
           ) : podeCriarProjeto ? (
             <Button
@@ -1634,10 +1649,21 @@ export default function ProjectsPage() {
                 key={disc}
                 className="tab"
                 data-active={activeProjectsTab === disc ? "true" : "false"}
-                onClick={() => setActiveProjectsTab(disc)}
+                onClick={() => {
+                  setActiveProjectsTab(disc);
+                  if (disc.toLowerCase().includes("saneamento")) {
+                    setActiveSaneamentoView("dashboard");
+                  }
+                }}
               >
-                {getDisciplineIcon(disc)}
-                {getDisciplineLabel(disc)}
+                {disc.toLowerCase().includes("saneamento") ? (
+                  <Droplets size={14} />
+                ) : (
+                  getDisciplineIcon(disc)
+                )}
+                {disc.toLowerCase().includes("saneamento")
+                  ? "Saneamento"
+                  : getDisciplineLabel(disc)}
               </button>
             ))}
           </div>
@@ -1645,7 +1671,7 @@ export default function ProjectsPage() {
       )}
 
       {/* ─── Discipline tab content ────────────────────────────── */}
-      {activeProjectsTab !== "todos" && (
+      {activeProjectsTab !== "todos" && !isSaneamentoTab && (
         <DashboardDisciplina
           discipline={activeProjectsTab}
           projects={projects.filter((p) => p.discipline === activeProjectsTab) as DashProject[]}
@@ -1656,6 +1682,44 @@ export default function ProjectsPage() {
           liveSecondsMap={liveSecondsMap}
           period={period}
         />
+      )}
+
+      {activeProjectsTab !== "todos" && isSaneamentoTab && (
+        <div className="flex flex-col gap-5">
+          <div className="tabs" style={{ alignSelf: "flex-start" }}>
+            <button
+              className="tab"
+              data-active={activeSaneamentoView === "dashboard" ? "true" : "false"}
+              onClick={() => setActiveSaneamentoView("dashboard")}
+            >
+              <BarChart3 size={14} />
+              Dashboard
+            </button>
+            <button
+              className="tab"
+              data-active={activeSaneamentoView === "portfolio" ? "true" : "false"}
+              onClick={() => setActiveSaneamentoView("portfolio")}
+            >
+              <Droplets size={14} />
+              Visão do projeto
+            </button>
+          </div>
+
+          {activeSaneamentoView === "dashboard" ? (
+            <DashboardDisciplina
+              discipline={activeProjectsTab}
+              projects={projects.filter((p) => p.discipline === activeProjectsTab) as DashProject[]}
+              tasks={tasks as DashTask[]}
+              users={users}
+              approvals={approvals}
+              phases={phases}
+              liveSecondsMap={liveSecondsMap}
+              period={period}
+            />
+          ) : (
+            <SaneamentoListContent showHeader={false} />
+          )}
+        </div>
       )}
 
       {/* ─── Top stats ─────────────────────────────────────────── */}

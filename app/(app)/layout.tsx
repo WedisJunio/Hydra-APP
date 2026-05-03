@@ -10,7 +10,6 @@ import {
   Users,
   MessageSquare,
   Calendar as CalendarIcon,
-  Droplets,
   Clock,
   ChevronRight,
   Moon,
@@ -31,7 +30,6 @@ import { supabase } from "@/lib/supabase/client";
 const menuItems: SidebarMenuItem[] = [
   // Opcional: defina `minRole` para esconder itens (ex.: { ..., minRole: "leader" }).
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Saneamento", href: "/saneamento", icon: Droplets },
   { label: "Projetos", href: "/projects", icon: FolderKanban },
   { label: "Tarefas", href: "/tasks", icon: CheckSquare },
   { label: "Ponto", href: "/ponto", icon: Clock },

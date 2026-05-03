@@ -300,7 +300,13 @@ function FilterChip({
 
 // ─── Página principal ──────────────────────────────────────────────────────
 
-export default function SaneamentoListPage() {
+type SaneamentoListContentProps = {
+  showHeader?: boolean;
+};
+
+export function SaneamentoListContent({
+  showHeader = true,
+}: SaneamentoListContentProps) {
   const router = useRouter();
 
   const [projects, setProjects] = useState<ProjectWithExtras[]>([]);
@@ -727,15 +733,17 @@ export default function SaneamentoListPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Projetos de Saneamento"
-        description="Carteira de projetos de SAA e SES — concepção, licenciamento, executivo e aprovações."
-        actions={
-          <Button leftIcon={<Plus size={16} />} onClick={() => setShowModal(true)}>
-            Novo projeto
-          </Button>
-        }
-      />
+      {showHeader && (
+        <PageHeader
+          title="Projetos de Saneamento"
+          description="Carteira de projetos de SAA e SES — concepção, licenciamento, executivo e aprovações."
+          actions={
+            <Button leftIcon={<Plus size={16} />} onClick={() => setShowModal(true)}>
+              Novo projeto
+            </Button>
+          }
+        />
+      )}
 
       {/* ─── Top stats ─────────────────────────────────────────── */}
       <div
@@ -1036,4 +1044,8 @@ export default function SaneamentoListPage() {
       />
     </div>
   );
+}
+
+export default function SaneamentoListPage() {
+  return <SaneamentoListContent />;
 }
