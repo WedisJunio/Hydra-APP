@@ -9,7 +9,31 @@
       "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object OwningProcess | ForEach-Object { Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, MainWindowTitle, CommandLine })",
       "PowerShell(Get-Process -Id 30476)",
       "Bash(curl -s \"http://localhost:3000/users/caf69338-8369-466b-b7ca-a31966ddfcee\")",
-      "Bash(curl -s http://localhost:3000/users)"
+      "Bash(curl -s http://localhost:3000/users)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git checkout *)",
+      "Bash(git merge feature/user-profile-system --no-ff -m ' *)",
+      "Bash(npx tsc *)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('.claude/settings.local.json','utf8'\\)\\); console.log\\('JSON válido'\\)\")"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "Set-Location 'C:\\Users\\Wedis Junio\\Downloads\\hydra-app-starter\\hydra-app-starter'; git add -A; git diff --cached --quiet; if ($LASTEXITCODE -ne 0) { git commit -m 'auto: sync changes'; git push origin main }",
+            "shell": "powershell",
+            "timeout": 60,
+            "statusMessage": "Subindo alterações para o GitHub..."
+          }
+        ]
+      }
     ]
   }
 }
