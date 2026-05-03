@@ -143,7 +143,9 @@ function isMissingColumnError(error: PostgrestLikeError | null | undefined) {
 }
 
 function getMeetingCreateErrorText(error: PostgrestLikeError | null | undefined) {
-  if (!error) return "Não foi possível salvar o agendamento.";
+  if (!error) {
+    return "O banco não retornou o ID da reunião. Tente novamente e, se persistir, aplique o SQL de permissões.";
+  }
   const raw = `${error.message || ""} ${error.details || ""} ${error.hint || ""}`.toLowerCase();
 
   if (raw.includes("row-level security") || raw.includes("permission denied")) {
@@ -371,7 +373,31 @@ export default function CalendarPage() {
       createError = legacyAttempt.error;
     }
 
+    if (!createError && !meeting) {
+      const recovery = await supabase
+        .from("meetings")
+        .select("id")
+        .eq("created_by", profile.id)
+        .eq("title", title)
+        .eq("start_time", startDateTime)
+        .eq("end_time", endDateTime)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!recovery.error && recovery.data) {
+        meeting = recovery.data;
+      }
+    }
+
     if (createError || !meeting) {
+      if (createError) {
+        console.error("Erro ao inserir reunião", {
+          code: createError.code,
+          message: createError.message,
+          details: createError.details,
+          hint: createError.hint,
+        });
+      }
       showErrorToast("Erro ao criar reunião", getMeetingCreateErrorText(createError));
       setCreating(false);
       return;
