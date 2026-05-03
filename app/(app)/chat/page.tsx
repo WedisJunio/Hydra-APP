@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Send,
   Plus,
@@ -11,12 +11,14 @@ import {
   ChevronLeft,
   Radio,
   FileDown,
+  Bell,
+  BellOff,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
 import { getSupabaseErrorMessage } from "@/lib/supabase/errors";
-import { showErrorToast, showSuccessToast } from "@/lib/toast";
+import { showErrorToast, showInfoToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/input";
@@ -59,6 +61,8 @@ type EnrichedMessage = Message & {
   dateLabel: string | null;
 };
 
+const CHAT_MUTED_GROUPS_KEY = "hydra-chat-muted-groups";
+
 function localDateKey(iso: string): string {
   const d = new Date(iso);
   const y = d.getFullYear();
@@ -96,11 +100,13 @@ export default function ChatPage() {
 
   const [content, setContent] = useState("");
   const [sending, setSending] = useState(false);
+  const [mutedGroupIds, setMutedGroupIds] = useState<string[]>([]);
 
   const [isNarrow, setIsNarrow] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"list" | "chat">("list");
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const senderNameCache = useRef<Record<string, string>>({});
 
   const canCreateGroup = canCreateChatGroup(currentUserRole);
 
@@ -218,7 +224,43 @@ export default function ChatPage() {
 
     setContent("");
     setSending(false);
+    showSuccessToast("Mensagem enviada", `Canal: ${channelTitle}`);
   }
+
+  const saveMutedGroups = useCallback((next: string[]) => {
+    setMutedGroupIds(next);
+    window.localStorage.setItem(CHAT_MUTED_GROUPS_KEY, JSON.stringify(next));
+  }, []);
+
+  const toggleMuteGroup = useCallback(
+    (groupId: string) => {
+      const isMuted = mutedGroupIds.includes(groupId);
+      const next = isMuted
+        ? mutedGroupIds.filter((id) => id !== groupId)
+        : [...mutedGroupIds, groupId];
+      saveMutedGroups(next);
+      showSuccessToast(
+        isMuted ? "Conversa reativada" : "Conversa silenciada",
+        isMuted
+          ? "Você voltará a receber notificações desta conversa."
+          : "Novas mensagens deste grupo não gerarão popups."
+      );
+    },
+    [mutedGroupIds, saveMutedGroups]
+  );
+
+  const resolveSenderName = useCallback(async (senderId: string) => {
+    if (senderNameCache.current[senderId]) return senderNameCache.current[senderId];
+    const { data } = await supabase
+      .from("users")
+      .select("name")
+      .eq("id", senderId)
+      .limit(1)
+      .maybeSingle();
+    const name = data?.name || "Alguém";
+    senderNameCache.current[senderId] = name;
+    return name;
+  }, []);
 
   useEffect(() => {
     loadCurrentProfile();
@@ -235,6 +277,19 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
+    const raw = window.localStorage.getItem(CHAT_MUTED_GROUPS_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setMutedGroupIds(parsed.filter((v): v is string => typeof v === "string"));
+      }
+    } catch {
+      // ignore malformed local storage payload
+    }
+  }, []);
+
+  useEffect(() => {
     if (selectedGroupId) loadMessages(selectedGroupId);
   }, [selectedGroupId]);
 
@@ -243,16 +298,38 @@ export default function ChatPage() {
       .channel("messages-realtime-premium")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "messages" },
-        async () => {
-          if (selectedGroupId) await loadMessages(selectedGroupId);
+        { event: "INSERT", schema: "public", table: "messages" },
+        async (payload) => {
+          const incoming = payload.new as {
+            sender_id?: string;
+            chat_group_id?: string;
+            content?: string;
+          };
+          const incomingGroupId = incoming.chat_group_id || null;
+          if (!incomingGroupId) return;
+
+          if (selectedGroupId && incomingGroupId === selectedGroupId) {
+            await loadMessages(selectedGroupId);
+          }
+
+          if (
+            incoming.sender_id &&
+            incoming.sender_id !== currentProfileId &&
+            !mutedGroupIds.includes(incomingGroupId)
+          ) {
+            await showMessagePopup({
+              senderId: incoming.sender_id,
+              content: incoming.content || "",
+              groupId: incomingGroupId,
+            });
+          }
         }
       )
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedGroupId]);
+  }, [currentProfileId, mutedGroupIds, selectedGroupId, showMessagePopup]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -268,9 +345,40 @@ export default function ChatPage() {
     [projects]
   );
 
+  async function showMessagePopup(payload: {
+    senderId: string;
+    content: string;
+    groupId: string;
+  }) {
+    const group = chatGroups.find((g) => g.id === payload.groupId) || null;
+    const groupLabel = group
+      ? group.project_id
+        ? (projectById[group.project_id] ?? group.name)
+        : group.name
+      : "Conversa";
+    const senderName = await resolveSenderName(payload.senderId);
+    const text =
+      payload.content.length > 120
+        ? `${payload.content.slice(0, 117)}...`
+        : payload.content;
+
+    showInfoToast(`Nova mensagem em ${groupLabel}`, `${senderName}: ${text}`);
+
+    if (
+      document.hidden &&
+      "Notification" in window &&
+      Notification.permission === "granted"
+    ) {
+      new Notification(`Nova mensagem em ${groupLabel}`, {
+        body: `${senderName}: ${text}`,
+      });
+    }
+  }
+
   const channelTitle = selectedGroup?.project_id
     ? (projectById[selectedGroup.project_id] ?? selectedGroup.name)
     : selectedGroup?.name || "Conversa";
+  const selectedGroupMuted = !!selectedGroupId && mutedGroupIds.includes(selectedGroupId);
 
   const filteredGroups = useMemo(() => {
     const q = groupSearch.trim().toLowerCase();
@@ -413,6 +521,7 @@ export default function ChatPage() {
               {filteredGroups.map((group) => {
                 const isActive = selectedGroupId === group.id;
                 const isProjectGroup = !!group.project_id;
+                const isMuted = mutedGroupIds.includes(group.id);
                 const label = group.project_id
                   ? (projectById[group.project_id] ?? group.name)
                   : group.name;
@@ -430,6 +539,7 @@ export default function ChatPage() {
                     <Badge variant={isProjectGroup ? "info" : "neutral"}>
                       {isProjectGroup ? "Projeto" : "Avulso"}
                     </Badge>
+                    {isMuted && <Badge variant="warning">Silenciado</Badge>}
                   </button>
                 );
               })}
@@ -469,6 +579,20 @@ export default function ChatPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={selectedGroupMuted ? <BellOff size={14} /> : <Bell size={14} />}
+                  onClick={() => selectedGroupId && toggleMuteGroup(selectedGroupId)}
+                  disabled={!selectedGroupId}
+                  title={
+                    selectedGroupMuted
+                      ? "Reativar notificações deste grupo"
+                      : "Silenciar notificações deste grupo"
+                  }
+                >
+                  {selectedGroupMuted ? "Silenciado" : "Silenciar"}
+                </Button>
                 <Button
                   size="sm"
                   variant="secondary"
