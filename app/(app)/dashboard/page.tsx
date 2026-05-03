@@ -2695,21 +2695,28 @@ function DashboardDisciplina({
 
   const disciplineProjectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
 
-  // Filtra tasks/approvals/phases só desta disciplina para o DashboardGeral
-  const disciplineTasks = useMemo(
-    () => tasks.filter((t) => disciplineProjectIds.has(t.project_id)),
-    [tasks, disciplineProjectIds]
-  );
-  const disciplineApprovals = useMemo(
-    () => approvals.filter((a) => disciplineProjectIds.has(a.project_id)),
-    [approvals, disciplineProjectIds]
-  );
-  const disciplinePhases = useMemo(
-    () => phases.filter((ph) => disciplineProjectIds.has(ph.project_id)),
-    [phases, disciplineProjectIds]
+  // Dados filtrados pelo projeto selecionado (ou toda a disciplina)
+  const activeProjects = useMemo(
+    () => selectedProjectId ? projects.filter((p) => p.id === selectedProjectId) : projects,
+    [projects, selectedProjectId]
   );
 
-  // Cards resumo por projeto (para o topo)
+  const activeTasks = useMemo(
+    () => tasks.filter((t) => selectedProjectId ? t.project_id === selectedProjectId : disciplineProjectIds.has(t.project_id)),
+    [tasks, selectedProjectId, disciplineProjectIds]
+  );
+
+  const activeApprovals = useMemo(
+    () => approvals.filter((a) => selectedProjectId ? a.project_id === selectedProjectId : disciplineProjectIds.has(a.project_id)),
+    [approvals, selectedProjectId, disciplineProjectIds]
+  );
+
+  const activePhases = useMemo(
+    () => phases.filter((ph) => selectedProjectId ? ph.project_id === selectedProjectId : disciplineProjectIds.has(ph.project_id)),
+    [phases, selectedProjectId, disciplineProjectIds]
+  );
+
+  // Cards resumo por projeto (sempre todos visíveis)
   const projectCards = useMemo(() =>
     projects.map((p) => {
       const pt = filterTasksByPeriod(tasks.filter((t) => t.project_id === p.id), period);
@@ -2725,200 +2732,177 @@ function DashboardDisciplina({
     [projects, tasks, period, liveSecondsMap, approvals]
   );
 
-  const selectedProject = selectedProjectId
-    ? projects.find((p) => p.id === selectedProjectId) ?? null
-    : null;
-
-  // Barra de filtro comum (usada nas duas views)
-  const filterBar = (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        flexWrap: "wrap",
-        background: "var(--surface-2)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
-        padding: "12px 16px",
-      }}
-    >
-      <span className="text-xs font-semibold text-muted" style={{ marginRight: 4, whiteSpace: "nowrap" }}>
-        Projeto:
-      </span>
-      <button
-        onClick={() => setSelectedProjectId(null)}
-        style={{
-          padding: "5px 14px",
-          borderRadius: 999,
-          border: "1px solid",
-          borderColor: !selectedProjectId ? "var(--primary)" : "var(--border)",
-          background: !selectedProjectId ? "var(--primary)" : "transparent",
-          color: !selectedProjectId ? "#fff" : "var(--muted-fg)",
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: "pointer",
-          transition: "all 0.15s",
-          whiteSpace: "nowrap",
-        }}
-      >
-        Todos ({projects.length})
-      </button>
-      {projects.map((p) => {
-        const isActive = selectedProjectId === p.id;
-        return (
-          <button
-            key={p.id}
-            onClick={() => setSelectedProjectId(isActive ? null : p.id)}
-            style={{
-              padding: "5px 14px",
-              borderRadius: 999,
-              border: "1px solid",
-              borderColor: isActive ? "var(--primary)" : "var(--border)",
-              background: isActive ? "var(--primary)" : "transparent",
-              color: isActive ? "#fff" : "var(--foreground)",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.15s",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {p.name}
-          </button>
-        );
-      })}
-    </div>
-  );
+  const activeLabel = selectedProjectId
+    ? (projects.find((p) => p.id === selectedProjectId)?.name ?? getDisciplineLabel(discipline))
+    : getDisciplineLabel(discipline);
 
   return (
     <div className="flex flex-col gap-5">
-      {filterBar}
 
-      {selectedProject ? (
-        /* ── Detalhe de projeto individual ── */
-        <>
-          <button
-            onClick={() => setSelectedProjectId(null)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              color: "var(--muted-fg)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-              fontWeight: 500,
-              width: "fit-content",
-            }}
-          >
-            ← Todos os projetos de {getDisciplineLabel(discipline)}
-          </button>
-          <DashboardProjeto
-            project={selectedProject}
-            tasks={tasks}
-            users={users}
-            liveSecondsMap={liveSecondsMap}
-            period={period}
-          />
-        </>
-      ) : (
-        /* ── Visão agregada da disciplina: cards resumo + mesmos gráficos do Geral ── */
-        <>
-          {/* Cards clicáveis de cada projeto */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {projectCards.map((pc) => (
-              <button
-                key={pc.id}
-                onClick={() => setSelectedProjectId(pc.id)}
-                style={{
-                  textAlign: "left",
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 14,
-                  padding: "16px 18px",
-                  cursor: "pointer",
-                  transition: "border-color 0.15s, box-shadow 0.15s",
-                  width: "100%",
-                }}
-                onMouseEnter={(e) => {
+      {/* ── Barra de filtro por projeto ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          background: "var(--surface-2)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          padding: "12px 16px",
+        }}
+      >
+        <span className="text-xs font-semibold text-muted" style={{ marginRight: 4, whiteSpace: "nowrap" }}>
+          Projeto:
+        </span>
+
+        <button
+          onClick={() => setSelectedProjectId(null)}
+          style={{
+            padding: "5px 14px",
+            borderRadius: 999,
+            border: "1px solid",
+            borderColor: !selectedProjectId ? "var(--primary)" : "var(--border)",
+            background: !selectedProjectId ? "var(--primary)" : "transparent",
+            color: !selectedProjectId ? "#fff" : "var(--muted-fg)",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.15s",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Todos ({projects.length})
+        </button>
+
+        {projects.map((p) => {
+          const isActive = selectedProjectId === p.id;
+          return (
+            <button
+              key={p.id}
+              onClick={() => setSelectedProjectId(isActive ? null : p.id)}
+              style={{
+                padding: "5px 14px",
+                borderRadius: 999,
+                border: "1px solid",
+                borderColor: isActive ? "var(--primary)" : "var(--border)",
+                background: isActive ? "var(--primary)" : "transparent",
+                color: isActive ? "#fff" : "var(--foreground)",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.15s",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {p.name}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Cards de projeto (sempre visíveis; selecionado fica destacado) ── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+          gap: 12,
+        }}
+      >
+        {projectCards.map((pc) => {
+          const isSelected = selectedProjectId === pc.id;
+          return (
+            <button
+              key={pc.id}
+              onClick={() => setSelectedProjectId(isSelected ? null : pc.id)}
+              style={{
+                textAlign: "left",
+                background: isSelected ? "var(--primary-soft, #EFF6FF)" : "var(--surface)",
+                border: `1.5px solid ${isSelected ? "var(--primary)" : "var(--border)"}`,
+                borderRadius: 14,
+                padding: "16px 18px",
+                cursor: "pointer",
+                transition: "border-color 0.15s, box-shadow 0.15s, background 0.15s",
+                width: "100%",
+                boxShadow: isSelected ? "0 0 0 3px rgba(37,99,235,0.12)" : "none",
+              }}
+              onMouseEnter={(e) => {
+                if (!isSelected) {
                   (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--primary)";
-                  (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 0 3px var(--primary-soft)";
-                }}
-                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 0 3px rgba(37,99,235,0.08)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isSelected) {
                   (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border)";
                   (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
-                }}
-              >
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="font-semibold text-sm" style={{ lineHeight: 1.4 }}>{pc.name}</div>
+                }
+              }}
+            >
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div className="font-semibold text-sm" style={{ lineHeight: 1.4 }}>{pc.name}</div>
+                <div className="flex items-center gap-1">
+                  {isSelected && (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: "var(--primary)", color: "#fff", whiteSpace: "nowrap" }}>
+                      Filtrado
+                    </span>
+                  )}
                   {pc.delayed > 0 && (
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: "var(--danger-soft)", color: "var(--danger)", whiteSpace: "nowrap", flexShrink: 0 }}>
-                      {pc.delayed} atrasada{pc.delayed > 1 ? "s" : ""}
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: "var(--danger-soft)", color: "var(--danger)", whiteSpace: "nowrap" }}>
+                      {pc.delayed} atraso{pc.delayed > 1 ? "s" : ""}
                     </span>
                   )}
                 </div>
-                <div className="mb-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-muted">Progresso</span>
-                    <span className="text-xs font-bold" style={{ color: pc.progress === 100 ? "var(--success)" : "var(--primary)" }}>{pc.progress}%</span>
-                  </div>
-                  <div style={{ height: 6, borderRadius: 3, background: "var(--surface-3)", overflow: "hidden" }}>
-                    <div style={{ width: `${pc.progress}%`, height: "100%", borderRadius: 3, background: pc.progress === 100 ? CHART_COLORS.success : `linear-gradient(90deg, ${CHART_COLORS.primary}, ${CHART_COLORS.primaryLight})`, transition: "width 600ms ease" }} />
-                  </div>
+              </div>
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-muted">Progresso</span>
+                  <span className="text-xs font-bold" style={{ color: pc.progress === 100 ? "var(--success)" : "var(--primary)" }}>{pc.progress}%</span>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                  {[
-                    { label: "Tarefas", value: pc.totalTasks },
-                    { label: "Horas", value: `${(pc.totalSeconds / 3600).toFixed(1)}h` },
-                    { label: "Concluídas", value: pc.completed, color: "var(--success)" },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} style={{ background: "var(--surface-2)", borderRadius: 8, padding: "7px 10px" }}>
-                      <div className="text-xs text-muted" style={{ marginBottom: 2 }}>{label}</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: color ?? "var(--foreground)" }}>{value}</div>
-                    </div>
-                  ))}
+                <div style={{ height: 6, borderRadius: 3, background: "var(--surface-3)", overflow: "hidden" }}>
+                  <div style={{ width: `${pc.progress}%`, height: "100%", borderRadius: 3, background: pc.progress === 100 ? CHART_COLORS.success : `linear-gradient(90deg, ${CHART_COLORS.primary}, ${CHART_COLORS.primaryLight})`, transition: "width 600ms ease" }} />
                 </div>
-                {pc.openApprovals > 0 && (
-                  <div className="flex items-center gap-2 mt-3" style={{ fontSize: 11, color: "var(--warning-fg)", background: "var(--warning-soft)", borderRadius: 6, padding: "5px 10px" }}>
-                    <ClipboardCheck size={11} />
-                    {pc.openApprovals} aprovação(ões) pendente(s)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                {[
+                  { label: "Tarefas", value: pc.totalTasks },
+                  { label: "Horas", value: `${(pc.totalSeconds / 3600).toFixed(1)}h` },
+                  { label: "Concluídas", value: pc.completed, color: "var(--success)" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} style={{ background: "var(--surface-2)", borderRadius: 8, padding: "7px 10px" }}>
+                    <div className="text-xs text-muted" style={{ marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: color ?? "var(--foreground)" }}>{value}</div>
                   </div>
-                )}
-                <div className="flex items-center gap-1 mt-3" style={{ fontSize: 11, color: "var(--primary)", fontWeight: 600 }}>
-                  Ver dashboard completo <ArrowRight size={11} />
+                ))}
+              </div>
+              {pc.openApprovals > 0 && (
+                <div className="flex items-center gap-2 mt-3" style={{ fontSize: 11, color: "var(--warning-fg)", background: "var(--warning-soft)", borderRadius: 6, padding: "5px 10px" }}>
+                  <ClipboardCheck size={11} />
+                  {pc.openApprovals} aprovação(ões) pendente(s)
                 </div>
-              </button>
-            ))}
-          </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-          {/* Divisor */}
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 4 }}>
-            <p className="text-xs font-semibold text-muted" style={{ textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16 }}>
-              Análise consolidada · {getDisciplineLabel(discipline)}
-            </p>
-          </div>
+      {/* ── Divisor com label do filtro ativo ── */}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 4 }}>
+        <p className="text-xs font-semibold text-muted" style={{ textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16 }}>
+          Análise · {activeLabel}
+        </p>
+      </div>
 
-          {/* Mesmos gráficos do DashboardGeral, filtrados para esta disciplina */}
-          <DashboardGeral
-            projects={projects}
-            tasks={disciplineTasks}
-            users={users}
-            approvals={disciplineApprovals}
-            phases={disciplinePhases}
-            liveSecondsMap={liveSecondsMap}
-            period={period}
-          />
-        </>
-      )}
+      {/* ── Gráficos do DashboardGeral filtrados pelo projeto ativo ── */}
+      <DashboardGeral
+        projects={activeProjects}
+        tasks={activeTasks}
+        users={users}
+        approvals={activeApprovals}
+        phases={activePhases}
+        liveSecondsMap={liveSecondsMap}
+        period={period}
+      />
     </div>
   );
 }
