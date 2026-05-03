@@ -488,6 +488,29 @@ export default function ProjectsPage() {
     };
   }
 
+  function getProjectDates(projectId: string) {
+    const projectTasks = getProjectTasks(projectId);
+
+    const plannedDates = projectTasks
+      .map((t) => t.planned_due_date)
+      .filter((d): d is string => !!d);
+
+    const actualDates = projectTasks
+      .filter((t) => t.status === "completed")
+      .map((t) => t.actual_completed_date)
+      .filter((d): d is string => !!d);
+
+    const plannedEnd = plannedDates.length > 0
+      ? plannedDates.reduce((max, d) => (d > max ? d : max))
+      : null;
+
+    const actualEnd = actualDates.length > 0
+      ? actualDates.reduce((max, d) => (d > max ? d : max))
+      : null;
+
+    return { plannedEnd, actualEnd };
+  }
+
   // ─── CRUD handlers ─────────────────────────────────────────────────────────
 
   async function handleCreateProject() {
@@ -797,6 +820,7 @@ export default function ProjectsPage() {
 
   function renderProjectCard(project: Project, isList: boolean) {
     const stats = getProjectStats(project);
+    const dates = getProjectDates(project.id);
     const isExpanded = expandedProjectId === project.id;
     const projectMembers = getProjectMembers(project.id);
     const projectTasks = getProjectTasks(project.id);
@@ -969,10 +993,22 @@ export default function ProjectsPage() {
                 <div className="flex items-center gap-3 mt-1 text-xs text-muted flex-wrap">
                   <span className="inline-flex items-center gap-1">
                     <CalendarDays size={11} />
-                    {project.planned_end_date
-                      ? `Prazo: ${formatBRDate(project.planned_end_date)}`
-                      : "Sem prazo definido"}
+                    {dates.plannedEnd
+                      ? `Previsão: ${formatBRDate(dates.plannedEnd)}`
+                      : "Sem previsão de término"}
                   </span>
+                  {dates.actualEnd && (
+                    <>
+                      <span>•</span>
+                      <span
+                        className="inline-flex items-center gap-1"
+                        style={{ color: "var(--success)", fontWeight: 600 }}
+                      >
+                        <CheckCircle2 size={11} />
+                        {`Concluído: ${formatBRDate(dates.actualEnd)}`}
+                      </span>
+                    </>
+                  )}
                   <span>•</span>
                   <span>Criado em {formatBRDate(project.created_at?.slice(0, 10))}</span>
                 </div>
