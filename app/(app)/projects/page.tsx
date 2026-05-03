@@ -45,12 +45,27 @@ import { SkeletonCard } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { formatSeconds, isTaskDelayed } from "@/lib/utils";
 import { generateProjectDashboardPdf } from "@/lib/project-report-pdf";
+import {
+  DashboardDisciplina,
+  getDisciplineIcon,
+  getDisciplineLabel,
+  PeriodFilter,
+  getLiveSeconds as getDashLiveSeconds,
+} from "@/components/dashboard/engine";
+import type {
+  Approval,
+  Phase,
+  Project as DashProject,
+  Task as DashTask,
+  PeriodKey,
+} from "@/components/dashboard/engine";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Project = {
   id: string;
   name: string;
+  discipline?: string | null;
   manager_id: string | null;
   coordinator_id: string | null;
   leader_id: string | null;
@@ -79,8 +94,11 @@ type Task = {
   status: string;
   project_id: string;
   assigned_to: string | null;
+  created_by?: string | null;
   planned_due_date: string | null;
   actual_completed_date: string | null;
+  completed_at: string | null;
+  created_at: string | null;
   time_spent_seconds: number;
   is_timer_running: boolean;
   started_at: string | null;
@@ -372,6 +390,10 @@ export default function ProjectsPage() {
 
   const [, setClock] = useState(0);
   const [myRole, setMyRole] = useState<string | null>(null);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [phases, setPhases] = useState<Phase[]>([]);
+  const [period, setPeriod] = useState<PeriodKey>("30d");
+  const [activeProjectsTab, setActiveProjectsTab] = useState<"todos" | string>("todos");
 
   const projetistaSomenteTarefas = isNarrowProjetista(myRole);
   const podeCriarProjeto = canCreateProject(myRole);
@@ -396,7 +418,7 @@ export default function ProjectsPage() {
     const { data } = await supabase
       .from("projects")
       .select(
-        "id, name, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at"
+        "id, name, discipline, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at"
       )
       .order("created_at", { ascending: false });
     setProjects((data as Project[]) || []);
@@ -427,15 +449,29 @@ export default function ProjectsPage() {
     const { data } = await supabase
       .from("tasks")
       .select(
-        "id, title, status, project_id, assigned_to, planned_due_date, actual_completed_date, time_spent_seconds, is_timer_running, started_at"
+        "id, title, status, project_id, assigned_to, created_by, planned_due_date, actual_completed_date, completed_at, created_at, time_spent_seconds, is_timer_running, started_at"
       );
     setTasks((data as Task[]) || []);
+  }
+
+  async function loadApprovals() {
+    const { data } = await supabase
+      .from("external_approvals")
+      .select("id, project_id, status, expected_response_date");
+    setApprovals((data as Approval[]) || []);
+  }
+
+  async function loadPhases() {
+    const { data } = await supabase
+      .from("project_phases")
+      .select("id, project_id, status");
+    setPhases((data as Phase[]) || []);
   }
 
   async function reloadAll(opts?: { silent?: boolean }) {
     const silent = opts?.silent ?? false;
     if (!silent) setLoading(true);
-    await Promise.all([loadProjects(), loadUsers(), loadMembers(), loadTasks()]);
+    await Promise.all([loadProjects(), loadUsers(), loadMembers(), loadTasks(), loadApprovals(), loadPhases()]);
     if (!silent) setLoading(false);
   }
 
@@ -697,6 +733,16 @@ export default function ProjectsPage() {
   }
 
   // ─── Derived data ──────────────────────────────────────────────────────────
+
+  const liveSecondsMap = useMemo(
+    () => Object.fromEntries(tasks.map((t) => [t.id, getLiveSeconds(t)])),
+    [tasks]
+  );
+
+  const disciplines = useMemo(
+    () => [...new Set(projects.map((p) => p.discipline).filter(Boolean))] as string[],
+    [projects]
+  );
 
   const globalStats = useMemo(() => {
     const totalSeconds = tasks.reduce((sum, task) => sum + getLiveSeconds(task), 0);
@@ -1558,7 +1604,9 @@ export default function ProjectsPage() {
             : "Visão completa por projeto, com equipe, carga e indicadores de risco."
         }
         actions={
-          podeCriarProjeto ? (
+          activeProjectsTab !== "todos" ? (
+            <PeriodFilter value={period} onChange={setPeriod} />
+          ) : podeCriarProjeto ? (
             <Button
               leftIcon={<Plus size={16} />}
               onClick={() => setShowNewForm((v) => !v)}
@@ -1569,8 +1617,49 @@ export default function ProjectsPage() {
         }
       />
 
+      {/* ─── Discipline tabs ──────────────────────────────────── */}
+      {!loading && projects.length > 0 && (
+        <div className="mb-6">
+          <div className="tabs" style={{ maxWidth: "100%", overflowX: "auto" }}>
+            <button
+              className="tab"
+              data-active={activeProjectsTab === "todos" ? "true" : "false"}
+              onClick={() => setActiveProjectsTab("todos")}
+            >
+              <FolderKanban size={14} />
+              Todos os projetos
+            </button>
+            {disciplines.map((disc) => (
+              <button
+                key={disc}
+                className="tab"
+                data-active={activeProjectsTab === disc ? "true" : "false"}
+                onClick={() => setActiveProjectsTab(disc)}
+              >
+                {getDisciplineIcon(disc)}
+                {getDisciplineLabel(disc)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Discipline tab content ────────────────────────────── */}
+      {activeProjectsTab !== "todos" && (
+        <DashboardDisciplina
+          discipline={activeProjectsTab}
+          projects={projects.filter((p) => p.discipline === activeProjectsTab) as DashProject[]}
+          tasks={tasks as DashTask[]}
+          users={users}
+          approvals={approvals}
+          phases={phases}
+          liveSecondsMap={liveSecondsMap}
+          period={period}
+        />
+      )}
+
       {/* ─── Top stats ─────────────────────────────────────────── */}
-      <div
+      {activeProjectsTab === "todos" && <div
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
@@ -1617,10 +1706,10 @@ export default function ProjectsPage() {
               : "Tudo em dia"
           }
         />
-      </div>
+      </div>}
 
       {/* ─── Form de novo projeto ───────────────────────────── */}
-      {podeCriarProjeto && showNewForm && (
+      {activeProjectsTab === "todos" && podeCriarProjeto && showNewForm && (
         <Card className="mb-4" padded={false}>
           <div
             style={{
@@ -1734,7 +1823,7 @@ export default function ProjectsPage() {
       )}
 
       {/* ─── Toolbar ──────────────────────────────────────────── */}
-      <div
+      {activeProjectsTab === "todos" && <div
         className="flex flex-wrap items-center gap-3 mb-4"
         style={{
           padding: 12,
@@ -1854,10 +1943,10 @@ export default function ProjectsPage() {
             Lista
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* ─── Grid/List de projetos ─────────────────────────── */}
-      <div>
+      {activeProjectsTab === "todos" && <div>
         {loading && (
           <div
             style={{
@@ -1926,10 +2015,10 @@ export default function ProjectsPage() {
             )}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ─── Footer summary (só quando filtra) ───────────────── */}
-      {!loading && filteredProjects.length > 0 && (
+      {activeProjectsTab === "todos" && !loading && filteredProjects.length > 0 && (
         <div
           className="flex items-center justify-between gap-2 flex-wrap mt-4 text-xs text-muted"
           style={{ paddingInline: 4 }}
