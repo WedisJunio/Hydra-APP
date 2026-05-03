@@ -139,7 +139,8 @@ function hasScheduleConflict(
 }
 
 function isMissingColumnError(error: PostgrestLikeError | null | undefined) {
-  return error?.code === "42703";
+  if (!error?.code) return false;
+  return error.code === "42703" || error.code === "PGRST204";
 }
 
 function getMeetingCreateErrorText(error: PostgrestLikeError | null | undefined) {
@@ -147,6 +148,9 @@ function getMeetingCreateErrorText(error: PostgrestLikeError | null | undefined)
     return "O banco não retornou o ID da reunião. Tente novamente e, se persistir, aplique o SQL de permissões.";
   }
   const raw = `${error.message || ""} ${error.details || ""} ${error.hint || ""}`.toLowerCase();
+  if (error.code === "PGRST204" || raw.includes("schema cache")) {
+    return "Banco desatualizado para reuniões. Aplique os SQLs de reuniões/permissões e tente novamente.";
+  }
 
   if (raw.includes("row-level security") || raw.includes("permission denied")) {
     return "Sem permissão para criar reunião. Aplique o SQL de permissões e faça novo login.";
