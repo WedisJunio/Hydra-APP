@@ -54,7 +54,7 @@ import {
   PeriodFilter,
   getLiveSeconds as getDashLiveSeconds,
 } from "@/components/dashboard/engine";
-import { SaneamentoListContent } from "@/app/(app)/saneamento/page";
+import SaneamentoListPage from "@/app/(app)/saneamento/page";
 import type {
   Approval,
   Phase,
@@ -1717,7 +1717,7 @@ export default function ProjectsPage() {
               period={period}
             />
           ) : (
-            <SaneamentoListContent showHeader={false} />
+            <SaneamentoListPage />
           )}
         </div>
       )}

@@ -304,7 +304,7 @@ type SaneamentoListContentProps = {
   showHeader?: boolean;
 };
 
-export function SaneamentoListContent({
+function SaneamentoListContent({
   showHeader = true,
 }: SaneamentoListContentProps) {
   const router = useRouter();
