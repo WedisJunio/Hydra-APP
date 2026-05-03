@@ -127,6 +127,19 @@ const PERIOD_OPTIONS: { value: PeriodKey; label: string; days: number | null }[]
   { value: "all", label: "Tudo", days: null },
 ];
 
+// ─── Discipline helpers ───────────────────────────────────────────────────────
+
+function getDisciplineIcon(discipline: string) {
+  const d = discipline.toLowerCase();
+  if (d.includes("saneamento")) return <Droplets size={14} />;
+  if (d.includes("amplia")) return <Building2 size={14} />;
+  return <Layers size={14} />;
+}
+
+function getDisciplineLabel(discipline: string) {
+  return discipline.charAt(0).toUpperCase() + discipline.slice(1).toLowerCase();
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getLiveSeconds(task: Task) {
@@ -2657,6 +2670,349 @@ function DashboardSkeleton() {
   );
 }
 
+// ─── Dashboard de Disciplina ─────────────────────────────────────────────────
+
+function DashboardDisciplina({
+  discipline,
+  projects,
+  tasks,
+  users,
+  approvals,
+  phases,
+  liveSecondsMap,
+  period,
+}: {
+  discipline: string;
+  projects: Project[];
+  tasks: Task[];
+  users: User[];
+  approvals: Approval[];
+  phases: Phase[];
+  liveSecondsMap: Record<string, number>;
+  period: PeriodKey;
+}) {
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+
+  const disciplineProjectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
+
+  const disciplineTasks = useMemo(
+    () => tasks.filter((t) => disciplineProjectIds.has(t.project_id)),
+    [tasks, disciplineProjectIds]
+  );
+
+  const filteredTasks = useMemo(
+    () =>
+      filterTasksByPeriod(
+        selectedProjectId
+          ? disciplineTasks.filter((t) => t.project_id === selectedProjectId)
+          : disciplineTasks,
+        period
+      ),
+    [disciplineTasks, selectedProjectId, period]
+  );
+
+  const stats = useMemo(() => {
+    const total = filteredTasks.length;
+    const completed = filteredTasks.filter((t) => t.status === "completed").length;
+    const inProgress = filteredTasks.filter((t) => t.status === "in_progress").length;
+    const pending = filteredTasks.filter((t) => t.status === "pending").length;
+    const delayed = filteredTasks.filter(isTaskDelayed).length;
+    const totalSeconds = filteredTasks.reduce((s, t) => s + (liveSecondsMap[t.id] ?? 0), 0);
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const onTimeRate = total > 0 ? Math.round(((total - delayed) / total) * 100) : 100;
+    return { total, completed, inProgress, pending, delayed, totalSeconds, completionRate, onTimeRate };
+  }, [filteredTasks, liveSecondsMap]);
+
+  const projectCards = useMemo(() =>
+    projects.map((p) => {
+      const pt = filterTasksByPeriod(tasks.filter((t) => t.project_id === p.id), period);
+      const totalSeconds = pt.reduce((s, t) => s + (liveSecondsMap[t.id] ?? 0), 0);
+      const completed = pt.filter((t) => t.status === "completed").length;
+      const inProgress = pt.filter((t) => t.status === "in_progress").length;
+      const delayed = pt.filter(isTaskDelayed).length;
+      const progress = pt.length > 0 ? Math.round((completed / pt.length) * 100) : 0;
+      const sanApprovals = approvals.filter((a) => a.project_id === p.id);
+      const openApprovals = sanApprovals.filter(
+        (a) => !["approved", "rejected", "cancelled"].includes(a.status)
+      ).length;
+      return { id: p.id, name: p.name, totalTasks: pt.length, completed, inProgress, delayed, totalSeconds, progress, openApprovals };
+    }),
+    [projects, tasks, period, liveSecondsMap, approvals]
+  );
+
+  const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) ?? null : null;
+
+  const periodLabel = PERIOD_OPTIONS.find((o) => o.value === period)?.label ?? "30 dias";
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* ── Filtro de projeto ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          background: "var(--surface-2)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          padding: "12px 16px",
+        }}
+      >
+        <span className="text-xs font-semibold text-muted" style={{ marginRight: 4, whiteSpace: "nowrap" }}>
+          Filtrar por projeto:
+        </span>
+
+        <button
+          onClick={() => setSelectedProjectId(null)}
+          style={{
+            padding: "6px 14px",
+            borderRadius: 999,
+            border: "1px solid",
+            borderColor: !selectedProjectId ? "var(--primary)" : "var(--border)",
+            background: !selectedProjectId ? "var(--primary)" : "transparent",
+            color: !selectedProjectId ? "#fff" : "var(--muted-fg)",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "all 0.15s",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Todos ({projects.length})
+        </button>
+
+        {projects.map((p) => {
+          const isActive = selectedProjectId === p.id;
+          return (
+            <button
+              key={p.id}
+              onClick={() => setSelectedProjectId(isActive ? null : p.id)}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 999,
+                border: "1px solid",
+                borderColor: isActive ? "var(--primary)" : "var(--border)",
+                background: isActive ? "var(--primary)" : "transparent",
+                color: isActive ? "#fff" : "var(--foreground)",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.15s",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {p.name}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Se projeto selecionado: detalhe do projeto ── */}
+      {selectedProject ? (
+        <>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedProjectId(null)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                color: "var(--muted-fg)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+                fontWeight: 500,
+              }}
+            >
+              ← Todos os projetos de {getDisciplineLabel(discipline)}
+            </button>
+          </div>
+          <DashboardProjeto
+            project={selectedProject}
+            tasks={tasks}
+            users={users}
+            liveSecondsMap={liveSecondsMap}
+            period={period}
+          />
+        </>
+      ) : (
+        <>
+          {/* ── KPIs agregados ── */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <KpiClean
+              label="Projetos"
+              value={projects.length}
+              icon={<FolderKanban size={18} />}
+            />
+            <KpiClean
+              label="Tarefas no período"
+              value={stats.total}
+              icon={<ClipboardCheck size={18} />}
+            />
+            <KpiClean
+              label="Concluídas"
+              value={stats.completed}
+              icon={<CheckCircle2 size={18} />}
+              variant="success"
+            />
+            <KpiClean
+              label="Em atraso"
+              value={stats.delayed}
+              icon={<AlertTriangle size={18} />}
+              variant={stats.delayed > 0 ? "danger" : "success"}
+            />
+            <KpiClean
+              label="Horas produzidas"
+              value={`${(stats.totalSeconds / 3600).toFixed(1)}h`}
+              icon={<Timer size={18} />}
+              variant="purple"
+            />
+            <KpiClean
+              label="Taxa de conclusão"
+              value={`${stats.completionRate}%`}
+              icon={<TrendingUp size={18} />}
+              variant="info"
+            />
+          </div>
+
+          {/* ── Cards de projetos ── */}
+          <div>
+            <h3 className="text-sm font-semibold text-muted mb-3" style={{ textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Projetos · {periodLabel}
+            </h3>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: 14,
+              }}
+            >
+              {projectCards.map((pc) => (
+                <button
+                  key={pc.id}
+                  onClick={() => setSelectedProjectId(pc.id)}
+                  style={{
+                    textAlign: "left",
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 14,
+                    padding: "18px 20px",
+                    cursor: "pointer",
+                    transition: "border-color 0.15s, box-shadow 0.15s",
+                    width: "100%",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--primary)";
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 0 3px var(--primary-soft)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border)";
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
+                  }}
+                >
+                  {/* Nome + badge atraso */}
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="font-semibold text-sm" style={{ lineHeight: 1.4 }}>
+                      {pc.name}
+                    </div>
+                    {pc.delayed > 0 && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "3px 8px",
+                          borderRadius: 999,
+                          background: "var(--danger-soft)",
+                          color: "var(--danger)",
+                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {pc.delayed} atrasada{pc.delayed > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Barra de progresso */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-muted">Progresso</span>
+                      <span className="text-xs font-bold" style={{ color: pc.progress === 100 ? "var(--success)" : "var(--primary)" }}>
+                        {pc.progress}%
+                      </span>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 3, background: "var(--surface-3)", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          width: `${pc.progress}%`,
+                          height: "100%",
+                          borderRadius: 3,
+                          background: pc.progress === 100
+                            ? CHART_COLORS.success
+                            : `linear-gradient(90deg, ${CHART_COLORS.primary}, ${CHART_COLORS.primaryLight})`,
+                          transition: "width 600ms ease",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Mini stats */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                    <div style={{ background: "var(--surface-2)", borderRadius: 8, padding: "8px 10px" }}>
+                      <div className="text-xs text-muted" style={{ marginBottom: 2 }}>Tarefas</div>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{pc.totalTasks}</div>
+                    </div>
+                    <div style={{ background: "var(--surface-2)", borderRadius: 8, padding: "8px 10px" }}>
+                      <div className="text-xs text-muted" style={{ marginBottom: 2 }}>Horas</div>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{(pc.totalSeconds / 3600).toFixed(1)}h</div>
+                    </div>
+                    <div style={{ background: "var(--surface-2)", borderRadius: 8, padding: "8px 10px" }}>
+                      <div className="text-xs text-muted" style={{ marginBottom: 2 }}>Concluídas</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--success)" }}>{pc.completed}</div>
+                    </div>
+                  </div>
+
+                  {pc.openApprovals > 0 && (
+                    <div
+                      className="flex items-center gap-2 mt-3"
+                      style={{
+                        fontSize: 11,
+                        color: "var(--warning-fg)",
+                        background: "var(--warning-soft)",
+                        borderRadius: 6,
+                        padding: "5px 10px",
+                      }}
+                    >
+                      <ClipboardCheck size={11} />
+                      {pc.openApprovals} aprovação(ões) pendente(s)
+                    </div>
+                  )}
+
+                  <div
+                    className="flex items-center gap-1 mt-3"
+                    style={{ fontSize: 11, color: "var(--primary)", fontWeight: 600 }}
+                  >
+                    Ver dashboard completo <ArrowRight size={11} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Page principal ──────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -2765,8 +3121,13 @@ export default function DashboardPage() {
     [tasks]
   );
 
-  const activeProject = useMemo(
-    () => projects.find((p) => p.id === activeTab) ?? null,
+  const disciplines = useMemo(
+    () => [...new Set(projects.map((p) => p.discipline).filter(Boolean))] as string[],
+    [projects]
+  );
+
+  const activeDisciplineProjects = useMemo(
+    () => (activeTab !== "geral" ? projects.filter((p) => p.discipline === activeTab) : []),
     [projects, activeTab]
   );
 
@@ -2799,15 +3160,15 @@ export default function DashboardPage() {
               <Activity size={14} />
               Visão geral
             </button>
-            {projects.map((p) => (
+            {disciplines.map((disc) => (
               <button
-                key={p.id}
+                key={disc}
                 className="tab"
-                data-active={activeTab === p.id ? "true" : "false"}
-                onClick={() => setActiveTab(p.id)}
+                data-active={activeTab === disc ? "true" : "false"}
+                onClick={() => setActiveTab(disc)}
               >
-                <FolderKanban size={14} />
-                {p.name}
+                {getDisciplineIcon(disc)}
+                {getDisciplineLabel(disc)}
               </button>
             ))}
           </div>
@@ -2839,11 +3200,14 @@ export default function DashboardPage() {
           liveSecondsMap={liveSecondsMap}
           period={period}
         />
-      ) : activeProject ? (
-        <DashboardProjeto
-          project={activeProject}
+      ) : activeDisciplineProjects.length > 0 ? (
+        <DashboardDisciplina
+          discipline={activeTab}
+          projects={activeDisciplineProjects}
           tasks={tasks}
           users={users}
+          approvals={approvals}
+          phases={phases}
           liveSecondsMap={liveSecondsMap}
           period={period}
         />
