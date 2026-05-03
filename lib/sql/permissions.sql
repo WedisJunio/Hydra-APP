@@ -196,19 +196,28 @@ ALTER TABLE public.meeting_participants ENABLE ROW LEVEL SECURITY;
 -- ─── 3. POLICIES — USERS ────────────────────────────────────────────────────
 -- Todos veem todos (lista de colegas). Admin/manager criam. Cada um edita o
 -- próprio registro; admin ou gestão (coord./líder/gerência) pode editar qualquer um. Só admin exclui.
+-- Auto-cadastro: usuário recém-registrado pode inserir seu próprio perfil
+-- (auth_user_id = auth.uid()).
 
-DROP POLICY IF EXISTS users_select  ON public.users;
-DROP POLICY IF EXISTS users_insert  ON public.users;
-DROP POLICY IF EXISTS users_update  ON public.users;
-DROP POLICY IF EXISTS users_delete  ON public.users;
+DROP POLICY IF EXISTS users_select      ON public.users;
+DROP POLICY IF EXISTS users_insert      ON public.users;
+DROP POLICY IF EXISTS users_self_insert ON public.users;
+DROP POLICY IF EXISTS users_update      ON public.users;
+DROP POLICY IF EXISTS users_delete      ON public.users;
 
 CREATE POLICY users_select ON public.users
   FOR SELECT TO authenticated
   USING (true);
 
+-- Admins/managers criam qualquer usuário (cadastro administrativo)
 CREATE POLICY users_insert ON public.users
   FOR INSERT TO authenticated
   WITH CHECK (public.is_manager_or_above());
+
+-- Auto-cadastro: a pessoa pode criar seu próprio registro vinculando ao auth.uid()
+CREATE POLICY users_self_insert ON public.users
+  FOR INSERT TO authenticated
+  WITH CHECK (auth_user_id = auth.uid());
 
 CREATE POLICY users_update ON public.users
   FOR UPDATE TO authenticated
