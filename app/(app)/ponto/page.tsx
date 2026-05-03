@@ -52,6 +52,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showErrorToast, showInfoToast, showSuccessToast } from "@/lib/toast";
 
 // ─── Helpers de formatação ─────────────────────────────────────────────────
 
@@ -96,6 +97,36 @@ const MONTH_NAMES = [
   "Novembro",
   "Dezembro",
 ];
+
+const AUTO_PAUSED_TASKS_KEY_PREFIX = "hydra-auto-paused-tasks";
+
+function autoPausedTasksStorageKey(userId: string) {
+  return `${AUTO_PAUSED_TASKS_KEY_PREFIX}:${userId}`;
+}
+
+function appendAutoPauseReason(
+  description: string | null,
+  reason: string,
+  iso: string
+) {
+  const stamp = new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const line = `[Pausa automática ${stamp}] ${reason}`;
+  const base = (description || "").trim();
+  return base ? `${base}\n${line}` : line;
+}
+
+function localIsoDay(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
 
 // ─── Componentes auxiliares ────────────────────────────────────────────────
 
@@ -331,6 +362,130 @@ function MyPontoTab({ profile }: { profile: CurrentProfile }) {
   const weekSeconds = sumDurationSeconds(week, new Date(now));
   const monthSeconds = sumDurationSeconds(month, new Date(now));
 
+  async function autoPauseRunningTasksForUser(userId: string) {
+    const { data, error } = await supabase
+      .from("tasks")
+      .select(
+        "id, title, description, status, started_at, time_spent_seconds, is_timer_running"
+      )
+      .eq("assigned_to", userId)
+      .eq("is_timer_running", true)
+      .neq("status", "completed");
+
+    if (error) {
+      showErrorToast("Falha ao pausar tarefas", error.message);
+      return;
+    }
+
+    const running =
+      (data as {
+        id: string;
+        title: string;
+        description: string | null;
+        status: string;
+        started_at: string | null;
+        time_spent_seconds: number | null;
+        is_timer_running: boolean;
+      }[]) || [];
+    if (running.length === 0) return;
+
+    const pausedAtIso = new Date().toISOString();
+    const taskIds: string[] = [];
+    for (const task of running) {
+      const baseSeconds = task.time_spent_seconds || 0;
+      const runningSeconds =
+        task.started_at && task.is_timer_running
+          ? Math.max(
+              Math.floor(
+                (Date.now() - new Date(task.started_at).getTime()) / 1000
+              ),
+              0
+            )
+          : 0;
+      const totalSeconds = baseSeconds + runningSeconds;
+      const nextDescription = appendAutoPauseReason(
+        task.description,
+        "Encerramento de expediente (Ponto).",
+        pausedAtIso
+      );
+
+      const { error: updateError } = await supabase
+        .from("tasks")
+        .update({
+          time_spent_seconds: totalSeconds,
+          paused_at: pausedAtIso,
+          started_at: null,
+          is_timer_running: false,
+          description: nextDescription,
+        })
+        .eq("id", task.id);
+      if (!updateError) {
+        taskIds.push(task.id);
+      }
+    }
+
+    if (taskIds.length > 0) {
+      window.localStorage.setItem(
+        autoPausedTasksStorageKey(userId),
+        JSON.stringify({ pausedAtIso, taskIds })
+      );
+      showInfoToast(
+        "Tarefas pausadas automaticamente",
+        `${taskIds.length} tarefa(s) pausada(s) ao encerrar o ponto.`
+      );
+    }
+  }
+
+  async function autoResumeTasksOnNextDay(userId: string) {
+    const raw = window.localStorage.getItem(autoPausedTasksStorageKey(userId));
+    if (!raw) return;
+
+    try {
+      const payload = JSON.parse(raw) as {
+        pausedAtIso?: string;
+        taskIds?: string[];
+      };
+      const taskIds = payload.taskIds || [];
+      const pausedAtIso = payload.pausedAtIso;
+      if (!pausedAtIso || taskIds.length === 0) {
+        window.localStorage.removeItem(autoPausedTasksStorageKey(userId));
+        return;
+      }
+
+      // Regra pedida: retomar automaticamente apenas no próximo dia.
+      if (localIsoDay(pausedAtIso) === localIsoDay(new Date().toISOString())) {
+        return;
+      }
+
+      const startedAtIso = new Date().toISOString();
+      let resumed = 0;
+      for (const taskId of taskIds) {
+        const { error } = await supabase
+          .from("tasks")
+          .update({
+            started_at: startedAtIso,
+            paused_at: null,
+            is_timer_running: true,
+            status: "in_progress",
+          })
+          .eq("id", taskId)
+          .eq("assigned_to", userId)
+          .neq("status", "completed");
+        if (!error) resumed += 1;
+      }
+
+      window.localStorage.removeItem(autoPausedTasksStorageKey(userId));
+      if (resumed > 0) {
+        showSuccessToast(
+          "Tarefas retomadas automaticamente",
+          `${resumed} tarefa(s) iniciada(s) ao bater o ponto hoje.`
+        );
+      }
+    } catch {
+      window.localStorage.removeItem(autoPausedTasksStorageKey(userId));
+    }
+  }
+
   async function handleClockIn() {
     if (working || openEntry) return;
     setWorking(true);
@@ -350,13 +505,14 @@ function MyPontoTab({ profile }: { profile: CurrentProfile }) {
     if (error || !data) {
       setOpenEntry(null);
       setAllEntries((prev) => prev.filter((e) => e.id !== optimistic.id));
-      alert(`Erro ao iniciar expediente: ${error}`);
+      showErrorToast("Erro ao iniciar expediente", error || "Falha inesperada.");
     } else {
       setOpenEntry(data);
       setAllEntries((prev) => {
         const filtered = prev.filter((e) => e.id !== optimistic.id);
         return [data, ...filtered];
       });
+      await autoResumeTasksOnNextDay(profile.id);
     }
     setNotesIn("");
     setWorking(false);
@@ -385,9 +541,10 @@ function MyPontoTab({ profile }: { profile: CurrentProfile }) {
       setAllEntries((prev) =>
         prev.map((e) => (e.id === previousOpen.id ? previousOpen : e))
       );
-      alert(`Erro ao encerrar expediente: ${error}`);
+      showErrorToast("Erro ao encerrar expediente", error || "Falha inesperada.");
     } else {
       setAllEntries((prev) => prev.map((e) => (e.id === data.id ? data : e)));
+      await autoPauseRunningTasksForUser(profile.id);
     }
     setNotesOut("");
     setWorking(false);

@@ -63,7 +63,25 @@ export async function getCurrentProfile(
       return null;
     }
 
-    cachedProfile = (data as CurrentProfile) ?? null;
+    let profile = (data as CurrentProfile) ?? null;
+
+    // Fallback para bases antigas onde auth_user_id ainda não foi vinculado,
+    // mas o usuário já existe na tabela public.users pelo mesmo e-mail.
+    if (!profile && user.email) {
+      const { data: emailData, error: emailError } = await supabase
+        .from("users")
+        .select("id, name, email, role, auth_user_id")
+        .ilike("email", user.email)
+        .limit(1)
+        .maybeSingle();
+      if (emailError) {
+        console.error("Erro ao buscar perfil por e-mail:", emailError.message);
+        return null;
+      }
+      profile = (emailData as CurrentProfile) ?? null;
+    }
+
+    cachedProfile = profile;
     cachedAuthUserId = user.id;
     return cachedProfile;
   })();

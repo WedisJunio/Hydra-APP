@@ -37,7 +37,16 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT id FROM public.users WHERE auth_user_id = auth.uid() LIMIT 1;
+  SELECT u.id
+  FROM public.users u
+  WHERE
+    u.auth_user_id = auth.uid()
+    OR (
+      u.auth_user_id IS NULL
+      AND LOWER(u.email) = LOWER(COALESCE(auth.jwt() ->> 'email', ''))
+    )
+  ORDER BY CASE WHEN u.auth_user_id = auth.uid() THEN 0 ELSE 1 END
+  LIMIT 1;
 $$;
 
 -- Papel (role) do usuário atual.
@@ -48,7 +57,16 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT role FROM public.users WHERE auth_user_id = auth.uid() LIMIT 1;
+  SELECT u.role
+  FROM public.users u
+  WHERE
+    u.auth_user_id = auth.uid()
+    OR (
+      u.auth_user_id IS NULL
+      AND LOWER(u.email) = LOWER(COALESCE(auth.jwt() ->> 'email', ''))
+    )
+  ORDER BY CASE WHEN u.auth_user_id = auth.uid() THEN 0 ELSE 1 END
+  LIMIT 1;
 $$;
 
 -- O usuário atual é admin?

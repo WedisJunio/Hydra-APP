@@ -143,6 +143,23 @@ function getDeadlineBadge(task: Task) {
   return null;
 }
 
+function appendPauseReason(
+  description: string | null,
+  reason: string,
+  pausedAtIso: string
+) {
+  const stamp = new Date(pausedAtIso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const line = `[Pausa ${stamp}] ${reason}`;
+  const base = (description || "").trim();
+  return base ? `${base}\n${line}` : line;
+}
+
 // ─── Sub-componentes ────────────────────────────────────────────────────────
 
 function StatTile({
@@ -501,11 +518,21 @@ export default function TasksPage() {
     showSuccessToast("Timer iniciado", `Produção iniciada em "${task.title}".`);
   }
 
-  async function handlePauseTimer(task: Task) {
+  async function handlePauseTimer(task: Task, reason: string) {
     if (!task.is_timer_running || !task.started_at) return;
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      showErrorToast("Motivo obrigatório", "Informe o motivo da pausa.");
+      return;
+    }
     const totalSeconds = getLiveSeconds(task);
     const previousTasks = tasks;
     const pausedIso = new Date().toISOString();
+    const nextDescription = appendPauseReason(
+      task.description,
+      trimmedReason,
+      pausedIso
+    );
 
     setTasks((prev) =>
       prev.map((t) =>
@@ -516,6 +543,7 @@ export default function TasksPage() {
               paused_at: pausedIso,
               started_at: null,
               is_timer_running: false,
+              description: nextDescription,
             }
           : t
       )
@@ -528,6 +556,7 @@ export default function TasksPage() {
         paused_at: pausedIso,
         started_at: null,
         is_timer_running: false,
+        description: nextDescription,
       })
       .eq("id", task.id);
     if (error) {
@@ -539,7 +568,7 @@ export default function TasksPage() {
       return;
     }
     await loadTasks({ silent: true });
-    showSuccessToast("Timer pausado", "Tempo registrado com sucesso.");
+    showSuccessToast("Timer pausado", `Motivo: ${trimmedReason}`);
   }
 
   async function handleFinishTask(task: Task) {
@@ -1111,7 +1140,18 @@ export default function TasksPage() {
                   size="sm"
                   variant="secondary"
                   leftIcon={<Pause size={12} />}
-                  onClick={() => handlePauseTimer(task)}
+                  onClick={() => {
+                    const reason = window.prompt("Motivo da pausa:");
+                    if (reason === null) return;
+                    if (!reason.trim()) {
+                      showErrorToast(
+                        "Motivo obrigatório",
+                        "Informe o motivo da pausa para continuar."
+                      );
+                      return;
+                    }
+                    handlePauseTimer(task, reason);
+                  }}
                 >
                   Pausar
                 </Button>
