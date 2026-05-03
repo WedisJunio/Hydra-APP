@@ -22,6 +22,7 @@ import {
 
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
+import { getSupabaseErrorMessage } from "@/lib/supabase/errors";
 import { showErrorToast, showInfoToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -77,6 +78,13 @@ type Meeting = {
   }[];
 };
 
+type PostgrestLikeError = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+};
+
 const EVENT_COLORS: { value: string; label: string }[] = [
   { value: "#22c55e", label: "Verde" },
   { value: "#3b82f6", label: "Azul" },
@@ -128,6 +136,20 @@ function hasScheduleConflict(
     const existingEnd = new Date(meeting.end_time).getTime();
     return newStart < existingEnd && newEnd > existingStart;
   });
+}
+
+function isMissingColumnError(error: PostgrestLikeError | null | undefined) {
+  return error?.code === "42703";
+}
+
+function getMeetingCreateErrorText(error: PostgrestLikeError | null | undefined) {
+  if (!error) return "Não foi possível salvar o agendamento.";
+  const raw = `${error.message || ""} ${error.details || ""} ${error.hint || ""}`.toLowerCase();
+
+  if (raw.includes("row-level security") || raw.includes("permission denied")) {
+    return "Sem permissão para criar reunião. Aplique o SQL de permissões e faça novo login.";
+  }
+  return getSupabaseErrorMessage(error);
 }
 
 type CalendarCursor = { y: number; m0: number };
@@ -312,15 +334,22 @@ export default function CalendarPage() {
 
     setCreating(true);
 
-    const { data: meeting, error } = await supabase
+    const basePayload = {
+      title,
+      description,
+      room_id: roomId,
+      created_by: profile.id,
+      start_time: startDateTime,
+      end_time: endDateTime,
+    };
+
+    let meeting: { id: string } | null = null;
+    let createError: PostgrestLikeError | null = null;
+
+    const firstAttempt = await supabase
       .from("meetings")
       .insert({
-        title,
-        description,
-        room_id: roomId,
-        created_by: profile.id,
-        start_time: startDateTime,
-        end_time: endDateTime,
+        ...basePayload,
         reminder_minutes: reminderMinutes,
         event_color: eventColor,
         is_private: isPrivate,
@@ -328,21 +357,41 @@ export default function CalendarPage() {
       .select("id")
       .single();
 
-    if (error || !meeting) {
-      showErrorToast("Erro ao criar reunião", "Não foi possível salvar o agendamento.");
+    meeting = firstAttempt.data;
+    createError = firstAttempt.error;
+
+    // Compatibilidade com banco legado (sem as colunas novas).
+    if (isMissingColumnError(createError)) {
+      const legacyAttempt = await supabase
+        .from("meetings")
+        .insert(basePayload)
+        .select("id")
+        .single();
+      meeting = legacyAttempt.data;
+      createError = legacyAttempt.error;
+    }
+
+    if (createError || !meeting) {
+      showErrorToast("Erro ao criar reunião", getMeetingCreateErrorText(createError));
       setCreating(false);
       return;
     }
 
     const participants = Array.from(new Set([...selectedParticipants, profile.id]));
     if (participants.length > 0) {
-      await supabase.from("meeting_participants").insert(
+      const { error: participantsError } = await supabase.from("meeting_participants").insert(
         participants.map((userId) => ({
           meeting_id: meeting.id,
           user_id: userId,
           status: "invited",
         }))
       );
+      if (participantsError) {
+        showInfoToast(
+          "Reunião criada com alerta",
+          "A reunião foi salva, mas alguns participantes não puderam ser vinculados."
+        );
+      }
     }
 
     setTitle("");
