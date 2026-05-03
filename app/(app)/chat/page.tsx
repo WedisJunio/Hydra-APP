@@ -101,12 +101,16 @@ export default function ChatPage() {
   const [content, setContent] = useState("");
   const [sending, setSending] = useState(false);
   const [mutedGroupIds, setMutedGroupIds] = useState<string[]>([]);
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | "unsupported"
+  >("unsupported");
 
   const [isNarrow, setIsNarrow] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"list" | "chat">("list");
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const senderNameCache = useRef<Record<string, string>>({});
+  const notifiedPermissionRef = useRef(false);
 
   const canCreateGroup = canCreateChatGroup(currentUserRole);
 
@@ -262,10 +266,45 @@ export default function ChatPage() {
     return name;
   }, []);
 
+  const requestBrowserNotificationPermission = useCallback(async () => {
+    if (!("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return "unsupported" as const;
+    }
+
+    if (Notification.permission === "granted") {
+      setNotificationPermission("granted");
+      return "granted" as const;
+    }
+
+    if (Notification.permission === "denied") {
+      setNotificationPermission("denied");
+      return "denied" as const;
+    }
+
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    if (permission === "granted") {
+      showSuccessToast(
+        "Notificações ativadas",
+        "Você receberá pop-up de novas mensagens no navegador."
+      );
+    }
+    return permission;
+  }, []);
+
   useEffect(() => {
     loadCurrentProfile();
     loadProjects();
     loadChatGroups();
+  }, []);
+
+  useEffect(() => {
+    if (!("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+    setNotificationPermission(Notification.permission);
   }, []);
 
   useEffect(() => {
@@ -364,14 +403,24 @@ export default function ChatPage() {
 
     showInfoToast(`Nova mensagem em ${groupLabel}`, `${senderName}: ${text}`);
 
-    if (
-      document.hidden &&
-      "Notification" in window &&
-      Notification.permission === "granted"
-    ) {
+    if ("Notification" in window && Notification.permission === "granted") {
       new Notification(`Nova mensagem em ${groupLabel}`, {
         body: `${senderName}: ${text}`,
+        tag: `chat-${payload.groupId}`,
       });
+      return;
+    }
+
+    if (
+      "Notification" in window &&
+      Notification.permission === "default" &&
+      !notifiedPermissionRef.current
+    ) {
+      notifiedPermissionRef.current = true;
+      showInfoToast(
+        "Ative as notificações",
+        "Clique em 'Ativar pop-up' para receber alertas com o site minimizado."
+      );
     }
   }
 
@@ -593,6 +642,19 @@ export default function ChatPage() {
                 >
                   {selectedGroupMuted ? "Silenciado" : "Silenciar"}
                 </Button>
+                {notificationPermission !== "granted" && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    leftIcon={<Bell size={14} />}
+                    onClick={() => {
+                      requestBrowserNotificationPermission();
+                    }}
+                    title="Permitir notificações no navegador"
+                  >
+                    Ativar pop-up
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"
