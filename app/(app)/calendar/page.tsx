@@ -22,6 +22,7 @@ import {
 
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
+import { showErrorToast, showInfoToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Textarea, Select } from "@/components/ui/input";
@@ -178,6 +179,7 @@ export default function CalendarPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [currentProfileId, setCurrentProfileId] = useState<string | null>(null);
 
   const [selectedDate, setSelectedDate] = useState(toDateInputValue(new Date()));
   const [selectedRoomFilter, setSelectedRoomFilter] = useState("");
@@ -287,24 +289,24 @@ export default function CalendarPage() {
 
   async function handleCreateMeeting() {
     if (!title.trim() || !roomId || !selectedDate || !startTime || !endTime) {
-      alert("Preencha título, sala, data, início e fim.");
+      showErrorToast("Campos obrigatórios", "Preencha título, sala, data, início e fim.");
       return;
     }
     const startDateTime = `${selectedDate}T${startTime}:00`;
     const endDateTime = `${selectedDate}T${endTime}:00`;
 
     if (new Date(endDateTime).getTime() <= new Date(startDateTime).getTime()) {
-      alert("O horário final precisa ser maior que o horário inicial.");
+      showErrorToast("Horário inválido", "O horário final precisa ser maior que o horário inicial.");
       return;
     }
     if (hasScheduleConflict(meetings, roomId, startDateTime, endDateTime)) {
-      alert("Essa sala já está ocupada nesse horário.");
+      showErrorToast("Conflito de agenda", "Essa sala já está ocupada nesse horário.");
       return;
     }
 
     const profile = await getCurrentProfile();
     if (!profile) {
-      alert("Usuário não autenticado.");
+      showErrorToast("Sessão inválida", "Faça login novamente para agendar reuniões.");
       return;
     }
 
@@ -327,7 +329,7 @@ export default function CalendarPage() {
       .single();
 
     if (error || !meeting) {
-      alert("Erro ao criar reunião.");
+      showErrorToast("Erro ao criar reunião", "Não foi possível salvar o agendamento.");
       setCreating(false);
       return;
     }
@@ -356,6 +358,10 @@ export default function CalendarPage() {
     await loadMeetings();
     if (viewMode === "month") await loadMonthAgenda();
 
+    showSuccessToast(
+      "Reunião agendada",
+      `${title.trim()} • ${new Date(startDateTime).toLocaleDateString("pt-BR")} às ${startTime}`
+    );
     setCreating(false);
   }
 
@@ -363,7 +369,7 @@ export default function CalendarPage() {
     if (!window.confirm("Excluir esta reunião?")) return;
     const { error } = await supabase.from("meetings").delete().eq("id", meetingId);
     if (error) {
-      alert("Você não tem permissão para excluir esta reunião.");
+      showErrorToast("Sem permissão", "Você não tem permissão para excluir esta reunião.");
       return;
     }
     await loadMeetings();
@@ -376,6 +382,9 @@ export default function CalendarPage() {
   }
 
   useEffect(() => {
+    getCurrentProfile().then((profile) => {
+      setCurrentProfileId(profile?.id || null);
+    });
     loadRooms();
     loadUsers();
   }, []);
@@ -395,7 +404,33 @@ export default function CalendarPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "meetings" },
-        async () => {
+        async (payload) => {
+          if (payload.eventType === "INSERT") {
+            const row = payload.new as {
+              title?: string;
+              start_time?: string;
+              created_by?: string | null;
+            };
+            if (row.created_by && row.created_by !== currentProfileId) {
+              const when = row.start_time
+                ? new Date(row.start_time).toLocaleString("pt-BR", {
+                    day: "2-digit",
+                    month: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "horário indefinido";
+              const text = `${row.title || "Reunião"} • ${when}`;
+              showInfoToast("Nova reunião marcada", text);
+              if (
+                document.hidden &&
+                "Notification" in window &&
+                Notification.permission === "granted"
+              ) {
+                new Notification("Nova reunião marcada", { body: text });
+              }
+            }
+          }
           await loadMeetings();
           if (viewMode === "month") await loadMonthAgenda();
         }
@@ -404,7 +439,7 @@ export default function CalendarPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [loadMeetings, loadMonthAgenda, viewMode]);
+  }, [currentProfileId, loadMeetings, loadMonthAgenda, viewMode]);
 
   const filteredMeetings = useMemo(() => {
     if (!selectedRoomFilter) return meetings;
