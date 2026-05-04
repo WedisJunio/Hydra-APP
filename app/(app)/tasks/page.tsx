@@ -1178,6 +1178,9 @@ export default function TasksPage() {
         className="task-card-hover"
         style={{
           position: "relative",
+          flexShrink: 0,
+          width: "100%",
+          alignSelf: "stretch",
           background: "var(--surface)",
           border: "1px solid var(--border)",
           borderRadius: 12,
@@ -1263,7 +1266,12 @@ export default function TasksPage() {
           {task.description && !compact && (
             <p
               className="text-sm text-muted mb-3"
-              style={{ lineHeight: 1.5, marginTop: 0 }}
+              style={{
+                lineHeight: 1.45,
+                marginTop: 0,
+                overflowWrap: "anywhere",
+                wordBreak: "break-word",
+              }}
             >
               {task.description.length > 110
                 ? task.description.slice(0, 110) + "…"
@@ -1772,13 +1780,14 @@ export default function TasksPage() {
 
               {/* Column body */}
               <div
-                className="kanban-column-body flex flex-col gap-2"
+                className="kanban-column-body flex flex-col gap-4"
                 style={{
-                  padding: 10,
-                  flex: 1,
+                  padding: "10px 10px 14px",
+                  flex: "1 1 auto",
+                  minHeight: 0,
                   maxHeight: "calc(100vh - 380px)",
-                  minHeight: 200,
                   overflowY: "auto",
+                  overflowX: "hidden",
                 }}
               >
                 {columnTasks.map((task) => renderTaskCard(task))}

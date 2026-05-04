@@ -999,17 +999,31 @@ p { margin: 0; }
   100% { background-position: -200% 0; }
 }
 
-/* ─── Kanban: hover lift e drag handle ─────────────────────── */
+/* ─── Kanban: hover só com elevação visual (translateY tirava espaço visual e sobrepunha outros cards)
+    ───────────────────────────────────────────────────────────── */
+.task-card-hover {
+  position: relative;
+  z-index: 0;
+}
 .task-card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.08), 0 2px 4px rgba(2, 6, 23, 0.05);
+  z-index: 2;
+  box-shadow:
+    0 10px 24px rgba(2, 6, 23, 0.1),
+    0 4px 8px rgba(2, 6, 23, 0.06);
+}
+[data-theme="hydra"] .task-card-hover:hover,
+[data-theme="dark"] .task-card-hover:hover {
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 .task-card-hover:hover .task-card-handle {
   opacity: 1 !important;
 }
 
-/* ─── Kanban: scrollbar custom da coluna ───────────────────── */
+/* ─── Kanban: scroll dentro de flex + scrollbar ─────────────────── */
 .kanban-column-body {
+  min-height: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
