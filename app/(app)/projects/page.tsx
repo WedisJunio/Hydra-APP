@@ -25,6 +25,7 @@ import {
   TrendingUp,
   Droplets,
   BarChart3,
+  GanttChartSquare,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -55,6 +56,7 @@ import {
   getLiveSeconds as getDashLiveSeconds,
 } from "@/components/dashboard/engine";
 import SaneamentoListPage from "@/app/(app)/saneamento/page";
+import { GanttChart } from "@/components/projects/gantt-chart";
 import type {
   Approval,
   Phase,
@@ -102,6 +104,7 @@ type Task = {
   actual_completed_date: string | null;
   completed_at: string | null;
   created_at: string | null;
+  start_date?: string | null;
   time_spent_seconds: number;
   is_timer_running: boolean;
   started_at: string | null;
@@ -500,7 +503,12 @@ export default function ProjectsPage() {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [period, setPeriod] = useState<PeriodKey>("30d");
   const [activeProjectsTab, setActiveProjectsTab] = useState<"todos" | string>("todos");
-  const [activeSaneamentoView, setActiveSaneamentoView] = useState<"dashboard" | "portfolio">("dashboard");
+  const [activeSaneamentoView, setActiveSaneamentoView] = useState<
+    "dashboard" | "gantt" | "portfolio"
+  >("dashboard");
+  const [activeDisciplineView, setActiveDisciplineView] = useState<
+    "dashboard" | "gantt"
+  >("dashboard");
 
   const projetistaSomenteTarefas = isNarrowProjetista(myRole);
   const podeCriarProjeto = canCreateProject(myRole);
@@ -556,7 +564,7 @@ export default function ProjectsPage() {
     const { data } = await supabase
       .from("tasks")
       .select(
-        "id, title, status, project_id, assigned_to, created_by, planned_due_date, actual_completed_date, completed_at, created_at, time_spent_seconds, is_timer_running, started_at"
+        "id, title, status, project_id, assigned_to, created_by, planned_due_date, actual_completed_date, completed_at, created_at, start_date, time_spent_seconds, is_timer_running, started_at"
       );
     setTasks((data as Task[]) || []);
   }
@@ -631,8 +639,8 @@ export default function ProjectsPage() {
     };
   }
 
-  function getProjectDates(projectId: string) {
-    const projectTasks = getProjectTasks(projectId);
+  function getProjectDates(project: Project) {
+    const projectTasks = getProjectTasks(project.id);
 
     const plannedDates = projectTasks
       .map((t) => t.planned_due_date)
@@ -647,11 +655,16 @@ export default function ProjectsPage() {
       ? plannedDates.reduce((max, d) => (d > max ? d : max))
       : null;
 
-    const actualEnd = actualDates.length > 0
+    // Termino real e a coluna persistida em projects.actual_end_date
+    // (preenchida automaticamente pelo trigger quando todas as tarefas
+    // estao concluidas). Como fallback visual, usamos a maior data de
+    // conclusao entre as tarefas para o caso de "ultima entrega" parcial.
+    const partialEnd = actualDates.length > 0
       ? actualDates.reduce((max, d) => (d > max ? d : max))
       : null;
+    const actualEnd = project.actual_end_date ?? partialEnd;
 
-    return { plannedEnd, actualEnd };
+    return { plannedEnd, actualEnd, partialEnd };
   }
 
   // ─── CRUD handlers ─────────────────────────────────────────────────────────
@@ -900,7 +913,7 @@ export default function ProjectsPage() {
 
   // ─── PDF ──────────────────────────────────────────────────────────────────
 
-  function handleGenerateProjectPdf(project: Project) {
+  async function handleGenerateProjectPdf(project: Project) {
     const projectTasks = getProjectTasks(project.id);
     const projectMembers = getProjectMembers(project.id);
 
@@ -958,7 +971,7 @@ export default function ProjectsPage() {
     const totalSeconds = projectTasks.reduce((sum, task) => sum + getLiveSeconds(task), 0);
     const averageSeconds = totalTasks > 0 ? Math.round(totalSeconds / totalTasks) : 0;
 
-    generateProjectDashboardPdf({
+    await generateProjectDashboardPdf({
       projectName: project.name,
       leaderName: getUserName(project.leader_id),
       managerName: getUserName(project.manager_id),
@@ -979,7 +992,7 @@ export default function ProjectsPage() {
 
   function renderProjectCard(project: Project, isList: boolean) {
     const stats = getProjectStats(project);
-    const dates = getProjectDates(project.id);
+    const dates = getProjectDates(project);
     const isExpanded = expandedProjectId === project.id;
     const projectMembers = getProjectMembers(project.id);
     const projectTasks = getProjectTasks(project.id);
@@ -1167,14 +1180,21 @@ export default function ProjectsPage() {
                     }
                     tone="muted"
                   />
-                  {dates.actualEnd && (
+                  {project.actual_end_date && stats.progress >= 100 ? (
                     <ProjectDateChip
                       icon={<CheckCircle2 size={11} />}
-                      label="Concluído"
-                      value={formatBRDate(dates.actualEnd)}
+                      label="Término real"
+                      value={formatBRDate(project.actual_end_date)}
                       tone="success"
                     />
-                  )}
+                  ) : dates.partialEnd ? (
+                    <ProjectDateChip
+                      icon={<CalendarDays size={11} />}
+                      label="Última entrega"
+                      value={formatBRDate(dates.partialEnd)}
+                      tone="warning"
+                    />
+                  ) : null}
                   <ProjectDateChip
                     icon={<Sparkles size={11} />}
                     label="Criado"
@@ -1726,14 +1746,22 @@ export default function ProjectsPage() {
           isSaneamentoTab
             ? activeSaneamentoView === "dashboard"
               ? "Painel de saneamento com gráficos, desempenho e acompanhamento por projeto."
+              : activeSaneamentoView === "gantt"
+              ? "Cronograma das tarefas dos projetos de saneamento em formato Gantt."
               : "Visão operacional dos projetos de saneamento, igual ao fluxo atual da área."
+            : activeProjectsTab !== "todos"
+            ? activeDisciplineView === "gantt"
+              ? "Cronograma das tarefas em formato Gantt, com prazos e progresso por projeto."
+              : "Painel da disciplina selecionada, com indicadores e desempenho."
             : projetistaSomenteTarefas
             ? "Projetos onde você participa. Você pode criar e acompanhar tarefas; edição do projeto é feita por coordenação ou projetista líder."
             : "Visão completa por projeto, com equipe, carga e indicadores de risco."
         }
         actions={
           activeProjectsTab !== "todos" &&
-          (!isSaneamentoTab || activeSaneamentoView === "dashboard") ? (
+          (isSaneamentoTab
+            ? activeSaneamentoView === "dashboard"
+            : activeDisciplineView === "dashboard") ? (
             <PeriodFilter value={period} onChange={setPeriod} />
           ) : podeCriarProjeto ? (
             <Button
@@ -1786,16 +1814,47 @@ export default function ProjectsPage() {
 
       {/* ─── Discipline tab content ────────────────────────────── */}
       {activeProjectsTab !== "todos" && !isSaneamentoTab && (
-        <DashboardDisciplina
-          discipline={activeProjectsTab}
-          projects={projects.filter((p) => p.discipline === activeProjectsTab) as DashProject[]}
-          tasks={tasks as DashTask[]}
-          users={users}
-          approvals={approvals}
-          phases={phases}
-          liveSecondsMap={liveSecondsMap}
-          period={period}
-        />
+        <div className="flex flex-col gap-5">
+          <div className="tabs" style={{ alignSelf: "flex-start" }}>
+            <button
+              className="tab"
+              data-active={activeDisciplineView === "dashboard" ? "true" : "false"}
+              onClick={() => setActiveDisciplineView("dashboard")}
+            >
+              <BarChart3 size={14} />
+              Dashboard
+            </button>
+            <button
+              className="tab"
+              data-active={activeDisciplineView === "gantt" ? "true" : "false"}
+              onClick={() => setActiveDisciplineView("gantt")}
+            >
+              <GanttChartSquare size={14} />
+              Gantt
+            </button>
+          </div>
+
+          {activeDisciplineView === "dashboard" ? (
+            <DashboardDisciplina
+              discipline={activeProjectsTab}
+              projects={projects.filter((p) => p.discipline === activeProjectsTab) as DashProject[]}
+              tasks={tasks as DashTask[]}
+              users={users}
+              approvals={approvals}
+              phases={phases}
+              liveSecondsMap={liveSecondsMap}
+              period={period}
+            />
+          ) : (
+            <GanttChart
+              projects={projects.filter(
+                (p) => p.discipline === activeProjectsTab
+              )}
+              tasks={tasks}
+              users={users}
+            />
+          )}
+        </div>
       )}
 
       {activeProjectsTab !== "todos" && isSaneamentoTab && (
@@ -1808,6 +1867,14 @@ export default function ProjectsPage() {
             >
               <BarChart3 size={14} />
               Dashboard
+            </button>
+            <button
+              className="tab"
+              data-active={activeSaneamentoView === "gantt" ? "true" : "false"}
+              onClick={() => setActiveSaneamentoView("gantt")}
+            >
+              <GanttChartSquare size={14} />
+              Gantt
             </button>
             <button
               className="tab"
@@ -1829,6 +1896,14 @@ export default function ProjectsPage() {
               phases={phases}
               liveSecondsMap={liveSecondsMap}
               period={period}
+            />
+          ) : activeSaneamentoView === "gantt" ? (
+            <GanttChart
+              projects={projects.filter(
+                (p) => p.discipline === activeProjectsTab
+              )}
+              tasks={tasks}
+              users={users}
             />
           ) : (
             <SaneamentoListPage />

@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { loadCompanyLogoDataUrl } from "@/lib/company-logo";
 
 export type ChatPdfMessage = {
   created_at: string;
@@ -188,7 +189,7 @@ function drawTopMetaCard(
 function drawFooters(doc: jsPDF, channelTitle: string, generatedAt: Date) {
   const total = doc.getNumberOfPages();
   const gen = generatedAt.toLocaleString("pt-BR");
-  const left = `HydraCode · ${channelTitle}`;
+  const left = channelTitle;
   const mid = `Gerado em ${gen}`;
 
   for (let i = 1; i <= total; i++) {
@@ -211,13 +212,13 @@ function drawFooters(doc: jsPDF, channelTitle: string, generatedAt: Date) {
 /**
  * Gera um PDF legível do histórico do chat (A4, tabela com quebra de página automática).
  */
-export function downloadChatTranscriptPdf(opts: {
+export async function downloadChatTranscriptPdf(opts: {
   channelTitle: string;
   groupTypeLabel: string;
   messages: ChatPdfMessage[];
   exportedBy?: string | null;
   generatedAt?: Date;
-}): void {
+}): Promise<void> {
   const {
     channelTitle,
     groupTypeLabel,
@@ -232,10 +233,22 @@ export function downloadChatTranscriptPdf(opts: {
     format: "a4",
   });
 
+  // Logo da empresa no topo do PDF
+  const logoDataUrl = await loadCompanyLogoDataUrl();
+  let titleX = MARGIN;
+  if (logoDataUrl) {
+    try {
+      doc.addImage(logoDataUrl, "PNG", MARGIN, 10, 16, 16, undefined, "FAST");
+      titleX = MARGIN + 20;
+    } catch {
+      // ignora se a imagem nao puder ser embutida
+    }
+  }
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.setTextColor(15, 23, 42);
-  doc.text("Histórico do chat", MARGIN, 22);
+  doc.text("Histórico do chat", titleX, 22);
 
   drawTopMetaCard(doc, { channelTitle, groupTypeLabel, messages, exportedBy });
   const tableStartY = 62;

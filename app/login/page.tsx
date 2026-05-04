@@ -6,6 +6,7 @@ import { Mail, Lock, ArrowRight, User } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
+import { COMPANY_LOGO_SRC } from "@/lib/company-logo";
 
 type Tab = "login" | "signup";
 
@@ -159,7 +160,14 @@ export default function LoginPage() {
         {/* Painel esquerdo — branding */}
         <div className="login-aside">
           <div style={{ position: "relative", zIndex: 1 }}>
-            <div className="login-logo">H</div>
+            <div className="login-logo">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={COMPANY_LOGO_SRC}
+                alt="Logo da empresa"
+                className="login-logo-img"
+              />
+            </div>
             <h1 className="login-title">
               Gestão de projetos<br />feita pra engenharia.
             </h1>
@@ -170,7 +178,7 @@ export default function LoginPage() {
           </div>
 
           <div className="login-copyright">
-            © {new Date().getFullYear()} HydraCode
+            © {new Date().getFullYear()}
           </div>
 
           <div aria-hidden className="login-orb" />
@@ -220,7 +228,7 @@ export default function LoginPage() {
             <form onSubmit={handleLogin}>
               <h2 className="login-form-title">Entrar na sua conta</h2>
               <p className="text-muted text-sm mb-6">
-                Acesse o painel HydraCode com suas credenciais.
+                Acesse a plataforma com suas credenciais.
               </p>
 
               <div className="flex flex-col gap-4">

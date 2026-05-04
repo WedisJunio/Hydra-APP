@@ -343,6 +343,11 @@ export default function TasksPage() {
   const [quickAddProjectId, setQuickAddProjectId] = useState("");
   const [quickAddCreating, setQuickAddCreating] = useState(false);
 
+  // Dialog de pausa de tarefa (substitui window.prompt)
+  const [pauseDialogTask, setPauseDialogTask] = useState<Task | null>(null);
+  const [pauseReason, setPauseReason] = useState("");
+  const [pauseSubmitting, setPauseSubmitting] = useState(false);
+
   const [, setClock] = useState(0);
 
   const hasRunningTimer = useMemo(
@@ -410,6 +415,95 @@ export default function TasksPage() {
 
   // ─── CRUD handlers ───────────────────────────────────────────────────────
 
+  /**
+   * Garante que o responsavel pela tarefa, o criador, o lider, o coordenador
+   * e o gerente do projeto estejam vinculados em project_members. Roda como
+   * fallback no client (existe tambem um trigger no banco para o mesmo fim).
+   */
+  async function ensureTaskTeamMembership(
+    projectId: string,
+    assignedTo: string | null,
+    createdBy: string
+  ) {
+    if (!projectId) return;
+    try {
+      const { data: project } = await supabase
+        .from("projects")
+        .select("leader_id, manager_id, coordinator_id")
+        .eq("id", projectId)
+        .maybeSingle();
+
+      type MemberRow = {
+        project_id: string;
+        user_id: string;
+        role: string;
+      };
+      const rows: MemberRow[] = [];
+      const seen = new Set<string>();
+      const push = (userId: string | null | undefined, role: string) => {
+        if (!userId || seen.has(userId)) return;
+        seen.add(userId);
+        rows.push({ project_id: projectId, user_id: userId, role });
+      };
+
+      push(assignedTo, "member");
+      push(createdBy, "member");
+      push(project?.leader_id ?? null, "leader");
+      push(project?.coordinator_id ?? null, "coordinator");
+      push(project?.manager_id ?? null, "manager");
+
+      if (rows.length === 0) return;
+
+      await supabase
+        .from("project_members")
+        .upsert(rows, { onConflict: "project_id,user_id", ignoreDuplicates: true });
+    } catch {
+      // best-effort: o trigger no banco e a fonte da verdade.
+    }
+  }
+
+  /**
+   * Recalcula projects.actual_end_date com base nas tarefas atuais.
+   * - Todas concluidas -> grava a maior data de conclusao.
+   * - Caso contrario   -> grava NULL.
+   * Roda como fallback no client; no banco existe trigger equivalente.
+   */
+  async function recalcProjectActualEndDate(projectId: string | null | undefined) {
+    if (!projectId) return;
+    try {
+      const { data: rows } = await supabase
+        .from("tasks")
+        .select("status, actual_completed_date, completed_at")
+        .eq("project_id", projectId);
+
+      const list = rows ?? [];
+      const total = list.length;
+      const completed = list.filter((t) => t.status === "completed");
+
+      let nextEnd: string | null = null;
+      if (total > 0 && completed.length === total) {
+        const dates = completed
+          .map((t) => {
+            if (t.actual_completed_date) return t.actual_completed_date;
+            if (t.completed_at) return String(t.completed_at).slice(0, 10);
+            return null;
+          })
+          .filter((d): d is string => !!d);
+        nextEnd =
+          dates.length > 0
+            ? dates.reduce((max, d) => (d > max ? d : max))
+            : getTodayLocalISO();
+      }
+
+      await supabase
+        .from("projects")
+        .update({ actual_end_date: nextEnd })
+        .eq("id", projectId);
+    } catch {
+      // ignora: trigger no banco trata o caso geral.
+    }
+  }
+
   async function handleCreateTask() {
     if (!newTaskTitle.trim() || !selectedProjectId) return;
     const profile = await getCurrentProfile();
@@ -441,6 +535,13 @@ export default function TasksPage() {
       setCreating(false);
       return;
     }
+
+    await ensureTaskTeamMembership(
+      selectedProjectId,
+      selectedAssignedTo || null,
+      profile.id
+    );
+    await recalcProjectActualEndDate(selectedProjectId);
 
     setNewTaskTitle("");
     setNewTaskDescription("");
@@ -484,6 +585,9 @@ export default function TasksPage() {
       return;
     }
 
+    await ensureTaskTeamMembership(quickAddProjectId, null, profile.id);
+    await recalcProjectActualEndDate(quickAddProjectId);
+
     setQuickAddTitle("");
     setQuickAddColumn(null);
     setQuickAddCreating(false);
@@ -499,6 +603,44 @@ export default function TasksPage() {
         "Você só pode iniciar tarefas sob sua responsabilidade."
       );
       return;
+    }
+
+    // Regra de foco unico: cada responsavel so pode ter UMA tarefa em
+    // andamento por vez. Antes de iniciar, conferimos se ha outra tarefa
+    // rodando para o mesmo usuario (consultando o banco para garantir
+    // consistencia mesmo se o estado local estiver dessincronizado).
+    const ownerId = task.assigned_to ?? currentProfileId;
+    if (ownerId) {
+      const localRunning = tasks.find(
+        (t) =>
+          t.id !== task.id &&
+          t.is_timer_running &&
+          (t.assigned_to ?? null) === ownerId
+      );
+      if (localRunning) {
+        showErrorToast(
+          "Você já tem uma tarefa em andamento",
+          `Pause "${localRunning.title}" antes de iniciar outra.`
+        );
+        return;
+      }
+
+      const { data: runningRows } = await supabase
+        .from("tasks")
+        .select("id, title")
+        .eq("assigned_to", ownerId)
+        .eq("is_timer_running", true)
+        .neq("id", task.id)
+        .limit(1);
+      if (runningRows && runningRows.length > 0) {
+        const other = runningRows[0] as { id: string; title: string };
+        showErrorToast(
+          "Você já tem uma tarefa em andamento",
+          `Pause "${other.title}" antes de iniciar outra.`
+        );
+        await loadTasks({ silent: true });
+        return;
+      }
     }
 
     const previousTasks = tasks;
@@ -598,6 +740,23 @@ export default function TasksPage() {
     showSuccessToast("Timer pausado", `Motivo: ${trimmedReason}`);
   }
 
+  async function handleConfirmPauseDialog() {
+    if (!pauseDialogTask) return;
+    const reason = pauseReason.trim();
+    if (!reason) {
+      showErrorToast(
+        "Motivo obrigatório",
+        "Informe o motivo da pausa para continuar."
+      );
+      return;
+    }
+    setPauseSubmitting(true);
+    await handlePauseTimer(pauseDialogTask, reason);
+    setPauseSubmitting(false);
+    setPauseDialogTask(null);
+    setPauseReason("");
+  }
+
   async function handleFinishTask(task: Task) {
     if (!canManageTask(task)) {
       showErrorToast(
@@ -649,6 +808,7 @@ export default function TasksPage() {
       );
       return;
     }
+    await recalcProjectActualEndDate(task.project_id);
     await loadTasks({ silent: true });
     showSuccessToast(
       "Tarefa concluída",
@@ -707,6 +867,7 @@ export default function TasksPage() {
       );
       return;
     }
+    await recalcProjectActualEndDate(task.project_id);
     await loadTasks({ silent: true });
     showSuccessToast(
       "Status atualizado",
@@ -734,6 +895,7 @@ export default function TasksPage() {
       showErrorToast("Não foi possível excluir a tarefa", getSupabaseErrorMessage(error));
       return;
     }
+    await recalcProjectActualEndDate(task?.project_id);
     showSuccessToast("Tarefa excluída", "A tarefa foi removida.");
   }
 
@@ -779,6 +941,16 @@ export default function TasksPage() {
       showErrorToast("Não foi possível salvar a tarefa", getSupabaseErrorMessage(error));
       return;
     }
+
+    const editedTask = tasks.find((task) => task.id === taskId);
+    if (editedTask?.project_id) {
+      await ensureTaskTeamMembership(
+        editedTask.project_id,
+        editedAssignedTo || null,
+        currentProfileId ?? ""
+      );
+    }
+
     handleCancelEdit();
     await loadTasks({ silent: true });
     showSuccessToast("Tarefa atualizada", "As alterações foram salvas.");
@@ -1186,31 +1358,41 @@ export default function TasksPage() {
           {/* Actions */}
           <div className="flex items-center justify-between gap-1 flex-wrap">
             <div className="flex items-center gap-1 flex-wrap">
-              {!task.is_timer_running && task.status !== "completed" && (
-                <Button
-                  size="sm"
-                  leftIcon={<Play size={12} />}
-                  onClick={() => handleStartTimer(task)}
-                >
-                  Iniciar
-                </Button>
-              )}
+              {!task.is_timer_running && task.status !== "completed" && (() => {
+                const ownerId = task.assigned_to ?? currentProfileId;
+                const blockingTask = ownerId
+                  ? tasks.find(
+                      (t) =>
+                        t.id !== task.id &&
+                        t.is_timer_running &&
+                        (t.assigned_to ?? null) === ownerId
+                    )
+                  : null;
+                const blocked = !!blockingTask;
+                return (
+                  <Button
+                    size="sm"
+                    leftIcon={<Play size={12} />}
+                    onClick={() => handleStartTimer(task)}
+                    disabled={blocked}
+                    title={
+                      blocked
+                        ? `Pause "${blockingTask?.title}" antes de iniciar outra.`
+                        : undefined
+                    }
+                  >
+                    Iniciar
+                  </Button>
+                );
+              })()}
               {task.is_timer_running && (
                 <Button
                   size="sm"
                   variant="secondary"
                   leftIcon={<Pause size={12} />}
                   onClick={() => {
-                    const reason = window.prompt("Motivo da pausa:");
-                    if (reason === null) return;
-                    if (!reason.trim()) {
-                      showErrorToast(
-                        "Motivo obrigatório",
-                        "Informe o motivo da pausa para continuar."
-                      );
-                      return;
-                    }
-                    handlePauseTimer(task, reason);
+                    setPauseDialogTask(task);
+                    setPauseReason("");
                   }}
                 >
                   Pausar
@@ -2053,6 +2235,322 @@ export default function TasksPage() {
           )}
         </div>
       )}
+
+      <PauseTaskDialog
+        task={pauseDialogTask}
+        reason={pauseReason}
+        onChangeReason={setPauseReason}
+        onCancel={() => {
+          if (pauseSubmitting) return;
+          setPauseDialogTask(null);
+          setPauseReason("");
+        }}
+        onConfirm={handleConfirmPauseDialog}
+        submitting={pauseSubmitting}
+        elapsedSeconds={
+          pauseDialogTask ? getLiveSeconds(pauseDialogTask) : 0
+        }
+      />
+    </div>
+  );
+}
+
+// ─── Dialog: pausar tarefa ───────────────────────────────────────────────────
+
+const PAUSE_PRESETS: { label: string; value: string; emoji: string }[] = [
+  { label: "Reunião", value: "Reunião", emoji: "📞" },
+  { label: "Almoço", value: "Pausa para almoço", emoji: "🍽️" },
+  { label: "Café/lanche", value: "Pausa para café", emoji: "☕" },
+  { label: "Outra demanda", value: "Atendendo outra demanda", emoji: "🔀" },
+  { label: "Aguardando info", value: "Aguardando informações", emoji: "⏳" },
+  { label: "Pausa pessoal", value: "Pausa pessoal", emoji: "🧘" },
+  { label: "Fim do expediente", value: "Fim do expediente", emoji: "🏠" },
+];
+
+function PauseTaskDialog({
+  task,
+  reason,
+  onChangeReason,
+  onCancel,
+  onConfirm,
+  submitting,
+  elapsedSeconds,
+}: {
+  task: Task | null;
+  reason: string;
+  onChangeReason: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  submitting: boolean;
+  elapsedSeconds: number;
+}) {
+  useEffect(() => {
+    if (!task) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        onConfirm();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [task, onCancel, onConfirm]);
+
+  if (!task) return null;
+
+  const trimmedLength = reason.trim().length;
+  const canConfirm = trimmedLength > 0 && !submitting;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pause-dialog-title"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.55)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 60,
+        padding: 16,
+        animation: "fadeIn 120ms ease-out",
+      }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--background)",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--border)",
+          boxShadow: "var(--shadow-lg)",
+          width: "100%",
+          maxWidth: 480,
+          padding: 0,
+          overflow: "hidden",
+          animation: "popIn 160ms ease-out",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "16px 20px 12px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background:
+                "linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(234, 88, 12, 0.18))",
+              color: "#d97706",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Pause size={18} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2
+              id="pause-dialog-title"
+              style={{
+                margin: 0,
+                fontSize: 16,
+                fontWeight: 700,
+                color: "var(--foreground)",
+                lineHeight: 1.3,
+              }}
+            >
+              Pausar tarefa
+            </h2>
+            <p
+              style={{
+                margin: "2px 0 0",
+                fontSize: 12,
+                color: "var(--muted-fg)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {task.title}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={submitting}
+            aria-label="Fechar"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--muted-fg)",
+              cursor: submitting ? "not-allowed" : "pointer",
+              padding: 4,
+              borderRadius: 6,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Tempo decorrido */}
+        <div
+          style={{
+            padding: "10px 20px",
+            background:
+              "linear-gradient(180deg, rgba(99, 102, 241, 0.06), transparent)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 12,
+            color: "var(--muted-fg)",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <Clock size={13} />
+          Tempo registrado até agora:{" "}
+          <strong style={{ color: "var(--foreground)", marginLeft: 2 }}>
+            {formatDuration(elapsedSeconds)}
+          </strong>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "16px 20px" }}>
+          <label
+            style={{
+              display: "block",
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--foreground)",
+              marginBottom: 6,
+            }}
+          >
+            Motivo da pausa
+          </label>
+          <p
+            style={{
+              fontSize: 11,
+              color: "var(--muted-fg)",
+              margin: "0 0 10px",
+            }}
+          >
+            Selecione um motivo rápido ou descreva nos detalhes abaixo. O
+            registro será anexado ao histórico da tarefa.
+          </p>
+
+          {/* Presets */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              marginBottom: 12,
+            }}
+          >
+            {PAUSE_PRESETS.map((preset) => {
+              const active = reason.trim() === preset.value;
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => onChangeReason(preset.value)}
+                  disabled={submitting}
+                  style={{
+                    border: active
+                      ? "1px solid var(--primary)"
+                      : "1px solid var(--border)",
+                    background: active
+                      ? "color-mix(in oklab, var(--primary) 12%, transparent)"
+                      : "var(--surface)",
+                    color: active ? "var(--primary)" : "var(--foreground)",
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    transition: "all 120ms ease",
+                  }}
+                >
+                  <span aria-hidden>{preset.emoji}</span>
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Textarea */}
+          <Textarea
+            value={reason}
+            onChange={(e) => onChangeReason(e.target.value)}
+            placeholder="Descreva o motivo (ex.: indo em uma reunião urgente com o cliente)"
+            rows={3}
+            autoFocus
+            disabled={submitting}
+            style={{ resize: "vertical", minHeight: 70 }}
+          />
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 11,
+              color: "var(--muted-fg)",
+              marginTop: 4,
+            }}
+          >
+            <span>
+              {trimmedLength === 0
+                ? "Informe o motivo para pausar"
+                : `${trimmedLength} caractere${trimmedLength === 1 ? "" : "s"}`}
+            </span>
+            <span style={{ opacity: 0.7 }}>Enter + Ctrl/Cmd para confirmar</span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: "12px 20px 16px",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
+            borderTop: "1px solid var(--border)",
+            background: "var(--surface)",
+          }}
+        >
+          <Button
+            variant="ghost"
+            onClick={onCancel}
+            disabled={submitting}
+          >
+            Cancelar
+          </Button>
+          <Button
+            leftIcon={<Pause size={14} />}
+            onClick={onConfirm}
+            disabled={!canConfirm}
+          >
+            {submitting ? "Pausando..." : "Pausar tarefa"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

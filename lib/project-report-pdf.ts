@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatSeconds } from "@/lib/utils";
+import { loadCompanyLogoDataUrl } from "@/lib/company-logo";
 
 type StatusBreakdown = {
   pending: number;
@@ -49,7 +50,7 @@ function drawFooter(doc: jsPDF) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(148, 163, 184);
-  doc.text("HydraCode - Relatorio Confidencial", MARGIN, PAGE_H - 7);
+  doc.text("Relatorio Confidencial", MARGIN, PAGE_H - 7);
   doc.text("Pagina 1 de 1", RIGHT_EDGE, PAGE_H - 7, { align: "right" });
 }
 
@@ -218,8 +219,11 @@ function drawTopContributors(doc: jsPDF, y: number, contributors: ContributorRow
   });
 }
 
-export function generateProjectDashboardPdf(input: ProjectPdfInput) {
+export async function generateProjectDashboardPdf(input: ProjectPdfInput) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
+
+  // Carrega a logo da empresa (em paralelo com o setup do PDF).
+  const logoDataUrl = await loadCompanyLogoDataUrl();
 
   // ── HEADER ─────────────────────────────────────────────────────────────────
   doc.setFillColor(15, 23, 42);
@@ -229,17 +233,26 @@ export function generateProjectDashboardPdf(input: ProjectPdfInput) {
   doc.setFillColor(37, 99, 235);
   doc.rect(0, 38, PAGE_W, 2, "F");
 
-  // Company name + report type
+  // Logo da empresa (embutida no header escuro)
+  if (logoDataUrl) {
+    try {
+      doc.addImage(logoDataUrl, "PNG", MARGIN, 6, 22, 22, undefined, "FAST");
+    } catch {
+      // imagem invalida -> ignora silenciosamente
+    }
+  }
+
+  // Tipo de relatório (texto pequeno acima do nome do projeto)
   doc.setTextColor(100, 116, 139);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
-  doc.text("HYDRACODE  /  RELATORIO DE PROJETO", MARGIN, 10);
+  doc.text("RELATORIO DE PROJETO", logoDataUrl ? MARGIN + 26 : MARGIN, 12);
 
   // Project name
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(input.projectName, MARGIN, 24);
+  doc.text(input.projectName, logoDataUrl ? MARGIN + 26 : MARGIN, 24);
 
   // Generated date (top-right)
   doc.setTextColor(100, 116, 139);

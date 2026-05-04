@@ -473,7 +473,7 @@ export default function ChatPage() {
       return;
     }
     const profile = await getCurrentProfile();
-    downloadChatTranscriptPdf({
+    await downloadChatTranscriptPdf({
       channelTitle,
       groupTypeLabel: selectedGroup?.project_id
         ? "Projeto vinculado"

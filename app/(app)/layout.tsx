@@ -26,6 +26,7 @@ import {
   type SidebarMenuItem,
 } from "@/lib/permissions";
 import { supabase } from "@/lib/supabase/client";
+import { COMPANY_LOGO_SRC } from "@/lib/company-logo";
 
 const menuItems: SidebarMenuItem[] = [
   // Opcional: defina `minRole` para esconder itens (ex.: { ..., minRole: "leader" }).
@@ -125,10 +126,17 @@ export default function AppLayout({
       <div className="app-shell">
         <aside className="sidebar">
           <div className="sidebar-brand">
-            <div className="sidebar-brand-mark">H</div>
+            <div className="sidebar-brand-mark">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={COMPANY_LOGO_SRC}
+                alt="Logo da empresa"
+                className="sidebar-brand-logo"
+              />
+            </div>
             <div className="sidebar-brand-meta">
               <span className="sidebar-brand-tag">PLATAFORMA</span>
-              <div className="sidebar-brand-name">HydraCode</div>
+              <div className="sidebar-brand-name">Gestão de projetos</div>
             </div>
           </div>
 
@@ -190,7 +198,7 @@ export default function AppLayout({
         <div className="app-content">
           <header className="topbar">
             <div className="crumbs">
-              <span>HydraCode</span>
+              <span>Início</span>
               <ChevronRight size={14} strokeWidth={2} />
               <span className="crumbs-current">
                 {currentItem?.label ?? "Painel"}

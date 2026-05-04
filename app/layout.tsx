@@ -3,9 +3,14 @@ import "./globals.css";
 import { ToastViewport } from "@/components/ui/toast-viewport";
 
 export const metadata: Metadata = {
-  title: "HydraCode — Gestão de projetos de engenharia",
+  title: "Gestão de projetos de engenharia",
   description:
     "Plataforma de gestão de produtividade, tempo e entrega para equipes de engenharia.",
+  icons: {
+    icon: "/company-logo.png",
+    shortcut: "/company-logo.png",
+    apple: "/company-logo.png",
+  },
 };
 
 export default function RootLayout({

@@ -597,13 +597,21 @@ p { margin: 0; }
   border-bottom: 1px solid var(--sidebar-border);
 }
 .sidebar-brand-mark {
-  width: 32px; height: 32px;
+  width: 36px; height: 36px;
   border-radius: var(--radius-md);
-  background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+  background: rgba(255, 255, 255, 0.95);
   color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 14px;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  padding: 4px;
+}
+.sidebar-brand-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 .sidebar-brand-name {
   color: #fff;
@@ -1013,17 +1021,22 @@ p { margin: 0; }
 }
 
 .login-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: rgba(255,255,255,0.12);
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.95);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 800;
-  font-size: 18px;
   margin-bottom: var(--space-6);
-  backdrop-filter: blur(8px);
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.login-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .login-title {
@@ -1120,4 +1133,14 @@ p { margin: 0; }
   font-family: ui-monospace, monospace;
   font-size: 11px;
   color: var(--muted-fg);
+}
+
+/* Modal animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
