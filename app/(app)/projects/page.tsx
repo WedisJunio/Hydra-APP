@@ -30,7 +30,7 @@ import {
 
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
-import { getSupabaseErrorMessage } from "@/lib/supabase/errors";
+import { getSupabaseErrorMessage, isMissingPlannedEndTargetColumn } from "@/lib/supabase/errors";
 import {
   canCreateProject,
   canEditProjectShell,
@@ -56,6 +56,10 @@ import {
   PeriodFilter,
   getLiveSeconds as getDashLiveSeconds,
 } from "@/components/dashboard/engine";
+import {
+  disciplineTabKey,
+  projectQualifiesForSaneamentoModule,
+} from "@/lib/saneamento/discipline";
 import SaneamentoListPage from "@/app/(app)/saneamento/page";
 import { GanttChart } from "@/components/projects/gantt-chart";
 import type {
@@ -72,6 +76,8 @@ type Project = {
   id: string;
   name: string;
   discipline?: string | null;
+  /** SAA / SES quando preenchido reforça o vínculo com o fluxo saneamento. */
+  sanitation_type?: string | null;
   municipality?: string | null;
   state?: string | null;
   manager_id: string | null;
@@ -82,6 +88,16 @@ type Project = {
   actual_end_date: string | null;
   created_at: string;
 };
+
+function projectMatchesDisciplineTab(project: Project, tab: string): boolean {
+  if (tab.toLowerCase() === "saneamento") {
+    return projectQualifiesForSaneamentoModule(
+      project.discipline,
+      project.sanitation_type
+    );
+  }
+  return project.discipline === tab;
+}
 
 type User = {
   id: string;
@@ -119,6 +135,14 @@ type RiskKey = "green" | "yellow" | "red";
 type RiskFilter = "all" | RiskKey;
 
 type ViewMode = "grid" | "list";
+
+/** Select de projetos: versão Legacy sem coluna planned_end_target (antes da migration SQL). */
+const PROJECT_SELECT_WITHOUT_TARGET =
+  "id, name, discipline, sanitation_type, municipality, state, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at";
+
+/** Inclui meta de entrega quando a coluna existir no Supabase. */
+const PROJECT_SELECT_FULL =
+  "id, name, discipline, sanitation_type, municipality, state, manager_id, coordinator_id, leader_id, planned_end_date, planned_end_target, actual_end_date, created_at";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -532,13 +556,41 @@ export default function ProjectsPage() {
   }, [hasRunningTimer]);
 
   async function loadProjects() {
-    const { data } = await supabase
+    const tryFull = await supabase
       .from("projects")
-      .select(
-        "id, name, discipline, municipality, state, manager_id, coordinator_id, leader_id, planned_end_date, planned_end_target, actual_end_date, created_at"
-      )
+      .select(PROJECT_SELECT_FULL)
       .order("created_at", { ascending: false });
-    setProjects((data as Project[]) || []);
+
+    let err = tryFull.error;
+    let raw: unknown = tryFull.data;
+
+    if (err && isMissingPlannedEndTargetColumn(err)) {
+      const second = await supabase
+        .from("projects")
+        .select(PROJECT_SELECT_WITHOUT_TARGET)
+        .order("created_at", { ascending: false });
+      err = second.error;
+      raw = second.data;
+    }
+
+    if (err) {
+      console.error("[loadProjects]", err.message);
+      setProjects([]);
+      return;
+    }
+
+    const list = Array.isArray(raw) ? raw : [];
+    const rows = list.map((row: unknown): Project => {
+      const p = row as Omit<Project, "planned_end_target"> & {
+        planned_end_target?: unknown;
+      };
+      return {
+        ...p,
+        planned_end_target:
+          typeof p.planned_end_target === "string" ? p.planned_end_target : null,
+      };
+    });
+    setProjects(rows);
   }
 
   async function loadUsers() {
@@ -689,20 +741,32 @@ export default function ProjectsPage() {
 
     const target = newPlannedEndTarget.trim().slice(0, 10) || null;
 
-    const { data: project, error } = await supabase
+    const baseInsert = {
+      name: newProjectName,
+      planned_end_date: mergeProjectPlannedEnd(target, null),
+      actual_end_date: null,
+      manager_id: managerId,
+      coordinator_id: newCoordinatorId || null,
+      leader_id: newLeaderId || null,
+      created_by: profile.id,
+    };
+    const withTarget = target
+      ? { ...baseInsert, planned_end_target: target }
+      : baseInsert;
+
+    let { data: project, error } = await supabase
       .from("projects")
-      .insert({
-        name: newProjectName,
-        planned_end_target: target,
-        planned_end_date: mergeProjectPlannedEnd(target, null),
-        actual_end_date: null,
-        manager_id: managerId,
-        coordinator_id: newCoordinatorId || null,
-        leader_id: newLeaderId || null,
-        created_by: profile.id,
-      })
+      .insert(withTarget)
       .select("id")
       .single();
+
+    if (error && target && isMissingPlannedEndTargetColumn(error)) {
+      ({ data: project, error } = await supabase
+        .from("projects")
+        .insert(baseInsert)
+        .select("id")
+        .single());
+    }
 
     if (error || !project) {
       showErrorToast("Não foi possível criar o projeto", getSupabaseErrorMessage(error));
@@ -756,16 +820,27 @@ export default function ProjectsPage() {
     if (!editedProjectName.trim()) return;
     const target = editedPlannedEndTarget.trim().slice(0, 10) || null;
 
-    const { error: updateError } = await supabase
+    const baseUpdate = {
+      name: editedProjectName,
+      manager_id: editedManagerId || null,
+      coordinator_id: editedCoordinatorId || null,
+      leader_id: editedLeaderId || null,
+    };
+
+    const patch = target ? { ...baseUpdate, planned_end_target: target } : baseUpdate;
+
+    let { error: updateError } = await supabase
       .from("projects")
-      .update({
-        name: editedProjectName,
-        planned_end_target: target,
-        manager_id: editedManagerId || null,
-        coordinator_id: editedCoordinatorId || null,
-        leader_id: editedLeaderId || null,
-      })
+      .update(patch)
       .eq("id", projectId);
+
+    if (updateError && target && isMissingPlannedEndTargetColumn(updateError)) {
+      ({ error: updateError } = await supabase
+        .from("projects")
+        .update(baseUpdate)
+        .eq("id", projectId));
+    }
+
     if (updateError) {
       showErrorToast("Não foi possível salvar o projeto", getSupabaseErrorMessage(updateError));
       return;
@@ -869,10 +944,11 @@ export default function ProjectsPage() {
   );
 
   const disciplines = useMemo(() => {
-    const set = new Set(
-      projects.map((p) => p.discipline).filter(Boolean) as string[]
-    );
-    // Sempre oferecer Saneamento, mesmo sem projetos (evita aba sumir com lista vazia).
+    const set = new Set<string>();
+    for (const p of projects) {
+      const key = disciplineTabKey(p.discipline);
+      if (key) set.add(key);
+    }
     set.add("saneamento");
     return Array.from(set).sort((a, b) => {
       if (a === "saneamento") return -1;
@@ -1923,7 +1999,7 @@ export default function ProjectsPage() {
           {activeDisciplineView === "dashboard" ? (
             <DashboardDisciplina
               discipline={activeProjectsTab}
-              projects={projects.filter((p) => p.discipline === activeProjectsTab) as DashProject[]}
+              projects={projects.filter((p) => projectMatchesDisciplineTab(p, activeProjectsTab)) as DashProject[]}
               tasks={tasks as DashTask[]}
               users={users}
               approvals={approvals}
@@ -1933,8 +2009,8 @@ export default function ProjectsPage() {
             />
           ) : (
             <GanttChart
-              projects={projects.filter(
-                (p) => p.discipline === activeProjectsTab
+              projects={projects.filter((p) =>
+                projectMatchesDisciplineTab(p, activeProjectsTab)
               )}
               tasks={tasks}
               users={users}
@@ -1975,7 +2051,7 @@ export default function ProjectsPage() {
           {activeSaneamentoView === "dashboard" ? (
             <DashboardDisciplina
               discipline={activeProjectsTab}
-              projects={projects.filter((p) => p.discipline === activeProjectsTab) as DashProject[]}
+              projects={projects.filter((p) => projectMatchesDisciplineTab(p, activeProjectsTab)) as DashProject[]}
               tasks={tasks as DashTask[]}
               users={users}
               approvals={approvals}
@@ -1985,8 +2061,8 @@ export default function ProjectsPage() {
             />
           ) : activeSaneamentoView === "gantt" ? (
             <GanttChart
-              projects={projects.filter(
-                (p) => p.discipline === activeProjectsTab
+              projects={projects.filter((p) =>
+                projectMatchesDisciplineTab(p, activeProjectsTab)
               )}
               tasks={tasks}
               users={users}

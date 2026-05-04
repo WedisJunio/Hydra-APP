@@ -41,7 +41,7 @@ import {
 
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
-import { getSupabaseErrorMessage } from "@/lib/supabase/errors";
+import { getSupabaseErrorMessage, isMissingPlannedEndTargetColumn } from "@/lib/supabase/errors";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -483,17 +483,25 @@ export default function TasksPage() {
   async function recalcProjectPlannedEndDate(projectId: string | null | undefined) {
     if (!projectId) return;
     try {
-      const [{ data: rows }, { data: proj }] = await Promise.all([
-        supabase
-          .from("tasks")
-          .select("planned_due_date")
-          .eq("project_id", projectId),
-        supabase
-          .from("projects")
-          .select("planned_end_target")
-          .eq("id", projectId)
-          .maybeSingle(),
-      ]);
+      const { data: rows } = await supabase
+        .from("tasks")
+        .select("planned_due_date")
+        .eq("project_id", projectId);
+
+      const { data: proj, error: projErr } = await supabase
+        .from("projects")
+        .select("planned_end_target")
+        .eq("id", projectId)
+        .maybeSingle();
+
+      let plannedTarget: string | null | undefined =
+        typeof proj?.planned_end_target === "string" ? proj.planned_end_target : null;
+
+      if (projErr && isMissingPlannedEndTargetColumn(projErr)) {
+        plannedTarget = null;
+      } else if (projErr) {
+        return;
+      }
 
       const dates = (rows ?? [])
         .map((t) => t.planned_due_date)
@@ -501,10 +509,7 @@ export default function TasksPage() {
       const taskMax =
         dates.length > 0 ? dates.reduce((max, d) => (d > max ? d : max)) : null;
 
-      const nextEnd = mergeProjectPlannedEnd(
-        proj?.planned_end_target as string | null | undefined,
-        taskMax
-      );
+      const nextEnd = mergeProjectPlannedEnd(plannedTarget, taskMax);
 
       await supabase
         .from("projects")

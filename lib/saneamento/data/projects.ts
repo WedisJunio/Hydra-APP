@@ -1,37 +1,99 @@
 import { supabase } from "@/lib/supabase/client";
+import { isMissingPlannedEndTargetColumn } from "@/lib/supabase/errors";
 import { mergeProjectPlannedEnd } from "@/lib/utils";
 import type { SanitationProject, SanitationType } from "@/lib/saneamento/types";
 
-const SELECT =
+/** Lista saneamento sem depender apenas de discipline = lowercase (Postgres é case-sensitive). */
+const SANITATION_LIST_OR_FILTER =
+  "discipline.ilike.saneamento,sanitation_type.not.is.null";
+
+const SELECT_FULL =
   "id, name, manager_id, coordinator_id, leader_id, planned_end_date, planned_end_target, actual_end_date, created_at, discipline, client_id, contract_number, sanitation_type, municipality, state, design_flow_lps, population_current, population_final, horizon_years, network_length_m, treatment_system, contract_value, notes";
 
-/** Lista projetos com discipline = 'saneamento'. */
+/** Mesmo campo sem planned_end_target (banco antes da migration SQL). */
+const SELECT_LEGACY =
+  "id, name, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at, discipline, client_id, contract_number, sanitation_type, municipality, state, design_flow_lps, population_current, population_final, horizon_years, network_length_m, treatment_system, contract_value, notes";
+
+function normalizeSanitationRows(
+  rows: Record<string, unknown>[] | null
+): SanitationProject[] {
+  return (
+    rows?.map(
+      (r): SanitationProject => ({
+        ...(r as unknown as SanitationProject),
+        planned_end_target:
+          typeof (r as { planned_end_target?: unknown }).planned_end_target === "string"
+            ? ((r as { planned_end_target: string }).planned_end_target)
+            : null,
+      })
+    ) ?? []
+  );
+}
+
+/** Lista projetos do módulo saneamento (disciplina saneamento ou tipo SAA/SES preenchido). */
 export async function listSanitationProjects(): Promise<SanitationProject[]> {
-  const { data, error } = await supabase
+  const tryFull = await supabase
     .from("projects")
-    .select(SELECT)
-    .eq("discipline", "saneamento")
+    .select(SELECT_FULL)
+    .or(SANITATION_LIST_OR_FILTER)
     .order("created_at", { ascending: false });
+
+  let error = tryFull.error;
+  let rowsRaw: unknown = tryFull.data;
+
+  if (error && isMissingPlannedEndTargetColumn(error)) {
+    const second = await supabase
+      .from("projects")
+      .select(SELECT_LEGACY)
+      .or(SANITATION_LIST_OR_FILTER)
+      .order("created_at", { ascending: false });
+    error = second.error;
+    rowsRaw = second.data;
+  }
+
   if (error) {
     console.error("Erro ao listar projetos:", error.message);
     return [];
   }
-  return (data as unknown as SanitationProject[]) || [];
+
+  return normalizeSanitationRows(
+    (Array.isArray(rowsRaw) ? rowsRaw : []) as unknown as Record<
+      string,
+      unknown
+    >[]
+  );
 }
 
 export async function getSanitationProject(
   id: string
 ): Promise<SanitationProject | null> {
-  const { data, error } = await supabase
+  const tryFull = await supabase
     .from("projects")
-    .select(SELECT)
+    .select(SELECT_FULL)
     .eq("id", id)
     .maybeSingle();
+
+  let error = tryFull.error;
+  let row: unknown = tryFull.data;
+
+  if (error && isMissingPlannedEndTargetColumn(error)) {
+    const second = await supabase
+      .from("projects")
+      .select(SELECT_LEGACY)
+      .eq("id", id)
+      .maybeSingle();
+    error = second.error;
+    row = second.data;
+  }
+
   if (error) {
     console.error("Erro ao buscar projeto:", error.message);
     return null;
   }
-  return (data as unknown as SanitationProject) || null;
+  if (row === null || row === undefined || typeof row !== "object") return null;
+
+  const normalized = normalizeSanitationRows([row as Record<string, unknown>]);
+  return normalized[0] ?? null;
 }
 
 export type CreateSanitationProjectInput = {
@@ -56,16 +118,32 @@ export async function createSanitationProject(
   const { planned_end_target: _omit, ...rest } = input;
   const effectivePlannedEnd = mergeProjectPlannedEnd(target, null);
 
-  const { data, error } = await supabase
+  const baseInsert = {
+    ...rest,
+    planned_end_date: effectivePlannedEnd,
+    discipline: "saneamento" as const,
+  };
+  const tryInsert =
+    target != null ? { ...baseInsert, planned_end_target: target } : baseInsert;
+
+  let { data, error } = await supabase
     .from("projects")
-    .insert({
-      ...rest,
-      planned_end_target: target,
-      planned_end_date: effectivePlannedEnd,
-      discipline: "saneamento",
-    })
+    .insert(tryInsert)
     .select("id")
     .single();
+
+  if (
+    error &&
+    isMissingPlannedEndTargetColumn(error) &&
+    target != null
+  ) {
+    ({ data, error } = await supabase
+      .from("projects")
+      .insert(baseInsert)
+      .select("id")
+      .single());
+  }
+
   if (error || !data) {
     console.error("Erro ao criar projeto:", error?.message);
     return null;

@@ -46,6 +46,7 @@ import {
   isTaskDelayed,
 } from "@/lib/utils";
 import { formatProjectDisplayName } from "@/lib/project-display";
+import { projectQualifiesForSaneamentoModule } from "@/lib/saneamento/discipline";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,6 +54,7 @@ export type Project = {
   id: string;
   name: string;
   discipline?: string | null;
+  sanitation_type?: string | null;
   municipality?: string | null;
   state?: string | null;
 };
@@ -1645,7 +1647,9 @@ function SanitationCard({
   const today = getTodayLocalISO();
 
   const sanitationProjectIds = projects
-    .filter((p) => p.discipline === "saneamento")
+    .filter((p) =>
+      projectQualifiesForSaneamentoModule(p.discipline, p.sanitation_type)
+    )
     .map((p) => p.id);
   const sanProjectsCount = sanitationProjectIds.length;
 
