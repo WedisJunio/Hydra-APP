@@ -1179,7 +1179,7 @@ export default function ProjectsPage() {
                 >
                   <ProjectDateChip
                     icon={<CalendarDays size={11} />}
-                    label="Previsão"
+                    label="Previsão (tarefas)"
                     value={
                       dates.plannedEnd
                         ? formatBRDate(dates.plannedEnd)
@@ -1190,7 +1190,7 @@ export default function ProjectsPage() {
                   {project.actual_end_date && stats.progress >= 100 ? (
                     <ProjectDateChip
                       icon={<CheckCircle2 size={11} />}
-                      label="Término real"
+                      label="Real (100%)"
                       value={formatBRDate(project.actual_end_date)}
                       tone="success"
                     />
@@ -1429,6 +1429,41 @@ export default function ProjectsPage() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 10,
+                marginBottom: 16,
+              }}
+            >
+              <StatTile
+                label="Previsão de entrega (automático)"
+                value={
+                  dates.plannedEnd
+                    ? formatBRDate(dates.plannedEnd)
+                    : "Ainda sem tarefas com prazo"
+                }
+                icon={<CalendarDays size={18} />}
+                variant="info"
+                hint="Usa a data prevista mais tardia das tarefas deste projeto."
+              />
+              <StatTile
+                label="Data real de entrega"
+                value={
+                  project.actual_end_date && stats.progress >= 100
+                    ? formatBRDate(project.actual_end_date)
+                    : "—"
+                }
+                icon={<CheckCircle2 size={18} />}
+                variant="success"
+                hint={
+                  stats.progress >= 100 && project.actual_end_date
+                    ? "Registrado ao concluir todas as atividades."
+                    : "Somente quando todas as tarefas estiverem concluídas."
+                }
+              />
+            </div>
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h4
                 className="flex items-center gap-2"
@@ -2025,6 +2060,64 @@ export default function ProjectsPage() {
                 <strong>previsão de entrega</strong> será a maior data entre as
                 tarefas; a <strong>data real</strong> será preenchida quando todas as
                 tarefas estiverem concluídas.
+              </div>
+              <div
+                className="grid-2 gap-3"
+                aria-hidden
+                style={{ opacity: 0.92 }}
+              >
+                <div>
+                  <div
+                    className="text-xs text-muted mb-1"
+                    style={{ fontWeight: 600 }}
+                  >
+                    Data prevista de entrega
+                  </div>
+                  <div
+                    className="flex items-center gap-2 text-sm rounded-md px-3 py-2"
+                    style={{
+                      border: "1px dashed color-mix(in srgb, var(--primary) 35%, var(--border))",
+                      background:
+                        "color-mix(in srgb, var(--primary-soft) 60%, transparent)",
+                      color: "var(--muted-fg)",
+                    }}
+                  >
+                    <CalendarDays
+                      size={16}
+                      className="shrink-0"
+                      style={{ color: "var(--primary)" }}
+                    />
+                    <span style={{ fontWeight: 600 }}>
+                      Calculada: maior prazo das tarefas
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div
+                    className="text-xs text-muted mb-1"
+                    style={{ fontWeight: 600 }}
+                  >
+                    Data real de entrega
+                  </div>
+                  <div
+                    className="flex items-center gap-2 text-sm rounded-md px-3 py-2"
+                    style={{
+                      border: "1px dashed color-mix(in srgb, var(--success) 35%, var(--border))",
+                      background:
+                        "color-mix(in srgb, var(--success-soft) 55%, transparent)",
+                      color: "var(--muted-fg)",
+                    }}
+                  >
+                    <CheckCircle2
+                      size={16}
+                      className="shrink-0"
+                      style={{ color: "var(--success)" }}
+                    />
+                    <span style={{ fontWeight: 600 }}>
+                      Só quando 100% das tarefas concluídas
+                    </span>
+                  </div>
+                </div>
               </div>
               <div className="grid-3">
                 <Field label="Gerente">
