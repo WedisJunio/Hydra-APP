@@ -30,6 +30,8 @@ export type UserProfileUpdate = Partial<
   Pick<
     UserProfile,
     | "full_name"
+    | "job_title"
+    | "department"
     | "bio"
     | "phone"
     | "address"
@@ -41,6 +43,7 @@ export type UserProfileUpdate = Partial<
     | "availability_status"
     | "photo_url"
     | "role"
+    | "is_active"
   >
 >;
 
