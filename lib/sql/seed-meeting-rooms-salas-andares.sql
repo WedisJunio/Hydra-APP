@@ -10,6 +10,9 @@
 -- case-insensitive nos espaços extras).
 --
 -- Uso: Supabase → SQL Editor → colar → Run.
+--
+-- Para remover salas de demo antigas (Sala 01, 02, Sala de Reunião Principal),
+-- rode também: lib/sql/remove-legacy-meeting-rooms.sql
 -- ============================================================================
 
 INSERT INTO public.meeting_rooms (name, location, capacity, is_active)
