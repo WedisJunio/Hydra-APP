@@ -141,7 +141,22 @@ export default function AppLayout({
     [pathname]
   );
 
-  const displayName = currentUser?.name || authEmail || "Usuário";
+  // Fallback inteligente: se o usuário não preencheu o nome, NÃO mostra o e-mail
+  // cru (que pode virar algo como "wedis123"). Em vez disso, pega o prefixo do
+  // e-mail, remove números e caracteres não-letras, capitaliza cada palavra.
+  function prettifyEmailHandle(email: string): string {
+    if (!email) return "Usuário";
+    const handle = email.split("@")[0] || email;
+    const cleaned = handle.replace(/[._\-]/g, " ").replace(/\d+/g, "").trim();
+    if (!cleaned) return "Usuário";
+    return cleaned
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+  }
+
+  const displayName = currentUser?.name?.trim() || prettifyEmailHandle(authEmail);
   const displayRole =
     (currentUser?.role && ROLE_LABELS[currentUser.role]) ||
     currentUser?.role ||

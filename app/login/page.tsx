@@ -20,7 +20,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
 
   // Cadastro
-  const [signupName, setSignupName] = useState("");
+  const [signupFirstName, setSignupFirstName] = useState("");
+  const [signupLastName, setSignupLastName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirm, setSignupConfirm] = useState("");
@@ -85,11 +86,13 @@ export default function LoginPage() {
     e.preventDefault();
     if (loading) return;
 
-    const trimmedName = signupName.trim();
+    const trimmedFirstName = signupFirstName.trim();
+    const trimmedLastName = signupLastName.trim();
     const trimmedEmail = signupEmail.trim();
+    const fullName = `${trimmedFirstName} ${trimmedLastName}`.trim();
 
-    if (!trimmedName || !trimmedEmail || !signupPassword) {
-      setErrorMessage("Preencha todos os campos obrigatórios.");
+    if (!trimmedFirstName || !trimmedLastName || !trimmedEmail || !signupPassword) {
+      setErrorMessage("Preencha todos os campos obrigatórios (nome, sobrenome, e-mail e senha).");
       return;
     }
     if (signupPassword.length < 6) {
@@ -104,12 +107,16 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMessage("");
 
-    // 1. Cria usuário no Supabase Auth
+    // 1. Cria usuário no Supabase Auth (full_name nos metadados)
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: trimmedEmail,
       password: signupPassword,
       options: {
-        data: { full_name: trimmedName },
+        data: {
+          full_name: fullName,
+          first_name: trimmedFirstName,
+          last_name: trimmedLastName,
+        },
       },
     });
 
@@ -126,9 +133,12 @@ export default function LoginPage() {
     const authUserId = authData.user?.id;
 
     // 2. Insere registro na tabela pública `users`
+    // Salvamos tanto `name` (display curto) quanto `full_name` (nome completo).
+    // Esse `name` é o que aparece no sidebar, listagem de usuários, tarefas e PDFs.
     if (authUserId) {
       const { error: insertError } = await supabase.from("users").insert({
-        name: trimmedName,
+        name: fullName,
+        full_name: fullName,
         email: trimmedEmail.toLowerCase(),
         role: "projetista",
         password_hash: `disabled:${crypto.randomUUID()}`,
@@ -331,23 +341,62 @@ export default function LoginPage() {
                 <form onSubmit={handleSignup}>
                   <h2 className="login-form-title">Criar conta</h2>
                   <p className="text-muted text-sm mb-6">
-                    Preencha os dados abaixo para acessar a plataforma.
+                    O nome e sobrenome que você informar serão usados em todas as
+                    áreas da plataforma (sidebar, tarefas, relatórios, PDFs).
                   </p>
 
                   <div className="flex flex-col gap-4">
-                    <Field label="Nome completo *">
-                      <div className="input-icon-wrap">
-                        <User size={16} className="input-icon" />
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 12,
+                      }}
+                    >
+                      <Field label="Nome *">
+                        <div className="input-icon-wrap">
+                          <User size={16} className="input-icon" />
+                          <Input
+                            type="text"
+                            value={signupFirstName}
+                            onChange={(e) => setSignupFirstName(e.target.value)}
+                            placeholder="João"
+                            autoComplete="given-name"
+                            style={{ paddingLeft: 36 }}
+                          />
+                        </div>
+                      </Field>
+                      <Field label="Sobrenome *">
                         <Input
                           type="text"
-                          value={signupName}
-                          onChange={(e) => setSignupName(e.target.value)}
-                          placeholder="Seu nome"
-                          autoComplete="name"
-                          style={{ paddingLeft: 36 }}
+                          value={signupLastName}
+                          onChange={(e) => setSignupLastName(e.target.value)}
+                          placeholder="Silva"
+                          autoComplete="family-name"
                         />
+                      </Field>
+                    </div>
+
+                    {(signupFirstName || signupLastName) && (
+                      <div
+                        style={{
+                          padding: "8px 12px",
+                          background: "var(--primary-soft)",
+                          borderRadius: "var(--radius-md)",
+                          fontSize: 12,
+                          color: "var(--primary)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <User size={12} />
+                        Você será exibido como{" "}
+                        <strong>
+                          {`${signupFirstName} ${signupLastName}`.trim() || "—"}
+                        </strong>
                       </div>
-                    </Field>
+                    )}
 
                     <Field label="E-mail *">
                       <div className="input-icon-wrap">
