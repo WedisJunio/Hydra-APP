@@ -29,6 +29,14 @@ import {
   PlayCircle,
   Trophy,
   MoveRight,
+  Video,
+  UtensilsCrossed,
+  Coffee,
+  Shuffle,
+  Hourglass,
+  Heart,
+  Home,
+  Timer,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -2296,14 +2304,21 @@ export default function TasksPage() {
 
 // ─── Dialog: pausar tarefa ───────────────────────────────────────────────────
 
-const PAUSE_PRESETS: { label: string; value: string; emoji: string }[] = [
-  { label: "Reunião", value: "Reunião", emoji: "📞" },
-  { label: "Almoço", value: "Pausa para almoço", emoji: "🍽️" },
-  { label: "Café/lanche", value: "Pausa para café", emoji: "☕" },
-  { label: "Outra demanda", value: "Atendendo outra demanda", emoji: "🔀" },
-  { label: "Aguardando info", value: "Aguardando informações", emoji: "⏳" },
-  { label: "Pausa pessoal", value: "Pausa pessoal", emoji: "🧘" },
-  { label: "Fim do expediente", value: "Fim do expediente", emoji: "🏠" },
+type PausePreset = {
+  label: string;
+  value: string;
+  icon: React.ElementType;
+  color: string;
+};
+
+const PAUSE_PRESETS: PausePreset[] = [
+  { label: "Reunião", value: "Reunião", icon: Video, color: "var(--primary)" },
+  { label: "Almoço", value: "Pausa para almoço", icon: UtensilsCrossed, color: "var(--warning)" },
+  { label: "Café/lanche", value: "Pausa para café", icon: Coffee, color: "#92400E" },
+  { label: "Outra demanda", value: "Atendendo outra demanda", icon: Shuffle, color: "var(--info)" },
+  { label: "Aguardando info", value: "Aguardando informações", icon: Hourglass, color: "#7C3AED" },
+  { label: "Pausa pessoal", value: "Pausa pessoal", icon: Heart, color: "var(--danger)" },
+  { label: "Fim do expediente", value: "Fim do expediente", icon: Home, color: "var(--success)" },
 ];
 
 function PauseTaskDialog({
@@ -2349,7 +2364,7 @@ function PauseTaskDialog({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(15, 23, 42, 0.55)",
+        background: "rgba(2, 6, 23, 0.65)",
         backdropFilter: "blur(4px)",
         display: "flex",
         alignItems: "center",
@@ -2364,63 +2379,69 @@ function PauseTaskDialog({
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--background)",
-          borderRadius: "var(--radius-lg)",
+          borderRadius: "var(--radius-xl)",
           border: "1px solid var(--border)",
           boxShadow: "var(--shadow-lg)",
           width: "100%",
-          maxWidth: 480,
+          maxWidth: 540,
           padding: 0,
           overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          maxHeight: "92vh",
           animation: "popIn 160ms ease-out",
         }}
       >
-        {/* Header */}
+        {/* Header com gradiente */}
         <div
           style={{
-            padding: "16px 20px 12px",
+            padding: "20px 24px",
+            background: "linear-gradient(135deg, var(--primary-soft) 0%, transparent 100%)",
             borderBottom: "1px solid var(--border)",
             display: "flex",
             alignItems: "flex-start",
-            gap: 12,
+            gap: 14,
           }}
         >
           <div
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              background:
-                "linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(234, 88, 12, 0.18))",
-              color: "#d97706",
+              width: 42,
+              height: 42,
+              borderRadius: 12,
+              background: "var(--primary)",
+              color: "#fff",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
+              boxShadow: "0 4px 12px color-mix(in srgb, var(--primary) 35%, transparent)",
             }}
           >
-            <Pause size={18} />
+            <Pause size={20} />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2
               id="pause-dialog-title"
               style={{
                 margin: 0,
-                fontSize: 16,
+                fontSize: 17,
                 fontWeight: 700,
                 color: "var(--foreground)",
-                lineHeight: 1.3,
+                lineHeight: 1.25,
+                letterSpacing: "-0.01em",
               }}
             >
               Pausar tarefa
             </h2>
             <p
               style={{
-                margin: "2px 0 0",
-                fontSize: 12,
+                margin: "3px 0 0",
+                fontSize: 13,
                 color: "var(--muted-fg)",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                fontWeight: 500,
               }}
             >
               {task.title}
@@ -2441,68 +2462,101 @@ function PauseTaskDialog({
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
+              flexShrink: 0,
             }}
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
 
-        {/* Tempo decorrido */}
-        <div
-          style={{
-            padding: "10px 20px",
-            background:
-              "linear-gradient(180deg, rgba(99, 102, 241, 0.06), transparent)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 12,
-            color: "var(--muted-fg)",
-            borderBottom: "1px solid var(--border)",
-          }}
-        >
-          <Clock size={13} />
-          Tempo registrado até agora:{" "}
-          <strong style={{ color: "var(--foreground)", marginLeft: 2 }}>
-            {formatDuration(elapsedSeconds)}
-          </strong>
-        </div>
-
-        {/* Body */}
-        <div style={{ padding: "16px 20px" }}>
-          <label
+        {/* Body scrollable */}
+        <div style={{ overflowY: "auto", padding: "20px 24px", flex: 1 }}>
+          {/* Tempo decorrido — destaque */}
+          <div
             style={{
-              display: "block",
-              fontSize: 12,
-              fontWeight: 600,
-              color: "var(--foreground)",
-              marginBottom: 6,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "12px 14px",
+              borderRadius: "var(--radius-md)",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              marginBottom: 18,
             }}
           >
-            Motivo da pausa
-          </label>
-          <p
-            style={{
-              fontSize: 11,
-              color: "var(--muted-fg)",
-              margin: "0 0 10px",
-            }}
-          >
-            Selecione um motivo rápido ou descreva nos detalhes abaixo. O
-            registro será anexado ao histórico da tarefa.
-          </p>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 9,
+                background: "color-mix(in srgb, var(--primary) 15%, transparent)",
+                color: "var(--primary)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <Timer size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs text-muted" style={{ fontWeight: 500 }}>
+                Tempo registrado nesta sessão
+              </div>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: "var(--foreground)",
+                  letterSpacing: "-0.02em",
+                  fontVariantNumeric: "tabular-nums",
+                  marginTop: 1,
+                }}
+              >
+                {formatDuration(elapsedSeconds)}
+              </div>
+            </div>
+          </div>
 
-          {/* Presets */}
+          {/* Section header */}
+          <div className="flex items-start gap-3 mb-3 pb-2" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                background: "var(--primary-soft)",
+                color: "var(--primary)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <Pause size={14} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+                Motivo da pausa
+              </h3>
+              <p className="text-xs text-muted" style={{ marginTop: 1 }}>
+                Escolha um motivo rápido ou descreva abaixo. O registro entra no histórico da tarefa.
+              </p>
+            </div>
+          </div>
+
+          {/* Preset chips com ícones */}
           <div
             style={{
               display: "flex",
               flexWrap: "wrap",
               gap: 6,
-              marginBottom: 12,
+              marginBottom: 16,
             }}
           >
             {PAUSE_PRESETS.map((preset) => {
               const active = reason.trim() === preset.value;
+              const Icon = preset.icon;
               return (
                 <button
                   key={preset.value}
@@ -2510,25 +2564,38 @@ function PauseTaskDialog({
                   onClick={() => onChangeReason(preset.value)}
                   disabled={submitting}
                   style={{
-                    border: active
-                      ? "1px solid var(--primary)"
-                      : "1px solid var(--border)",
+                    border: `1px solid ${active ? preset.color : "var(--border)"}`,
                     background: active
-                      ? "color-mix(in oklab, var(--primary) 12%, transparent)"
+                      ? `color-mix(in srgb, ${preset.color} 12%, transparent)`
                       : "var(--surface)",
-                    color: active ? "var(--primary)" : "var(--foreground)",
-                    padding: "6px 10px",
+                    color: active ? preset.color : "var(--foreground)",
+                    padding: "7px 12px 7px 10px",
                     borderRadius: 999,
                     fontSize: 12,
-                    fontWeight: 500,
+                    fontWeight: 600,
                     cursor: submitting ? "not-allowed" : "pointer",
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 6,
                     transition: "all 120ms ease",
+                    boxShadow: active
+                      ? `0 0 0 3px color-mix(in srgb, ${preset.color} 15%, transparent)`
+                      : "none",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active && !submitting) {
+                      e.currentTarget.style.borderColor = preset.color;
+                      e.currentTarget.style.color = preset.color;
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active && !submitting) {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.color = "var(--foreground)";
+                    }
                   }}
                 >
-                  <span aria-hidden>{preset.emoji}</span>
+                  <Icon size={13} style={{ flexShrink: 0 }} />
                   {preset.label}
                 </button>
               );
@@ -2536,57 +2603,99 @@ function PauseTaskDialog({
           </div>
 
           {/* Textarea */}
+          <label
+            className="text-xs"
+            style={{
+              display: "block",
+              fontWeight: 600,
+              color: "var(--muted-fg)",
+              marginBottom: 6,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+            }}
+          >
+            Detalhes
+          </label>
           <Textarea
             value={reason}
             onChange={(e) => onChangeReason(e.target.value)}
-            placeholder="Descreva o motivo (ex.: indo em uma reunião urgente com o cliente)"
+            placeholder="Ex.: Reunião urgente com o cliente sobre o escopo da fase 2"
             rows={3}
             autoFocus
             disabled={submitting}
-            style={{ resize: "vertical", minHeight: 70 }}
+            style={{ resize: "vertical", minHeight: 80 }}
           />
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
               fontSize: 11,
-              color: "var(--muted-fg)",
-              marginTop: 4,
+              marginTop: 6,
             }}
           >
-            <span>
+            <span
+              style={{
+                color: trimmedLength === 0 ? "var(--danger)" : "var(--muted-fg)",
+                fontWeight: trimmedLength === 0 ? 600 : 400,
+              }}
+            >
               {trimmedLength === 0
                 ? "Informe o motivo para pausar"
                 : `${trimmedLength} caractere${trimmedLength === 1 ? "" : "s"}`}
             </span>
-            <span style={{ opacity: 0.7 }}>Enter + Ctrl/Cmd para confirmar</span>
+            <span style={{ color: "var(--subtle-fg)" }}>
+              <kbd
+                style={{
+                  padding: "1px 5px",
+                  borderRadius: 4,
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  fontSize: 10,
+                  fontFamily: "ui-monospace, monospace",
+                }}
+              >
+                Ctrl
+              </kbd>
+              {" + "}
+              <kbd
+                style={{
+                  padding: "1px 5px",
+                  borderRadius: 4,
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  fontSize: 10,
+                  fontFamily: "ui-monospace, monospace",
+                }}
+              >
+                Enter
+              </kbd>
+              {" para confirmar"}
+            </span>
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer fixo */}
         <div
           style={{
-            padding: "12px 20px 16px",
+            padding: "14px 24px",
             display: "flex",
             justifyContent: "flex-end",
             gap: 8,
             borderTop: "1px solid var(--border)",
-            background: "var(--surface)",
+            background: "var(--surface-2)",
+            flexShrink: 0,
           }}
         >
-          <Button
-            variant="ghost"
-            onClick={onCancel}
-            disabled={submitting}
-          >
+          <Button variant="ghost" onClick={onCancel} disabled={submitting}>
             Cancelar
           </Button>
           <Button
             leftIcon={<Pause size={14} />}
             onClick={onConfirm}
             disabled={!canConfirm}
+            loading={submitting}
           >
-            {submitting ? "Pausando..." : "Pausar tarefa"}
+            Pausar tarefa
           </Button>
         </div>
       </div>
