@@ -174,6 +174,33 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
     return map;
   }, [tasks]);
 
+  /** Tarefas com fase definida mas sem tipo (SAA/SES) — comuns ao criar na tela geral de tarefas. */
+  const orphanTasksByPhase = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const task of tasks) {
+      if (task.title_id) continue;
+      if (!task.phase_id) continue;
+      if (!map.has(task.phase_id)) map.set(task.phase_id, []);
+      map.get(task.phase_id)!.push(task);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.phase_task_order || 0) - (b.phase_task_order || 0));
+    }
+    return map;
+  }, [tasks]);
+
+  const phaseTaskStats = useMemo(() => {
+    const stats = new Map<string, { total: number; completed: number }>();
+    for (const phase of phases) {
+      const inPhase = tasks.filter((t) => t.phase_id === phase.id);
+      stats.set(phase.id, {
+        total: inPhase.length,
+        completed: inPhase.filter((t) => t.status === "completed").length,
+      });
+    }
+    return stats;
+  }, [tasks, phases]);
+
   async function normalizeLegacySubtitles(
     currentTasks: Task[],
     currentTitles: PhaseTitle[]
@@ -448,6 +475,19 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
     await loadAll();
   }
 
+  async function handleLinkOrphanToTitle(task: Task, titleId: string) {
+    if (!titleId || task.title_id === titleId) return;
+    const order = nextTaskOrder(titleId);
+    setBusy(true);
+    await updateTask(task.id, {
+      title_id: titleId,
+      subtitle_id: null,
+      phase_task_order: order,
+    });
+    setBusy(false);
+    await loadAll();
+  }
+
   if (loading) {
     return (
       <Card>
@@ -466,8 +506,9 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
         <div>
           <div className="card-title">Tipos do Projeto</div>
           <p className="text-sm text-muted mt-1">
-            Fase {'->'} Tipo de projeto {'->'} Tarefas.
-            Ex.: Fase "Estudo de Concepção", tipo "SAA", tarefa "Planta geral".
+            Fase {'->'} Tipo de projeto (SAA/SES) {'->'} Tarefas.
+            Tarefas criadas na página geral podem aparecer abaixo como &quot;sem tipo&quot; até você
+            vinculá-las. Use o botão <strong>Tipo de projeto</strong> em cada fase para começar.
           </p>
         </div>
         {busy && <Badge variant="info">Salvando...</Badge>}
@@ -476,8 +517,9 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
       <div className="flex flex-col gap-3">
         {sortedPhases.map((phase) => {
           const phaseTitles = titlesByPhase.get(phase.id) || [];
-          if (phaseTitles.length === 0) return null;
           const phaseCollapsed = !!collapsedPhases[phase.id];
+          const orphanInPhase = orphanTasksByPhase.get(phase.id) || [];
+          const st = phaseTaskStats.get(phase.id) || { total: 0, completed: 0 };
           return (
             <div key={phase.id} className="card">
               <div
@@ -518,6 +560,16 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                     <strong>{phase.name}</strong>
                     <div className="text-xs text-muted mt-1">
                       {phaseTitles.length} tipo(s) de projeto
+                      {st.total > 0 ? (
+                        <>
+                          {" · "}
+                          <span style={{ color: "var(--success)" }}>{st.completed}</span>
+                          {" / "}
+                          {st.total} tarefa(s) concluída(s) nesta fase
+                        </>
+                      ) : (
+                        <> · nenhuma tarefa vinculada à fase ainda</>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -563,6 +615,83 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                     </div>
                   )}
 
+                  {orphanInPhase.length > 0 && (
+                    <div
+                      className="card"
+                      style={{
+                        padding: 12,
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <div className="text-sm font-semibold mb-1">
+                        Tarefas na fase sem tipo ({orphanInPhase.length})
+                      </div>
+                      <p className="text-xs text-muted mb-3">
+                        Estas tarefas estão na fase (por exemplo criadas na página geral de tarefas), mas
+                        ainda não estão em SAA/SES. Escolha o tipo para vincular — as concluídas passam a
+                        aparecer normalmente no card do tipo.
+                      </p>
+                      {phaseTitles.length === 0 ? (
+                        <p className="text-sm text-muted">
+                          Adicione primeiro um <strong>Tipo de projeto</strong> no cabeçalho desta fase.
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {orphanInPhase.map((task) => (
+                            <div
+                              key={task.id}
+                              className="flex flex-wrap items-end gap-3"
+                              style={{
+                                padding: "10px 12px",
+                                borderRadius: 8,
+                                border: "1px solid var(--border)",
+                                background: "var(--surface)",
+                              }}
+                            >
+                              <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                                <div className="text-sm font-medium truncate">{task.title}</div>
+                                <div className="mt-1 flex flex-wrap gap-2 items-center">
+                                  {statusBadge(task.status)}
+                                  {task.completion_date && (
+                                    <span className="text-xs text-muted">
+                                      Concluída em {formatDate(task.completion_date)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{ minWidth: 220 }}>
+                                <Field label="Vincular ao tipo">
+                                  <Select
+                                    value=""
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      if (v) void handleLinkOrphanToTitle(task, v);
+                                    }}
+                                  >
+                                    <option value="">Escolher…</option>
+                                    {phaseTitles.map((t) => (
+                                      <option key={t.id} value={t.id}>
+                                        {t.name}
+                                      </option>
+                                    ))}
+                                  </Select>
+                                </Field>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {phaseTitles.length === 0 ? (
+                    <EmptyState
+                      icon={<Layers size={22} />}
+                      title="Nenhum tipo de projeto nesta fase"
+                      description='Use o botão "Tipo de projeto" acima para adicionar SAA ou SES. Enquanto não houver tipo, a estrutura Fase → Tipo → Tarefas fica vazia nesta etapa.'
+                    />
+                  ) : (
                   <div
                     style={{
                       display: "grid",
@@ -808,6 +937,7 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                       );
                     })}
                   </div>
+                  )}
                 </div>
               )}
             </div>
