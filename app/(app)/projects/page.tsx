@@ -868,10 +868,18 @@ export default function ProjectsPage() {
     [tasks]
   );
 
-  const disciplines = useMemo(
-    () => [...new Set(projects.map((p) => p.discipline).filter(Boolean))] as string[],
-    [projects]
-  );
+  const disciplines = useMemo(() => {
+    const set = new Set(
+      projects.map((p) => p.discipline).filter(Boolean) as string[]
+    );
+    // Sempre oferecer Saneamento, mesmo sem projetos (evita aba sumir com lista vazia).
+    set.add("saneamento");
+    return Array.from(set).sort((a, b) => {
+      if (a === "saneamento") return -1;
+      if (b === "saneamento") return 1;
+      return a.localeCompare(b, "pt-BR", { sensitivity: "base" });
+    });
+  }, [projects]);
   const isSaneamentoTab = useMemo(
     () =>
       activeProjectsTab !== "todos" &&
@@ -1853,7 +1861,7 @@ export default function ProjectsPage() {
       />
 
       {/* ─── Discipline tabs ──────────────────────────────────── */}
-      {!loading && projects.length > 0 && (
+      {!loading && (
         <div className="mb-6">
           <div className="tabs" style={{ maxWidth: "100%", overflowX: "auto" }}>
             <button
