@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   Tooltip,
@@ -282,6 +282,41 @@ function CustomTooltip({
   );
 }
 
+function SafeResponsiveChart({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    const check = () => {
+      const rect = host.getBoundingClientRect();
+      setReady(rect.width > 8 && rect.height > 8);
+    };
+
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(host);
+
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={hostRef} style={{ width: "100%", height: "100%" }}>
+      {ready ? (
+        <ResponsiveContainer width="100%" height="100%">
+          {children}
+        </ResponsiveContainer>
+      ) : null}
+    </div>
+  );
+}
+
 // ─── Donut with side legend ──────────────────────────────────────────────────
 
 function DonutWithLegend({
@@ -306,7 +341,7 @@ function DonutWithLegend({
       }}
     >
       <div style={{ position: "relative", width: "100%", height: 220 }}>
-        <ResponsiveContainer>
+        <SafeResponsiveChart>
           <PieChart>
             <Pie
               data={empty ? [{ name: "Vazio", value: 1, color: "var(--surface-3)" }] : data}
@@ -326,7 +361,7 @@ function DonutWithLegend({
             </Pie>
             {!empty && <Tooltip content={<CustomTooltip />} />}
           </PieChart>
-        </ResponsiveContainer>
+        </SafeResponsiveChart>
         <div
           style={{
             position: "absolute",
@@ -451,7 +486,7 @@ function HealthGauge({
   return (
     <div className="flex flex-col items-center">
       <div style={{ width: "100%", height: 220, position: "relative" }}>
-        <ResponsiveContainer>
+        <SafeResponsiveChart>
           <RadialBarChart
             innerRadius="74%"
             outerRadius="100%"
@@ -479,7 +514,7 @@ function HealthGauge({
               cornerRadius={20}
             />
           </RadialBarChart>
-        </ResponsiveContainer>
+        </SafeResponsiveChart>
         <div
           style={{
             position: "absolute",
@@ -984,7 +1019,7 @@ function KpiHero({
 
       {sparklineData && sparklineData.length > 1 && (
         <div style={{ height: 38, marginTop: 10, marginLeft: -4, marginRight: -4 }}>
-          <ResponsiveContainer>
+          <SafeResponsiveChart>
             <AreaChart data={sparklineData}>
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -1001,7 +1036,7 @@ function KpiHero({
                 isAnimationActive={false}
               />
             </AreaChart>
-          </ResponsiveContainer>
+          </SafeResponsiveChart>
         </div>
       )}
     </div>
@@ -1411,7 +1446,7 @@ function WeeklyActivityChart({
 
   return (
     <div style={{ width: "100%", height: 280 }}>
-      <ResponsiveContainer>
+      <SafeResponsiveChart>
         <BarChart
           data={chartData}
           margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
@@ -1476,7 +1511,7 @@ function WeeklyActivityChart({
             maxBarSize={14}
           />
         </BarChart>
-      </ResponsiveContainer>
+      </SafeResponsiveChart>
     </div>
   );
 }
@@ -2161,7 +2196,7 @@ export function DashboardGeral({
               marginBottom: 6,
             }}
           >
-            <ResponsiveContainer>
+            <SafeResponsiveChart>
               <PieChart>
                 <Pie
                   data={
@@ -2188,7 +2223,7 @@ export function DashboardGeral({
                 </Pie>
                 {stats.totalTasks > 0 && <Tooltip content={<CustomTooltip />} />}
               </PieChart>
-            </ResponsiveContainer>
+            </SafeResponsiveChart>
             <div
               style={{
                 position: "absolute",
