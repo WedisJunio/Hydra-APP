@@ -20,7 +20,9 @@
       "Skill(update-config:*)",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('.claude/settings.local.json','utf8'\\)\\); console.log\\('JSON válido'\\)\")",
       "Bash(echo \"Exit code: $?\")",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(xargs grep *)",
+      "Bash(xargs wc *)"
     ]
   },
   "hooks": {
