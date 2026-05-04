@@ -740,14 +740,6 @@ export default function UserProfilePage() {
 
           {/* Quick actions */}
           <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 16 }}>
-            {profile.email && (
-              <QuickActionButton
-                icon={Mail}
-                label="Enviar e-mail"
-                href={`mailto:${profile.email}`}
-                variant="primary"
-              />
-            )}
             {profile.phone && (
               <QuickActionButton icon={Phone} label="Ligar" href={`tel:${profile.phone}`} />
             )}
@@ -827,7 +819,6 @@ export default function UserProfilePage() {
               icon={Mail}
               label="E-mail"
               value={profile.email}
-              href={`mailto:${profile.email}`}
               copyable
             />
             <InfoLine

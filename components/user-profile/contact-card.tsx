@@ -9,13 +9,12 @@ export function ContactCard({ profile }: { profile: UserProfile }) {
       icon: Mail,
       label: "Email",
       value: profile.email,
-      href: `mailto:${profile.email}`,
     },
     {
       icon: Phone,
       label: "Telefone",
       value: profile.phone,
-      href: `tel:${profile.phone}`,
+      href: profile.phone ? `tel:${profile.phone}` : undefined,
     },
     {
       icon: MapPin,
