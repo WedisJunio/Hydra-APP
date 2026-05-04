@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   Plus,
   Trash2,
@@ -20,6 +20,7 @@ import {
   MessageSquare,
   Paperclip,
   BookOpen,
+  CheckCircle2,
 } from "lucide-react";
 
 import { getCurrentProfile } from "@/lib/supabase/profile";
@@ -44,9 +45,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
 import { TaskJournalInline } from "./task-journal-inline";
 import {
   countBusinessDaysInclusive,
@@ -101,9 +100,25 @@ function parseAttachments(text: string) {
 }
 
 function statusBadge(status: string) {
-  if (status === "completed") return <Badge variant="success">Concluída</Badge>;
+  if (status === "completed")
+    return (
+      <Badge variant="success">
+        <CheckCircle2 size={12} style={{ marginRight: 4, verticalAlign: "middle" }} />
+        Finalizada
+      </Badge>
+    );
   if (status === "in_progress") return <Badge variant="info">Em andamento</Badge>;
   return <Badge variant="warning">Pendente</Badge>;
+}
+
+/** Estilo da linha/card da tarefa: concluídas bem visíveis. */
+function completedTaskHighlightStyle(task: Task): CSSProperties {
+  if (task.status !== "completed") return {};
+  return {
+    borderLeft: "4px solid var(--success)",
+    background:
+      "linear-gradient(90deg, color-mix(in srgb, var(--success) 10%, transparent) 0%, var(--surface) 48%)",
+  };
 }
 
 function priorityBadge(priority: Task["priority"]) {
@@ -506,9 +521,8 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
         <div>
           <div className="card-title">Tipos do Projeto</div>
           <p className="text-sm text-muted mt-1">
-            Fase {'->'} Tipo de projeto (SAA/SES) {'->'} Tarefas.
-            Tarefas criadas na página geral podem aparecer abaixo como &quot;sem tipo&quot; até você
-            vinculá-las. Use o botão <strong>Tipo de projeto</strong> em cada fase para começar.
+            Fase {'->'} Tipo de projeto {'->'} Tarefas. Só aparecem fases com tipo (SAA/SES) cadastrado
+            ou com tarefas aguardando vínculo ao tipo.
           </p>
         </div>
         {busy && <Badge variant="info">Salvando...</Badge>}
@@ -517,8 +531,12 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
       <div className="flex flex-col gap-3">
         {sortedPhases.map((phase) => {
           const phaseTitles = titlesByPhase.get(phase.id) || [];
-          const phaseCollapsed = !!collapsedPhases[phase.id];
           const orphanInPhase = orphanTasksByPhase.get(phase.id) || [];
+
+          /** Fases “vazias” no quadro não aparecem; com tipo ou tarefas sem tipo, aparecem. */
+          if (phaseTitles.length === 0 && orphanInPhase.length === 0) return null;
+
+          const phaseCollapsed = !!collapsedPhases[phase.id];
           const st = phaseTaskStats.get(phase.id) || { total: 0, completed: 0 };
           return (
             <div key={phase.id} className="card">
@@ -559,17 +577,21 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                   <div className="flex-1">
                     <strong>{phase.name}</strong>
                     <div className="text-xs text-muted mt-1">
-                      {phaseTitles.length} tipo(s) de projeto
+                      {phaseTitles.length === 0
+                        ? `${orphanInPhase.length} tarefa(s) sem tipo nesta fase`
+                        : `${phaseTitles.length} tipo(s) de projeto`}
                       {st.total > 0 ? (
                         <>
                           {" · "}
-                          <span style={{ color: "var(--success)" }}>{st.completed}</span>
+                          <span style={{ color: "var(--success)", fontWeight: 600 }}>
+                            {st.completed}
+                          </span>
                           {" / "}
-                          {st.total} tarefa(s) concluída(s) nesta fase
+                          {st.total} concluída(s)
                         </>
-                      ) : (
-                        <> · nenhuma tarefa vinculada à fase ainda</>
-                      )}
+                      ) : phaseTitles.length > 0 ? (
+                        <> · nenhuma tarefa registrada sob os tipos ainda</>
+                      ) : null}
                     </div>
                   </div>
                 </button>
@@ -647,6 +669,7 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                                 borderRadius: 8,
                                 border: "1px solid var(--border)",
                                 background: "var(--surface)",
+                                ...completedTaskHighlightStyle(task),
                               }}
                             >
                               <div style={{ flex: "1 1 200px", minWidth: 0 }}>
@@ -685,13 +708,7 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                     </div>
                   )}
 
-                  {phaseTitles.length === 0 ? (
-                    <EmptyState
-                      icon={<Layers size={22} />}
-                      title="Nenhum tipo de projeto nesta fase"
-                      description='Use o botão "Tipo de projeto" acima para adicionar SAA ou SES. Enquanto não houver tipo, a estrutura Fase → Tipo → Tarefas fica vazia nesta etapa.'
-                    />
-                  ) : (
+                  {phaseTitles.length > 0 && (
                   <div
                     style={{
                       display: "grid",
@@ -761,7 +778,15 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                             <div className="flex-1 flex flex-col gap-2" style={{ minWidth: 0 }}>
                               <div className="flex items-center justify-between gap-2">
                                 <strong style={{ minWidth: 0 }}>{title.name}</strong>
-                                <Badge variant="neutral">{titleTasks.length} tarefa(s)</Badge>
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  <Badge variant="neutral">{titleTasks.length} tarefa(s)</Badge>
+                                  {titleTasks.some((item) => item.status === "completed") && (
+                                    <Badge variant="success">
+                                      {titleTasks.filter((item) => item.status === "completed").length}{" "}
+                                      finalizada(s)
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                               <Badge variant="primary">{title.name}</Badge>
                               <div className="flex items-center gap-1 flex-wrap">
@@ -827,7 +852,7 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                               const isExpandedTask = expandedTaskId === task.id;
                               const journalCount = journalCounts.get(task.id) || 0;
                               return (
-                                <div key={task.id} className="card" style={{ overflow: "hidden" }}>
+                                <div key={task.id} className="card" style={{ overflow: "hidden", ...completedTaskHighlightStyle(task) }}>
                                   {isEditingTask ? (
                                     <div style={{ padding: 10 }}>
                                       <TaskForm
@@ -859,7 +884,26 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                                           {isExpandedTask ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                         </button>
                                         <Badge variant="neutral">#{taskIndex + 1}</Badge>
-                                        <strong style={{ flex: 1, minWidth: 180 }}>{task.title}</strong>
+                                        {task.status === "completed" && (
+                                          <CheckCircle2
+                                            size={18}
+                                            style={{ color: "var(--success)", flexShrink: 0 }}
+                                            aria-label="Tarefa finalizada"
+                                          />
+                                        )}
+                                        <strong
+                                          style={{
+                                            flex: 1,
+                                            minWidth: 180,
+                                            ...(task.status === "completed"
+                                              ? {
+                                                  color: "color-mix(in srgb, var(--foreground) 75%, var(--success))",
+                                                }
+                                              : {}),
+                                          }}
+                                        >
+                                          {task.title}
+                                        </strong>
                                         {statusBadge(task.status)}
                                         {priorityBadge(task.priority)}
                                         {journalCount > 0 && (
