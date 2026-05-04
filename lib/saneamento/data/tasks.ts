@@ -1,4 +1,9 @@
 import { supabase } from "@/lib/supabase/client";
+import {
+  isLikelyJwtExpiredMessage,
+  logSupabaseUnlessJwt,
+} from "@/lib/supabase/errors";
+import { recoverSupabaseJwtOnce } from "@/lib/supabase/session-refresh";
 import { getTodayLocalISO } from "@/lib/utils";
 
 export type Task = {
@@ -30,24 +35,42 @@ const SELECT =
   "id, title, description, status, project_id, phase_id, title_id, subtitle_id, assigned_to, planned_due_date, actual_completed_date, priority, start_date, completion_date, comments, attachments, phase_task_order, started_at, paused_at, completed_at, time_spent_seconds, is_timer_running";
 
 export async function listProjectTasks(projectId: string): Promise<Task[]> {
-  const { data, error } = await supabase
-    .from("tasks")
-    .select(SELECT)
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false });
-  if (error) {
-    console.error("Erro ao listar tarefas:", error.message);
-    return [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await supabase
+      .from("tasks")
+      .select(SELECT)
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      if (isLikelyJwtExpiredMessage(error) && attempt === 0) {
+        await recoverSupabaseJwtOnce();
+        continue;
+      }
+      logSupabaseUnlessJwt("Erro ao listar tarefas:", error);
+      return [];
+    }
+    return (data as unknown as Task[]) || [];
   }
-  return (data as unknown as Task[]) || [];
+  return [];
 }
 
 export async function countProjectTasks(projectId: string): Promise<number> {
-  const { count } = await supabase
-    .from("tasks")
-    .select("id", { count: "exact", head: true })
-    .eq("project_id", projectId);
-  return count ?? 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { count, error } = await supabase
+      .from("tasks")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId);
+    if (error) {
+      if (isLikelyJwtExpiredMessage(error) && attempt === 0) {
+        await recoverSupabaseJwtOnce();
+        continue;
+      }
+      logSupabaseUnlessJwt("Erro ao contar tarefas:", error);
+      return 0;
+    }
+    return count ?? 0;
+  }
+  return 0;
 }
 
 export type CreateTaskInput = {
@@ -95,7 +118,7 @@ export async function createTask(input: CreateTaskInput): Promise<boolean> {
     is_timer_running: false,
   });
   if (error) {
-    console.error("Erro ao criar tarefa:", error.message);
+    logSupabaseUnlessJwt("Erro ao criar tarefa:", error);
     return false;
   }
   return true;

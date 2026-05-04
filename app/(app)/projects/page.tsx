@@ -30,7 +30,11 @@ import {
 
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
-import { getSupabaseErrorMessage, isMissingPlannedEndTargetColumn } from "@/lib/supabase/errors";
+import { getSupabaseErrorMessage, isMissingPlannedEndTargetColumn, isLikelyJwtExpiredMessage, logSupabaseUnlessJwt } from "@/lib/supabase/errors";
+import {
+  ensureFreshSupabaseSession,
+  recoverSupabaseJwtOnce,
+} from "@/lib/supabase/session-refresh";
 import {
   canCreateProject,
   canEditProjectShell,
@@ -556,41 +560,51 @@ export default function ProjectsPage() {
   }, [hasRunningTimer]);
 
   async function loadProjects() {
-    const tryFull = await supabase
-      .from("projects")
-      .select(PROJECT_SELECT_FULL)
-      .order("created_at", { ascending: false });
+    await ensureFreshSupabaseSession();
 
-    let err = tryFull.error;
-    let raw: unknown = tryFull.data;
-
-    if (err && isMissingPlannedEndTargetColumn(err)) {
-      const second = await supabase
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const tryFull = await supabase
         .from("projects")
-        .select(PROJECT_SELECT_WITHOUT_TARGET)
+        .select(PROJECT_SELECT_FULL)
         .order("created_at", { ascending: false });
-      err = second.error;
-      raw = second.data;
-    }
 
-    if (err) {
-      console.error("[loadProjects]", err.message);
-      setProjects([]);
+      let err = tryFull.error;
+      let raw: unknown = tryFull.data;
+
+      if (err && isMissingPlannedEndTargetColumn(err)) {
+        const second = await supabase
+          .from("projects")
+          .select(PROJECT_SELECT_WITHOUT_TARGET)
+          .order("created_at", { ascending: false });
+        err = second.error;
+        raw = second.data;
+      }
+
+      if (err && isLikelyJwtExpiredMessage(err) && attempt === 0) {
+        await recoverSupabaseJwtOnce();
+        continue;
+      }
+
+      if (err) {
+        logSupabaseUnlessJwt("[loadProjects]", err);
+        setProjects([]);
+        return;
+      }
+
+      const list = Array.isArray(raw) ? raw : [];
+      const rows = list.map((row: unknown): Project => {
+        const p = row as Omit<Project, "planned_end_target"> & {
+          planned_end_target?: unknown;
+        };
+        return {
+          ...p,
+          planned_end_target:
+            typeof p.planned_end_target === "string" ? p.planned_end_target : null,
+        };
+      });
+      setProjects(rows);
       return;
     }
-
-    const list = Array.isArray(raw) ? raw : [];
-    const rows = list.map((row: unknown): Project => {
-      const p = row as Omit<Project, "planned_end_target"> & {
-        planned_end_target?: unknown;
-      };
-      return {
-        ...p,
-        planned_end_target:
-          typeof p.planned_end_target === "string" ? p.planned_end_target : null,
-      };
-    });
-    setProjects(rows);
   }
 
   async function loadUsers() {

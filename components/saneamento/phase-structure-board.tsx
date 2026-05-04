@@ -651,38 +651,59 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                       </div>
                       <p className="text-xs text-muted mb-3">
                         Estas tarefas estão na fase (por exemplo criadas na página geral de tarefas), mas
-                        ainda não estão em SAA/SES. Escolha o tipo para vincular — as concluídas passam a
-                        aparecer normalmente no card do tipo.
+                        ainda não estão em SAA/SES. Quando houver tipo cadastrado, use o campo ao lado para
+                        vincular. Abaixo aparece o que já foi feito em cada etapa.
                       </p>
-                      {phaseTitles.length === 0 ? (
-                        <p className="text-sm text-muted">
-                          Adicione primeiro um <strong>Tipo de projeto</strong> no cabeçalho desta fase.
+                      {phaseTitles.length === 0 && (
+                        <p className="text-sm text-muted mb-3">
+                          Para habilitar <strong>Vincular ao tipo</strong>, adicione SAA ou SES com o botão{" "}
+                          <strong>Tipo de projeto</strong> no cabeçalho desta fase.
                         </p>
-                      ) : (
-                        <div className="flex flex-col gap-2">
-                          {orphanInPhase.map((task) => (
-                            <div
-                              key={task.id}
-                              className="flex flex-wrap items-end gap-3"
-                              style={{
-                                padding: "10px 12px",
-                                borderRadius: 8,
-                                border: "1px solid var(--border)",
-                                background: "var(--surface)",
-                                ...completedTaskHighlightStyle(task),
-                              }}
-                            >
-                              <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-                                <div className="text-sm font-medium truncate">{task.title}</div>
-                                <div className="mt-1 flex flex-wrap gap-2 items-center">
-                                  {statusBadge(task.status)}
-                                  {task.completion_date && (
-                                    <span className="text-xs text-muted">
-                                      Concluída em {formatDate(task.completion_date)}
-                                    </span>
-                                  )}
+                      )}
+                      <div className="flex flex-col gap-2">
+                        {orphanInPhase.map((task) => (
+                          <div
+                            key={task.id}
+                            className="flex flex-wrap items-end gap-3"
+                            style={{
+                              padding: "10px 12px",
+                              borderRadius: 8,
+                              border: "1px solid var(--border)",
+                              background: "var(--surface)",
+                              ...completedTaskHighlightStyle(task),
+                            }}
+                          >
+                            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {task.status === "completed" && (
+                                  <CheckCircle2
+                                    size={18}
+                                    style={{ color: "var(--success)", flexShrink: 0 }}
+                                    aria-hidden
+                                  />
+                                )}
+                                <div className="text-sm font-medium" style={{ minWidth: 0 }}>
+                                  {task.title}
                                 </div>
                               </div>
+                              <div className="mt-1 flex flex-wrap gap-2 items-center">
+                                {statusBadge(task.status)}
+                                {task.planned_due_date && (
+                                  <span className="text-xs text-muted">
+                                    Prazo: {formatDate(task.planned_due_date)}
+                                  </span>
+                                )}
+                                {(task.completion_date || task.actual_completed_date) && (
+                                  <span className="text-xs text-muted">
+                                    Finalizada{" "}
+                                    {formatDate(
+                                      task.completion_date || task.actual_completed_date || ""
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {phaseTitles.length > 0 && (
                               <div style={{ minWidth: 220 }}>
                                 <Field label="Vincular ao tipo">
                                   <Select
@@ -692,7 +713,7 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                                       if (v) void handleLinkOrphanToTitle(task, v);
                                     }}
                                   >
-                                    <option value="">Escolher…</option>
+                                    <option value="">Escolher tipo…</option>
                                     {phaseTitles.map((t) => (
                                       <option key={t.id} value={t.id}>
                                         {t.name}
@@ -701,10 +722,10 @@ export function PhaseStructureBoard({ projectId, phases, users }: Props) {
                                   </Select>
                                 </Field>
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 

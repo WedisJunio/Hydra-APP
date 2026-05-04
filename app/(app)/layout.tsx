@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import AuthGuard from "@/components/auth-guard";
+import { SessionKeepAlive } from "@/components/session-keep-alive";
 import LogoutButton from "@/components/logout-button";
 import { Avatar } from "@/components/ui/avatar";
 import {
@@ -164,6 +165,7 @@ export default function AppLayout({
 
   return (
     <AuthGuard>
+      <SessionKeepAlive />
       <div className="app-shell">
         <aside className="sidebar">
           <div className="sidebar-brand">

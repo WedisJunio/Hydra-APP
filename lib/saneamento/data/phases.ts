@@ -1,4 +1,9 @@
 import { supabase } from "@/lib/supabase/client";
+import {
+  isLikelyJwtExpiredMessage,
+  logSupabaseUnlessJwt,
+} from "@/lib/supabase/errors";
+import { recoverSupabaseJwtOnce } from "@/lib/supabase/session-refresh";
 import type { ProjectPhase, PhaseStatus } from "@/lib/saneamento/types";
 import { SANEAMENTO_PHASE_TEMPLATE } from "@/lib/saneamento/phases";
 
@@ -8,16 +13,23 @@ const SELECT =
 export async function listProjectPhases(
   projectId: string
 ): Promise<ProjectPhase[]> {
-  const { data, error } = await supabase
-    .from("project_phases")
-    .select(SELECT)
-    .eq("project_id", projectId)
-    .order("order", { ascending: true });
-  if (error) {
-    console.error("Erro ao listar etapas:", error.message);
-    return [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await supabase
+      .from("project_phases")
+      .select(SELECT)
+      .eq("project_id", projectId)
+      .order("order", { ascending: true });
+    if (error) {
+      if (isLikelyJwtExpiredMessage(error) && attempt === 0) {
+        await recoverSupabaseJwtOnce();
+        continue;
+      }
+      logSupabaseUnlessJwt("Erro ao listar etapas:", error);
+      return [];
+    }
+    return (data as unknown as ProjectPhase[]) || [];
   }
-  return (data as unknown as ProjectPhase[]) || [];
+  return [];
 }
 
 /** Lista etapas de vários projetos de uma só vez (para list page). */
@@ -25,15 +37,22 @@ export async function listPhasesForProjects(
   projectIds: string[]
 ): Promise<ProjectPhase[]> {
   if (projectIds.length === 0) return [];
-  const { data, error } = await supabase
-    .from("project_phases")
-    .select(SELECT)
-    .in("project_id", projectIds);
-  if (error) {
-    console.error("Erro ao listar etapas (lote):", error.message);
-    return [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await supabase
+      .from("project_phases")
+      .select(SELECT)
+      .in("project_id", projectIds);
+    if (error) {
+      if (isLikelyJwtExpiredMessage(error) && attempt === 0) {
+        await recoverSupabaseJwtOnce();
+        continue;
+      }
+      logSupabaseUnlessJwt("Erro ao listar etapas (lote):", error);
+      return [];
+    }
+    return (data as unknown as ProjectPhase[]) || [];
   }
-  return (data as unknown as ProjectPhase[]) || [];
+  return [];
 }
 
 /** Cria as etapas padrão de saneamento para um projeto recém-criado. */
@@ -61,7 +80,7 @@ export async function createPhase(input: {
     status: input.status ?? "pending",
   });
   if (error) {
-    console.error("Erro ao criar etapa:", error.message);
+    logSupabaseUnlessJwt("Erro ao criar etapa:", error);
     return false;
   }
   return true;

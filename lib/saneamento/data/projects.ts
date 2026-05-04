@@ -1,5 +1,10 @@
 import { supabase } from "@/lib/supabase/client";
-import { isMissingPlannedEndTargetColumn } from "@/lib/supabase/errors";
+import {
+  isMissingPlannedEndTargetColumn,
+  isLikelyJwtExpiredMessage,
+  logSupabaseUnlessJwt,
+} from "@/lib/supabase/errors";
+import { recoverSupabaseJwtOnce } from "@/lib/supabase/session-refresh";
 import { mergeProjectPlannedEnd } from "@/lib/utils";
 import type { SanitationProject, SanitationType } from "@/lib/saneamento/types";
 
@@ -32,68 +37,84 @@ function normalizeSanitationRows(
 
 /** Lista projetos do módulo saneamento (disciplina saneamento ou tipo SAA/SES preenchido). */
 export async function listSanitationProjects(): Promise<SanitationProject[]> {
-  const tryFull = await supabase
-    .from("projects")
-    .select(SELECT_FULL)
-    .or(SANITATION_LIST_OR_FILTER)
-    .order("created_at", { ascending: false });
-
-  let error = tryFull.error;
-  let rowsRaw: unknown = tryFull.data;
-
-  if (error && isMissingPlannedEndTargetColumn(error)) {
-    const second = await supabase
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tryFull = await supabase
       .from("projects")
-      .select(SELECT_LEGACY)
+      .select(SELECT_FULL)
       .or(SANITATION_LIST_OR_FILTER)
       .order("created_at", { ascending: false });
-    error = second.error;
-    rowsRaw = second.data;
+
+    let error = tryFull.error;
+    let rowsRaw: unknown = tryFull.data;
+
+    if (error && isMissingPlannedEndTargetColumn(error)) {
+      const second = await supabase
+        .from("projects")
+        .select(SELECT_LEGACY)
+        .or(SANITATION_LIST_OR_FILTER)
+        .order("created_at", { ascending: false });
+      error = second.error;
+      rowsRaw = second.data;
+    }
+
+    if (error) {
+      if (isLikelyJwtExpiredMessage(error) && attempt === 0) {
+        await recoverSupabaseJwtOnce();
+        continue;
+      }
+      logSupabaseUnlessJwt("Erro ao listar projetos:", error);
+      return [];
+    }
+
+    return normalizeSanitationRows(
+      (Array.isArray(rowsRaw) ? rowsRaw : []) as unknown as Record<
+        string,
+        unknown
+      >[]
+    );
   }
 
-  if (error) {
-    console.error("Erro ao listar projetos:", error.message);
-    return [];
-  }
-
-  return normalizeSanitationRows(
-    (Array.isArray(rowsRaw) ? rowsRaw : []) as unknown as Record<
-      string,
-      unknown
-    >[]
-  );
+  return [];
 }
 
 export async function getSanitationProject(
   id: string
 ): Promise<SanitationProject | null> {
-  const tryFull = await supabase
-    .from("projects")
-    .select(SELECT_FULL)
-    .eq("id", id)
-    .maybeSingle();
-
-  let error = tryFull.error;
-  let row: unknown = tryFull.data;
-
-  if (error && isMissingPlannedEndTargetColumn(error)) {
-    const second = await supabase
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tryFull = await supabase
       .from("projects")
-      .select(SELECT_LEGACY)
+      .select(SELECT_FULL)
       .eq("id", id)
       .maybeSingle();
-    error = second.error;
-    row = second.data;
+
+    let error = tryFull.error;
+    let row: unknown = tryFull.data;
+
+    if (error && isMissingPlannedEndTargetColumn(error)) {
+      const second = await supabase
+        .from("projects")
+        .select(SELECT_LEGACY)
+        .eq("id", id)
+        .maybeSingle();
+      error = second.error;
+      row = second.data;
+    }
+
+    if (error) {
+      if (isLikelyJwtExpiredMessage(error) && attempt === 0) {
+        await recoverSupabaseJwtOnce();
+        continue;
+      }
+      logSupabaseUnlessJwt("Erro ao buscar projeto:", error);
+      return null;
+    }
+    if (row === null || row === undefined || typeof row !== "object") return null;
+
+    const normalized = normalizeSanitationRows([row as Record<string, unknown>]);
+    return normalized[0] ?? null;
   }
 
-  if (error) {
-    console.error("Erro ao buscar projeto:", error.message);
-    return null;
-  }
-  if (row === null || row === undefined || typeof row !== "object") return null;
-
-  const normalized = normalizeSanitationRows([row as Record<string, unknown>]);
-  return normalized[0] ?? null;
+  return null;
 }
 
 export type CreateSanitationProjectInput = {
@@ -145,7 +166,7 @@ export async function createSanitationProject(
   }
 
   if (error || !data) {
-    console.error("Erro ao criar projeto:", error?.message);
+    logSupabaseUnlessJwt("Erro ao criar projeto:", error);
     return null;
   }
   return data.id as string;
@@ -170,7 +191,7 @@ export async function updateProjectTechnicalParameters(
     .update(params)
     .eq("id", projectId);
   if (error) {
-    console.error("Erro ao atualizar parâmetros técnicos:", error.message);
+    logSupabaseUnlessJwt("Erro ao atualizar parâmetros técnicos:", error);
     return false;
   }
   return true;

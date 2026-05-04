@@ -27,6 +27,7 @@ import {
   countProjectTasks,
   updatePhaseStatus as updatePhaseStatusData,
 } from "@/lib/saneamento/data";
+import { ensureFreshSupabaseSession } from "@/lib/supabase/session-refresh";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -200,6 +201,8 @@ export default function SaneamentoProjectPage() {
     if (!projectId) return;
     const silent = opts?.silent ?? false;
     if (!silent) setLoading(true);
+
+    await ensureFreshSupabaseSession();
 
     const [proj, phaseList, userList, taskTotal] = await Promise.all([
       getSanitationProject(projectId),

@@ -1,3 +1,33 @@
+export function extractPostgrestErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: string }).message ?? "");
+  }
+  if (typeof error === "string") return error;
+  return "";
+}
+
+/** Erros típicos de access token ao PostgREST/Supabase já expirou. */
+export function isLikelyJwtExpiredMessage(source: unknown): boolean {
+  const msg = typeof source === "string" ? source : extractPostgrestErrorMessage(source);
+  const l = msg.toLowerCase();
+  return (
+    l.includes("jwt expired") ||
+    l.includes("token is expired") ||
+    (l.includes("jwt") && l.includes("expired")) ||
+    (l.includes("invalid jwt") && (l.includes("expired") || l.includes("expire")))
+  );
+}
+
+/**
+ * Evita encher o overlay de desenvolvimento com erros esperados quando a sessão cai.
+ * Preferir em data loaders que fazem console.error(message).
+ */
+export function logSupabaseUnlessJwt(scope: string, error: unknown) {
+  if (isLikelyJwtExpiredMessage(error)) return;
+  const msg = extractPostgrestErrorMessage(error) || String(error);
+  console.error(scope, msg);
+}
+
 function normalizeErrorMessage(rawMessage: string) {
   const lower = rawMessage.toLowerCase();
 

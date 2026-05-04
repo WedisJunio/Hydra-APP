@@ -1,4 +1,9 @@
 import { supabase } from "@/lib/supabase/client";
+import { isLikelyJwtExpiredMessage } from "@/lib/supabase/errors";
+import {
+  ensureFreshSupabaseSession,
+  recoverSupabaseJwtOnce,
+} from "@/lib/supabase/session-refresh";
 
 export type CurrentProfile = {
   id: string;
@@ -31,13 +36,24 @@ export async function getCurrentProfile(
   }
 
   const promise = (async () => {
-    const {
+    await ensureFreshSupabaseSession();
+
+    let {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser();
 
+    if (authError && isLikelyJwtExpiredMessage(authError)) {
+      await recoverSupabaseJwtOnce();
+      const retry = await supabase.auth.getUser();
+      user = retry.data?.user ?? null;
+      authError = retry.error;
+    }
+
     if (authError || !user) {
-      console.error("Erro ao pegar usuário autenticado:", authError?.message);
+      if (!authError || !isLikelyJwtExpiredMessage(authError)) {
+        console.error("Erro ao pegar usuário autenticado:", authError?.message);
+      }
       cachedProfile = null;
       cachedAuthUserId = null;
       return null;
