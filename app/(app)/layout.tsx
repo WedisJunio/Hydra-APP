@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Moon,
   Sun,
+  Droplets,
 } from "lucide-react";
 
 import AuthGuard from "@/components/auth-guard";
@@ -59,7 +60,7 @@ export default function AppLayout({
   const pathname = usePathname();
   const [currentUser, setCurrentUser] = useState<CurrentUserProfile | null>(null);
   const [authEmail, setAuthEmail] = useState<string>("");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark" | "hydra">("light");
 
   useEffect(() => {
     let active = true;
@@ -90,20 +91,45 @@ export default function AppLayout({
   useEffect(() => {
     const saved = window.localStorage.getItem("hydra-theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const nextTheme: "light" | "dark" = saved === "dark" || (!saved && prefersDark) ? "dark" : "light";
+    const nextTheme: "light" | "dark" | "hydra" =
+      saved === "dark" || saved === "hydra" || saved === "light"
+        ? saved
+        : prefersDark
+        ? "dark"
+        : "light";
 
     setTheme(nextTheme);
     document.documentElement.setAttribute("data-theme", nextTheme);
-    document.documentElement.style.colorScheme = nextTheme;
+    document.documentElement.style.colorScheme = nextTheme === "light" ? "light" : "dark";
   }, []);
 
   function handleToggleTheme() {
-    const nextTheme = theme === "dark" ? "light" : "dark";
+    // Ciclo: light → dark → hydra → light
+    const nextTheme: "light" | "dark" | "hydra" =
+      theme === "light" ? "dark" : theme === "dark" ? "hydra" : "light";
     setTheme(nextTheme);
     window.localStorage.setItem("hydra-theme", nextTheme);
     document.documentElement.setAttribute("data-theme", nextTheme);
-    document.documentElement.style.colorScheme = nextTheme;
+    document.documentElement.style.colorScheme = nextTheme === "light" ? "light" : "dark";
   }
+
+  const themeMeta: Record<typeof theme, { next: string; icon: React.ReactNode; title: string }> = {
+    light: {
+      next: "dark",
+      icon: <Sun size={16} />,
+      title: "Tema atual: Claro · Clique para Escuro",
+    },
+    dark: {
+      next: "hydra",
+      icon: <Moon size={16} />,
+      title: "Tema atual: Escuro · Clique para HydraCode",
+    },
+    hydra: {
+      next: "light",
+      icon: <Droplets size={16} />,
+      title: "Tema atual: HydraCode · Clique para Claro",
+    },
+  };
 
   const visibleMenuItems = useMemo(
     () => filterSidebarMenuByRole(menuItems, currentUser?.role),
@@ -213,10 +239,10 @@ export default function AppLayout({
                 type="button"
                 className="btn btn-ghost btn-icon"
                 onClick={handleToggleTheme}
-                title={theme === "dark" ? "Ativar tema claro" : "Ativar tema escuro"}
-                aria-label={theme === "dark" ? "Ativar tema claro" : "Ativar tema escuro"}
+                title={themeMeta[theme].title}
+                aria-label={themeMeta[theme].title}
               >
-                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                {themeMeta[theme].icon}
               </button>
               <div
                 className="hidden"

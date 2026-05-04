@@ -93,6 +93,65 @@
   --header-height: 64px;
 }
 
+/* ─── HydraCode Brand Theme ─────────────────────────────────────────────
+   Inspirado na paleta da logo: ciano vibrante + navy profundo.
+   Para apresentações e demos com identidade da marca.
+   ─────────────────────────────────────────────────────────────────── */
+[data-theme="hydra"] {
+  /* Surfaces */
+  --background: #051124;
+  --surface: #0B2240;
+  --surface-2: #081A33;
+  --surface-3: #133358;
+
+  /* Text */
+  --foreground: #E0F2FE;
+  --muted-fg: #7DD3FC;
+  --subtle-fg: #475F7E;
+
+  /* Borders */
+  --border: #1E3A5F;
+  --border-strong: #2C5180;
+
+  /* Brand — ciano da logo */
+  --primary: #06B6D4;
+  --primary-hover: #0891B2;
+  --primary-soft: rgba(6, 182, 212, 0.18);
+  --primary-fg: #FFFFFF;
+
+  /* States */
+  --success: #10B981;
+  --success-soft: rgba(16, 185, 129, 0.18);
+  --success-fg: #6EE7B7;
+
+  --warning: #FBBF24;
+  --warning-soft: rgba(251, 191, 36, 0.18);
+  --warning-fg: #FCD34D;
+
+  --danger: #F87171;
+  --danger-soft: rgba(248, 113, 113, 0.18);
+  --danger-fg: #FCA5A5;
+
+  --info: #22D3EE;
+  --info-soft: rgba(34, 211, 238, 0.18);
+  --info-fg: #A5F3FC;
+
+  /* Sidebar — ainda mais profundo que o background */
+  --sidebar-bg: #020A18;
+  --sidebar-fg: #BAE6FD;
+  --sidebar-fg-muted: #475F7E;
+  --sidebar-active-bg: rgba(6, 182, 212, 0.22);
+  --sidebar-active-fg: #22D3EE;
+  --sidebar-border: rgba(34, 211, 238, 0.10);
+
+  /* Shadows com glow ciano sutil */
+  --shadow-xs: 0 1px 2px rgba(2, 6, 23, 0.5);
+  --shadow-sm: 0 1px 3px rgba(2, 6, 23, 0.55), 0 1px 2px rgba(2, 6, 23, 0.4);
+  --shadow-md: 0 4px 12px rgba(2, 6, 23, 0.5), 0 0 24px rgba(6, 182, 212, 0.04);
+  --shadow-lg: 0 16px 30px rgba(2, 6, 23, 0.6), 0 0 32px rgba(6, 182, 212, 0.06);
+  --shadow-focus: 0 0 0 3px rgba(6, 182, 212, 0.4);
+}
+
 [data-theme="dark"] {
   /* Surfaces */
   --background: #0B1220;
@@ -169,6 +228,15 @@ body {
   background: var(--background);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glow ambiente discreto para o tema HydraCode (gradiente radial atrás de tudo) */
+[data-theme="hydra"] body {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(6, 182, 212, 0.10) 0%, transparent 45%),
+    radial-gradient(circle at 88% 92%, rgba(34, 211, 238, 0.07) 0%, transparent 45%),
+    var(--background);
+  background-attachment: fixed;
 }
 
 button,
