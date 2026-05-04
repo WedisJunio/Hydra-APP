@@ -63,6 +63,28 @@ export function compareDateOnly(a: string, b: string) {
   return new Date(a + "T00:00:00").getTime() - new Date(b + "T00:00:00").getTime();
 }
 
+/**
+ * Data prevista efetiva de término do projeto no cronograma: o mais tardio entre
+ * a meta declarada (compromisso/cliente) e o maior planned_due_date das tarefas.
+ */
+export function mergeProjectPlannedEnd(
+  plannedEndTarget: string | null | undefined,
+  latestTaskPlannedDue: string | null | undefined
+): string | null {
+  const t =
+    plannedEndTarget && plannedEndTarget.trim()
+      ? plannedEndTarget.trim().slice(0, 10)
+      : null;
+  const m =
+    latestTaskPlannedDue && latestTaskPlannedDue.trim()
+      ? latestTaskPlannedDue.trim().slice(0, 10)
+      : null;
+  if (!t && !m) return null;
+  if (!t) return m;
+  if (!m) return t;
+  return compareDateOnly(t, m) >= 0 ? t : m;
+}
+
 /** Verdadeiro quando a tarefa foi concluída depois do prazo. */
 export function isTaskCompletedLate(task: DelayCheckTask) {
   if (task.status !== "completed") return false;

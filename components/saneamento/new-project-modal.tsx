@@ -36,6 +36,7 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
   const [municipality, setMunicipality] = useState("");
   const [state, setState] = useState("MG");
   const [contractValue, setContractValue] = useState("");
+  const [plannedEndTarget, setPlannedEndTarget] = useState("");
   const [notes, setNotes] = useState("");
   const [creating, setCreating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
     setMunicipality("");
     setState("MG");
     setContractValue("");
+    setPlannedEndTarget("");
     setNotes("");
     setErrorMsg(null);
   }
@@ -92,7 +94,7 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
       municipality: municipality || null,
       state: state || null,
       contract_value: contractValue ? Number(contractValue) : null,
-      planned_end_date: null,
+      planned_end_target: plannedEndTarget.trim().slice(0, 10) || null,
       notes: notes || null,
     });
 
@@ -267,19 +269,16 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
             </Field>
           </div>
 
-          <div
-            className="text-xs text-muted rounded-md px-3 py-2"
-            style={{
-              background: "var(--surface-2)",
-              border: "1px solid var(--border)",
-              lineHeight: 1.45,
-            }}
+          <Field
+            label="Previsão de término (meta)"
+            help="Recomendada para comunicação externa e contrato; o cronograma usa automaticamente o mais tardio entre esta data e os prazos das tarefas futuras."
           >
-            O <strong>prazo previsto do projeto</strong> será calculado quando houver
-            tarefas com data prevista (usa a data mais tardia). O{" "}
-            <strong>término real</strong> é gravado quando todas as tarefas forem
-            concluídas.
-          </div>
+            <Input
+              type="date"
+              value={plannedEndTarget}
+              onChange={(e) => setPlannedEndTarget(e.target.value)}
+            />
+          </Field>
 
           <Field label="Observações">
             <Textarea

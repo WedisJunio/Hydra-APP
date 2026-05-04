@@ -59,6 +59,7 @@ import {
   getTodayLocalISO,
   isTaskCompletedLate,
   isTaskDelayed,
+  mergeProjectPlannedEnd,
 } from "@/lib/utils";
 import { formatProjectDisplayName } from "@/lib/project-display";
 
@@ -476,22 +477,34 @@ export default function TasksPage() {
   }
 
   /**
-   * Previsao de entrega no cadastro do projeto = maior planned_due_date
-   * entre as tarefas (fallback no client; existe trigger equivalente).
+   * projects.planned_end_date = mais tardio entre planned_end_target do projeto
+   * e a maior planned_due_date das tarefas (client mirror; há trigger no SQL).
    */
   async function recalcProjectPlannedEndDate(projectId: string | null | undefined) {
     if (!projectId) return;
     try {
-      const { data: rows } = await supabase
-        .from("tasks")
-        .select("planned_due_date")
-        .eq("project_id", projectId);
+      const [{ data: rows }, { data: proj }] = await Promise.all([
+        supabase
+          .from("tasks")
+          .select("planned_due_date")
+          .eq("project_id", projectId),
+        supabase
+          .from("projects")
+          .select("planned_end_target")
+          .eq("id", projectId)
+          .maybeSingle(),
+      ]);
 
       const dates = (rows ?? [])
         .map((t) => t.planned_due_date)
         .filter((d): d is string => !!d);
-      const nextEnd =
+      const taskMax =
         dates.length > 0 ? dates.reduce((max, d) => (d > max ? d : max)) : null;
+
+      const nextEnd = mergeProjectPlannedEnd(
+        proj?.planned_end_target as string | null | undefined,
+        taskMax
+      );
 
       await supabase
         .from("projects")

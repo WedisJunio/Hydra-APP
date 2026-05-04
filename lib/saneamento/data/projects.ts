@@ -1,8 +1,9 @@
 import { supabase } from "@/lib/supabase/client";
+import { mergeProjectPlannedEnd } from "@/lib/utils";
 import type { SanitationProject, SanitationType } from "@/lib/saneamento/types";
 
 const SELECT =
-  "id, name, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at, discipline, client_id, contract_number, sanitation_type, municipality, state, design_flow_lps, population_current, population_final, horizon_years, network_length_m, treatment_system, contract_value, notes";
+  "id, name, manager_id, coordinator_id, leader_id, planned_end_date, planned_end_target, actual_end_date, created_at, discipline, client_id, contract_number, sanitation_type, municipality, state, design_flow_lps, population_current, population_final, horizon_years, network_length_m, treatment_system, contract_value, notes";
 
 /** Lista projetos com discipline = 'saneamento'. */
 export async function listSanitationProjects(): Promise<SanitationProject[]> {
@@ -43,7 +44,7 @@ export type CreateSanitationProjectInput = {
   municipality?: string | null;
   state?: string | null;
   contract_value?: number | null;
-  planned_end_date?: string | null;
+  planned_end_target?: string | null;
   notes?: string | null;
 };
 
@@ -51,10 +52,16 @@ export type CreateSanitationProjectInput = {
 export async function createSanitationProject(
   input: CreateSanitationProjectInput
 ): Promise<string | null> {
+  const target = input.planned_end_target?.trim().slice(0, 10) || null;
+  const { planned_end_target: _omit, ...rest } = input;
+  const effectivePlannedEnd = mergeProjectPlannedEnd(target, null);
+
   const { data, error } = await supabase
     .from("projects")
     .insert({
-      ...input,
+      ...rest,
+      planned_end_target: target,
+      planned_end_date: effectivePlannedEnd,
       discipline: "saneamento",
     })
     .select("id")

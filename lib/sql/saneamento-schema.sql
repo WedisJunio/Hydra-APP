@@ -62,6 +62,8 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS network_length_m  NUMERIC;     -- 
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS treatment_system  TEXT;        -- ex: 'UASB', 'Lodos ativados', 'Convencional'
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS contract_value    NUMERIC;     -- valor do contrato (R$)
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS notes             TEXT;
+-- Meta de entrega opcional para comunicação externa; ver lib/sql/auto-project-planned-end-from-tasks.sql
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS planned_end_target DATE;
 
 CREATE INDEX IF NOT EXISTS projects_discipline_idx ON projects (discipline);
 CREATE INDEX IF NOT EXISTS projects_client_idx     ON projects (client_id);

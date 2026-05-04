@@ -109,6 +109,7 @@ export type SanitationProject = {
   coordinator_id: string | null;
   leader_id: string | null;
   planned_end_date: string | null;
+  planned_end_target: string | null;
   actual_end_date: string | null;
   created_at: string;
   // Saneamento

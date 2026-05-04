@@ -46,7 +46,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonCard } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { formatSeconds, isTaskDelayed } from "@/lib/utils";
+import { formatSeconds, isTaskDelayed, mergeProjectPlannedEnd } from "@/lib/utils";
 import { formatProjectDisplayName } from "@/lib/project-display";
 import { generateProjectDashboardPdf } from "@/lib/project-report-pdf";
 import {
@@ -78,6 +78,7 @@ type Project = {
   coordinator_id: string | null;
   leader_id: string | null;
   planned_end_date: string | null;
+  planned_end_target: string | null;
   actual_end_date: string | null;
   created_at: string;
 };
@@ -477,6 +478,7 @@ export default function ProjectsPage() {
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [newPlannedEndTarget, setNewPlannedEndTarget] = useState("");
   const [newManagerId, setNewManagerId] = useState("");
   const [newCoordinatorId, setNewCoordinatorId] = useState("");
   const [newLeaderId, setNewLeaderId] = useState("");
@@ -484,6 +486,7 @@ export default function ProjectsPage() {
 
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editedProjectName, setEditedProjectName] = useState("");
+  const [editedPlannedEndTarget, setEditedPlannedEndTarget] = useState("");
   const [editedManagerId, setEditedManagerId] = useState("");
   const [editedCoordinatorId, setEditedCoordinatorId] = useState("");
   const [editedLeaderId, setEditedLeaderId] = useState("");
@@ -532,7 +535,7 @@ export default function ProjectsPage() {
     const { data } = await supabase
       .from("projects")
       .select(
-        "id, name, discipline, municipality, state, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at"
+        "id, name, discipline, municipality, state, manager_id, coordinator_id, leader_id, planned_end_date, planned_end_target, actual_end_date, created_at"
       )
       .order("created_at", { ascending: false });
     setProjects((data as Project[]) || []);
@@ -650,9 +653,14 @@ export default function ProjectsPage() {
       .map((t) => t.actual_completed_date)
       .filter((d): d is string => !!d);
 
-    const plannedEnd = plannedDates.length > 0
+    const plannedFromTasks = plannedDates.length > 0
       ? plannedDates.reduce((max, d) => (d > max ? d : max))
       : null;
+
+    const target = project.planned_end_target?.slice(0, 10) ?? null;
+    const merged = mergeProjectPlannedEnd(target, plannedFromTasks);
+    const persisted = project.planned_end_date?.slice(0, 10) ?? null;
+    const plannedEnd = persisted ?? merged;
 
     // Termino real e a coluna persistida em projects.actual_end_date
     // (preenchida automaticamente pelo trigger quando todas as tarefas
@@ -663,7 +671,7 @@ export default function ProjectsPage() {
       : null;
     const actualEnd = project.actual_end_date ?? partialEnd;
 
-    return { plannedEnd, actualEnd, partialEnd };
+    return { plannedEnd, plannedTarget: target, plannedFromTasks, actualEnd, partialEnd };
   }
 
   // ─── CRUD handlers ─────────────────────────────────────────────────────────
@@ -679,11 +687,14 @@ export default function ProjectsPage() {
 
     const managerId = newManagerId || profile.id;
 
+    const target = newPlannedEndTarget.trim().slice(0, 10) || null;
+
     const { data: project, error } = await supabase
       .from("projects")
       .insert({
         name: newProjectName,
-        planned_end_date: null,
+        planned_end_target: target,
+        planned_end_date: mergeProjectPlannedEnd(target, null),
         actual_end_date: null,
         manager_id: managerId,
         coordinator_id: newCoordinatorId || null,
@@ -717,6 +728,7 @@ export default function ProjectsPage() {
     }
 
     setNewProjectName("");
+    setNewPlannedEndTarget("");
     setNewManagerId("");
     setNewCoordinatorId("");
     setNewLeaderId("");
@@ -730,6 +742,7 @@ export default function ProjectsPage() {
   function handleStartEdit(project: Project) {
     setEditingProjectId(project.id);
     setEditedProjectName(project.name);
+    setEditedPlannedEndTarget(project.planned_end_target?.slice(0, 10) ?? "");
     setEditedManagerId(project.manager_id || "");
     setEditedCoordinatorId(project.coordinator_id || "");
     setEditedLeaderId(project.leader_id || "");
@@ -741,10 +754,13 @@ export default function ProjectsPage() {
 
   async function handleSaveEdit(projectId: string) {
     if (!editedProjectName.trim()) return;
+    const target = editedPlannedEndTarget.trim().slice(0, 10) || null;
+
     const { error: updateError } = await supabase
       .from("projects")
       .update({
         name: editedProjectName,
+        planned_end_target: target,
         manager_id: editedManagerId || null,
         coordinator_id: editedCoordinatorId || null,
         leader_id: editedLeaderId || null,
@@ -1011,6 +1027,16 @@ export default function ProjectsPage() {
                 onChange={(e) => setEditedProjectName(e.target.value)}
               />
             </Field>
+            <Field
+              label="Previsão de término (meta)"
+              help="Visível ao cliente/fornecedores: o cronograma usa o mais tardio entre esta data e os prazos das tarefas."
+            >
+              <Input
+                type="date"
+                value={editedPlannedEndTarget}
+                onChange={(e) => setEditedPlannedEndTarget(e.target.value)}
+              />
+            </Field>
             <div
               className="text-xs text-muted rounded-md px-3 py-2"
               style={{
@@ -1020,16 +1046,18 @@ export default function ProjectsPage() {
               }}
             >
               <strong style={{ color: "var(--foreground)", display: "block", marginBottom: 4 }}>
-                Prazos do projeto (automático)
+                Prazos do projeto
               </strong>
-              A <strong>data prevista</strong> usa o maior{" "}
-              <em>prazo previsto das tarefas</em>.
-              {" "}
-              A <strong>data real</strong> aparece apenas quando todas as tarefas
-              estiverem concluídas.
+              A <strong>previsão efetiva no calendário</strong> é a data mais tardia entre a meta
+              acima e o maior prazo das tarefas. A{" "}
+              <strong>data real de término</strong> é registrada só quando todas as tarefas
+              forem concluídas.
               <span className="block mt-2" style={{ color: "var(--muted-fg)" }}>
-                Pré-visualização atual: prevista{" "}
+                Efetiva hoje{" "}
                 <strong>{dates.plannedEnd ? formatBRDate(dates.plannedEnd) : "—"}</strong>
+                {" · "}
+                maior prazo só nas tarefas{" "}
+                <strong>{dates.plannedFromTasks ? formatBRDate(dates.plannedFromTasks) : "—"}</strong>
                 {" · "}
                 término real{" "}
                 <strong>{project.actual_end_date ? formatBRDate(project.actual_end_date) : "—"}</strong>
@@ -1179,11 +1207,11 @@ export default function ProjectsPage() {
                 >
                   <ProjectDateChip
                     icon={<CalendarDays size={11} />}
-                    label="Previsão (tarefas)"
+                    label="Previsão"
                     value={
                       dates.plannedEnd
                         ? formatBRDate(dates.plannedEnd)
-                        : "Sem previsão"
+                        : "Meta ou tarefas"
                     }
                     tone="muted"
                   />
@@ -1438,15 +1466,23 @@ export default function ProjectsPage() {
               }}
             >
               <StatTile
-                label="Previsão de entrega (automático)"
+                label="Previsão efetiva de entrega"
                 value={
                   dates.plannedEnd
                     ? formatBRDate(dates.plannedEnd)
-                    : "Ainda sem tarefas com prazo"
+                    : "Defina uma meta ou prazos nas tarefas"
                 }
                 icon={<CalendarDays size={18} />}
                 variant="info"
-                hint="Usa a data prevista mais tardia das tarefas deste projeto."
+                hint={
+                  dates.plannedTarget && dates.plannedFromTasks
+                    ? `Mais tardia entre a meta (${formatBRDate(dates.plannedTarget)}) e o maior prazo das tarefas.`
+                    : dates.plannedTarget
+                    ? `Com base na meta ${formatBRDate(dates.plannedTarget)} até as tarefas terem prazos próprios.`
+                    : dates.plannedFromTasks
+                    ? "Só a partir das tarefas · cadastrar também uma meta recomendado para prazos externos."
+                    : "Informe uma meta ao editar o projeto ou datas previstas nas tarefas."
+                }
               />
               <StatTile
                 label="Data real de entrega"
@@ -2034,7 +2070,7 @@ export default function ProjectsPage() {
             <div>
               <div className="card-title">Novo projeto</div>
               <p className="text-xs text-muted mt-0.5">
-                Responsáveis e nome; prazos vêm das tarefas automaticamente.
+                Responsáveis, nome e meta de entrega para quem enxerga o projeto por fora.
               </p>
             </div>
           </div>
@@ -2047,6 +2083,20 @@ export default function ProjectsPage() {
                   onChange={(e) => setNewProjectName(e.target.value)}
                 />
               </Field>
+              <Field label="Previsão de término (meta)">
+                <Input
+                  type="date"
+                  value={newPlannedEndTarget}
+                  onChange={(e) => setNewPlannedEndTarget(e.target.value)}
+                />
+              </Field>
+              <p className="text-xs text-muted" style={{ marginTop: -6, marginBottom: 0 }}>
+                Esta data conta para relatórios e calendário. O sistema registra também o{" "}
+                <strong>prazo efetivo</strong>: o mais tardio entre esta meta e os prazos das
+                tarefas quando existirem. A{" "}
+                <strong>data real de término</strong> é preenchida quando todas as tarefas
+                forem concluídas.
+              </p>
               <div
                 className="text-xs text-muted rounded-md px-3 py-2"
                 style={{
@@ -2055,69 +2105,11 @@ export default function ProjectsPage() {
                   lineHeight: 1.45,
                 }}
               >
-                <strong style={{ color: "var(--foreground)" }}>Prazos</strong> são
-                atualizados sozinhos ao cadastrar tarefas com prazo previsto: a{" "}
-                <strong>previsão de entrega</strong> será a maior data entre as
-                tarefas; a <strong>data real</strong> será preenchida quando todas as
-                tarefas estiverem concluídas.
-              </div>
-              <div
-                className="grid-2 gap-3"
-                aria-hidden
-                style={{ opacity: 0.92 }}
-              >
-                <div>
-                  <div
-                    className="text-xs text-muted mb-1"
-                    style={{ fontWeight: 600 }}
-                  >
-                    Data prevista de entrega
-                  </div>
-                  <div
-                    className="flex items-center gap-2 text-sm rounded-md px-3 py-2"
-                    style={{
-                      border: "1px dashed color-mix(in srgb, var(--primary) 35%, var(--border))",
-                      background:
-                        "color-mix(in srgb, var(--primary-soft) 60%, transparent)",
-                      color: "var(--muted-fg)",
-                    }}
-                  >
-                    <CalendarDays
-                      size={16}
-                      className="shrink-0"
-                      style={{ color: "var(--primary)" }}
-                    />
-                    <span style={{ fontWeight: 600 }}>
-                      Calculada: maior prazo das tarefas
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <div
-                    className="text-xs text-muted mb-1"
-                    style={{ fontWeight: 600 }}
-                  >
-                    Data real de entrega
-                  </div>
-                  <div
-                    className="flex items-center gap-2 text-sm rounded-md px-3 py-2"
-                    style={{
-                      border: "1px dashed color-mix(in srgb, var(--success) 35%, var(--border))",
-                      background:
-                        "color-mix(in srgb, var(--success-soft) 55%, transparent)",
-                      color: "var(--muted-fg)",
-                    }}
-                  >
-                    <CheckCircle2
-                      size={16}
-                      className="shrink-0"
-                      style={{ color: "var(--success)" }}
-                    />
-                    <span style={{ fontWeight: 600 }}>
-                      Só quando 100% das tarefas concluídas
-                    </span>
-                  </div>
-                </div>
+                <strong style={{ color: "var(--foreground)" }}>
+                  Sugestão
+                </strong>
+                · Mesmo antes de criar as tarefas, informe uma previsão quando houver compromisso
+                com cliente ou contrato — evita ficar sem data no cronograma.
               </div>
               <div className="grid-3">
                 <Field label="Gerente">
