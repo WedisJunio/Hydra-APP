@@ -43,7 +43,7 @@ type NewUserForm = {
 const emptyForm: NewUserForm = {
   name: "",
   email: "",
-  role: "employee",
+  role: "projetista",
   phone: "",
   date_of_birth: "",
   job_title: "",

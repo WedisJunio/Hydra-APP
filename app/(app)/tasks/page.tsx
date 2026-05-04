@@ -310,6 +310,8 @@ export default function TasksPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentProfileId, setCurrentProfileId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
 
   const [showNewTaskForm, setShowNewTaskForm] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -393,6 +395,17 @@ export default function TasksPage() {
       .eq("is_active", true)
       .order("name", { ascending: true });
     setUsers(data || []);
+  }
+
+  function canManageTask(task: Task) {
+    if (task.assigned_to && currentProfileId && task.assigned_to === currentProfileId) {
+      return true;
+    }
+    return (
+      currentUserRole === "admin" ||
+      currentUserRole === "coordinator" ||
+      currentUserRole === "employee"
+    );
   }
 
   // ─── CRUD handlers ───────────────────────────────────────────────────────
@@ -480,6 +493,13 @@ export default function TasksPage() {
 
   async function handleStartTimer(task: Task) {
     if (task.status === "completed") return;
+    if (!canManageTask(task)) {
+      showErrorToast(
+        "Sem permissão",
+        "Você só pode iniciar tarefas sob sua responsabilidade."
+      );
+      return;
+    }
 
     const previousTasks = tasks;
     const nowIso = new Date().toISOString();
@@ -520,6 +540,13 @@ export default function TasksPage() {
 
   async function handlePauseTimer(task: Task, reason: string) {
     if (!task.is_timer_running || !task.started_at) return;
+    if (!canManageTask(task)) {
+      showErrorToast(
+        "Sem permissão",
+        "Você só pode pausar tarefas sob sua responsabilidade."
+      );
+      return;
+    }
     const trimmedReason = reason.trim();
     if (!trimmedReason) {
       showErrorToast("Motivo obrigatório", "Informe o motivo da pausa.");
@@ -572,6 +599,13 @@ export default function TasksPage() {
   }
 
   async function handleFinishTask(task: Task) {
+    if (!canManageTask(task)) {
+      showErrorToast(
+        "Sem permissão",
+        "Você só pode concluir tarefas sob sua responsabilidade."
+      );
+      return;
+    }
     const totalSeconds = getLiveSeconds(task);
     const today = getTodayLocalISO();
     const completedIso = new Date().toISOString();
@@ -623,6 +657,13 @@ export default function TasksPage() {
   }
 
   async function handleChangeStatus(task: Task, newStatus: string) {
+    if (!canManageTask(task)) {
+      showErrorToast(
+        "Sem permissão",
+        "Você só pode alterar tarefas sob sua responsabilidade."
+      );
+      return;
+    }
     if (newStatus === "completed") {
       await handleFinishTask(task);
       return;
@@ -674,6 +715,14 @@ export default function TasksPage() {
   }
 
   async function handleDeleteTask(taskId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (task && !canManageTask(task)) {
+      showErrorToast(
+        "Sem permissão",
+        "Você só pode excluir tarefas sob sua responsabilidade."
+      );
+      return;
+    }
     if (!window.confirm("Excluir esta tarefa?")) return;
 
     const previousTasks = tasks;
@@ -689,6 +738,13 @@ export default function TasksPage() {
   }
 
   function handleStartEdit(task: Task) {
+    if (!canManageTask(task)) {
+      showErrorToast(
+        "Sem permissão",
+        "Você só pode editar tarefas sob sua responsabilidade."
+      );
+      return;
+    }
     setEditingTaskId(task.id);
     setEditedTitle(task.title);
     setEditedDescription(task.description || "");
@@ -806,6 +862,10 @@ export default function TasksPage() {
     loadTasks();
     loadProjects();
     loadUsers();
+    getCurrentProfile().then((profile) => {
+      setCurrentProfileId(profile?.id || null);
+      setCurrentUserRole(profile?.role || null);
+    });
   }, []);
 
   const hasActiveFilter = !!(

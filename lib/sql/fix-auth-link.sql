@@ -71,7 +71,7 @@ SELECT
     au.raw_user_meta_data ->> 'name',
     SPLIT_PART(au.email, '@', 1)
   ),
-  'employee',
+  'projetista',
   'managed_by_supabase_auth',
   true
 FROM auth.users au
@@ -113,7 +113,7 @@ BEGIN
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data ->> 'name', SPLIT_PART(NEW.email, '@', 1)),
-    'employee',
+    'projetista',
     'managed_by_supabase_auth',
     true
   )

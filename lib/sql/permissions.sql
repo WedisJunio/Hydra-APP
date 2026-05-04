@@ -459,8 +459,8 @@ CREATE POLICY arts_delete ON public.arts
 
 
 -- ─── 11. POLICIES — TASKS ───────────────────────────────────────────────────
--- Membro do projeto cria tarefas; responsável pode editar a própria;
--- líder pode editar/excluir qualquer tarefa do projeto.
+-- Membro do projeto cria tarefas.
+-- UPDATE: apenas responsável, admin, coordinator ou employee (projetista legado).
 
 DROP POLICY IF EXISTS tasks_select ON public.tasks;
 DROP POLICY IF EXISTS tasks_insert ON public.tasks;
@@ -479,12 +479,12 @@ CREATE POLICY tasks_update ON public.tasks
   FOR UPDATE TO authenticated
   USING (
     public.is_admin()
-    OR public.is_project_lead(project_id)
+    OR public.current_app_user_role() IN ('coordinator', 'employee')
     OR assigned_to = public.current_app_user_id()
   )
   WITH CHECK (
     public.is_admin()
-    OR public.is_project_lead(project_id)
+    OR public.current_app_user_role() IN ('coordinator', 'employee')
     OR assigned_to = public.current_app_user_id()
   );
 

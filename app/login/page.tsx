@@ -129,7 +129,7 @@ export default function LoginPage() {
       const { error: insertError } = await supabase.from("users").insert({
         name: trimmedName,
         email: trimmedEmail.toLowerCase(),
-        role: "employee",
+        role: "projetista",
         password_hash: `disabled:${crypto.randomUUID()}`,
         is_active: true,
         auth_user_id: authUserId,
