@@ -10,12 +10,15 @@ import {
   AlertTriangle,
   Folder,
 } from "lucide-react";
+import { formatProjectDisplayName } from "@/lib/project-display";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type GanttProject = {
   id: string;
   name: string;
+  municipality?: string | null;
+  state?: string | null;
   planned_end_date: string | null;
   actual_end_date?: string | null;
   created_at?: string | null;
@@ -480,7 +483,7 @@ export function GanttChart({
                         flex: 1,
                       }}
                     >
-                      {project.name}
+                      {formatProjectDisplayName(project)}
                     </span>
                     <span
                       style={{

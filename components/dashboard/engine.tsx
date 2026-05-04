@@ -45,6 +45,7 @@ import {
   getTodayLocalISO,
   isTaskDelayed,
 } from "@/lib/utils";
+import { formatProjectDisplayName } from "@/lib/project-display";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ export type Project = {
   id: string;
   name: string;
   discipline?: string | null;
+  municipality?: string | null;
+  state?: string | null;
 };
 
 export type User = {
@@ -1990,9 +1993,10 @@ export function DashboardGeral({
           const pt = filteredTasks.filter((t) => t.project_id === p.id);
           const totalSeconds = pt.reduce((s, t) => s + (liveSecondsMap[t.id] ?? 0), 0);
           const completed = pt.filter((t) => t.status === "completed").length;
+          const display = formatProjectDisplayName(p);
           return {
             id: p.id,
-            name: p.name.length > 22 ? p.name.slice(0, 22) + "…" : p.name,
+            name: display.length > 22 ? display.slice(0, 22) + "…" : display,
             horas: Number((totalSeconds / 3600).toFixed(2)),
             tarefas: pt.length,
             concluidas: completed,
@@ -2046,7 +2050,7 @@ export function DashboardGeral({
         return {
           id: task.id,
           title: task.title,
-          projectName: project?.name || "—",
+          projectName: project ? formatProjectDisplayName(project) : "—",
           userName: user?.name || "Sem responsável",
           daysLate,
         };
@@ -2568,13 +2572,25 @@ export function DashboardDisciplina({
       const openApprovals = approvals.filter(
         (a) => a.project_id === p.id && !["approved", "rejected", "cancelled"].includes(a.status)
       ).length;
-      return { id: p.id, name: p.name, totalTasks: pt.length, completed, delayed, totalSeconds, progress, openApprovals };
+      return {
+        id: p.id,
+        name: formatProjectDisplayName(p),
+        totalTasks: pt.length,
+        completed,
+        delayed,
+        totalSeconds,
+        progress,
+        openApprovals,
+      };
     }),
     [projects, tasks, period, liveSecondsMap, approvals]
   );
 
   const activeLabel = selectedProjectId
-    ? (projects.find((p) => p.id === selectedProjectId)?.name ?? getDisciplineLabel(discipline))
+    ? (() => {
+        const p = projects.find((x) => x.id === selectedProjectId);
+        return p ? formatProjectDisplayName(p) : getDisciplineLabel(discipline);
+      })()
     : getDisciplineLabel(discipline);
 
   return (
@@ -2636,7 +2652,7 @@ export function DashboardDisciplina({
                 whiteSpace: "nowrap",
               }}
             >
-              {p.name}
+              {formatProjectDisplayName(p)}
             </button>
           );
         })}

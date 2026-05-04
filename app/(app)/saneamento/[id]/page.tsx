@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Droplets,
   Building2,
-  MapPin,
   Users as UsersIcon,
   Calendar as CalendarIcon,
   Activity,
@@ -54,6 +53,7 @@ import {
   phaseStatusVariant,
 } from "@/lib/saneamento/phases";
 import { formatDate } from "@/lib/utils";
+import { formatProjectDisplayName } from "@/lib/project-display";
 
 type TabKey = "overview" | "tasks" | "journal";
 
@@ -395,7 +395,7 @@ export default function SaneamentoProjectPage() {
                   lineHeight: 1.15,
                 }}
               >
-                {project.name}
+                {formatProjectDisplayName(project)}
               </h1>
               {project.sanitation_type && (
                 <p className="text-sm text-muted" style={{ margin: "4px 0 0" }}>
@@ -410,13 +410,6 @@ export default function SaneamentoProjectPage() {
                   <span className="flex items-center gap-1">
                     <Building2 size={13} />
                     {client.short_name || client.name}
-                  </span>
-                )}
-                {project.municipality && (
-                  <span className="flex items-center gap-1">
-                    <MapPin size={13} />
-                    {project.municipality}
-                    {project.state ? ` / ${project.state}` : ""}
                   </span>
                 )}
                 {project.planned_end_date && (

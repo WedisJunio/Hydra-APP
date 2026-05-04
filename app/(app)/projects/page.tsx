@@ -47,6 +47,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonCard } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { formatSeconds, isTaskDelayed } from "@/lib/utils";
+import { formatProjectDisplayName } from "@/lib/project-display";
 import { generateProjectDashboardPdf } from "@/lib/project-report-pdf";
 import {
   DashboardDisciplina,
@@ -71,6 +72,8 @@ type Project = {
   id: string;
   name: string;
   discipline?: string | null;
+  municipality?: string | null;
+  state?: string | null;
   manager_id: string | null;
   coordinator_id: string | null;
   leader_id: string | null;
@@ -533,7 +536,7 @@ export default function ProjectsPage() {
     const { data } = await supabase
       .from("projects")
       .select(
-        "id, name, discipline, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at"
+        "id, name, discipline, municipality, state, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at"
       )
       .order("created_at", { ascending: false });
     setProjects((data as Project[]) || []);
@@ -899,7 +902,13 @@ export default function ProjectsPage() {
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
       if (search.trim()) {
-        const matches = project.name.toLowerCase().includes(search.trim().toLowerCase());
+        const term = search.trim().toLowerCase();
+        const display = formatProjectDisplayName(project).toLowerCase();
+        const matches =
+          project.name.toLowerCase().includes(term) ||
+          display.includes(term) ||
+          !!(project.municipality?.toLowerCase().includes(term)) ||
+          !!(project.state?.toLowerCase().includes(term));
         if (!matches) return false;
       }
       if (riskFilter !== "all") {
@@ -972,7 +981,7 @@ export default function ProjectsPage() {
     const averageSeconds = totalTasks > 0 ? Math.round(totalSeconds / totalTasks) : 0;
 
     await generateProjectDashboardPdf({
-      projectName: project.name,
+      projectName: formatProjectDisplayName(project),
       leaderName: getUserName(project.leader_id),
       managerName: getUserName(project.manager_id),
       coordinatorName: getUserName(project.coordinator_id),
@@ -1135,7 +1144,7 @@ export default function ProjectsPage() {
                       color: "var(--foreground)",
                     }}
                   >
-                    {project.name}
+                    {formatProjectDisplayName(project)}
                   </h3>
                   <span
                     style={{

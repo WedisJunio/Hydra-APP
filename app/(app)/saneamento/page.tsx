@@ -10,7 +10,6 @@ import {
   ChevronRight,
   AlertCircle,
   Building2,
-  MapPin,
   Users as UsersIcon,
   Activity,
   LayoutGrid,
@@ -44,6 +43,7 @@ import {
   listPhasesForProjects,
   listApprovalsForProjects,
 } from "@/lib/saneamento/data";
+import { formatProjectDisplayName } from "@/lib/project-display";
 import { sanitationTypeShort } from "@/lib/saneamento/types";
 import {
   approvalStatusLabel,
@@ -372,6 +372,7 @@ function SaneamentoListContent({
       const matchesSearch =
         !term ||
         p.name.toLowerCase().includes(term) ||
+        formatProjectDisplayName(p).toLowerCase().includes(term) ||
         (p.municipality?.toLowerCase().includes(term) ?? false) ||
         (p.contract_number?.toLowerCase().includes(term) ?? false);
       const matchesClient = !clientFilter || p.client_id === clientFilter;
@@ -508,7 +509,7 @@ function SaneamentoListContent({
                       color: "var(--foreground)",
                     }}
                   >
-                    {project.name}
+                    {formatProjectDisplayName(project)}
                   </h3>
                   {project.sanitation_type && (
                     <span
@@ -555,13 +556,6 @@ function SaneamentoListContent({
                     <span className="inline-flex items-center gap-1">
                       <Building2 size={11} />
                       {project.client.short_name || project.client.name}
-                    </span>
-                  )}
-                  {project.municipality && (
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin size={11} />
-                      {project.municipality}
-                      {project.state ? ` / ${project.state}` : ""}
                     </span>
                   )}
                   {project.contract_number && (

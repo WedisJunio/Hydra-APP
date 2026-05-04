@@ -52,6 +52,7 @@ import {
   isTaskCompletedLate,
   isTaskDelayed,
 } from "@/lib/utils";
+import { formatProjectDisplayName } from "@/lib/project-display";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -71,11 +72,15 @@ type Task = {
   completed_at: string | null;
   time_spent_seconds: number;
   is_timer_running: boolean;
-  projects?: { name: string } | null;
+  projects?: {
+    name: string;
+    municipality?: string | null;
+    state?: string | null;
+  } | null;
   users?: { name: string } | null;
 };
 
-type Project = { id: string; name: string };
+type Project = { id: string; name: string; municipality?: string | null; state?: string | null };
 type User = { id: string; name: string };
 
 type StatusKey = "pending" | "in_progress" | "completed";
@@ -371,7 +376,7 @@ export default function TasksPage() {
     const { data, error } = await supabase
       .from("tasks")
       .select(
-        "id, title, description, status, created_at, project_id, assigned_to, planned_due_date, actual_completed_date, start_date, started_at, paused_at, completed_at, time_spent_seconds, is_timer_running, projects(name), users:assigned_to(name)"
+        "id, title, description, status, created_at, project_id, assigned_to, planned_due_date, actual_completed_date, start_date, started_at, paused_at, completed_at, time_spent_seconds, is_timer_running, projects(name, municipality, state), users:assigned_to(name)"
       )
       .order("created_at", { ascending: false });
 
@@ -388,7 +393,7 @@ export default function TasksPage() {
   async function loadProjects() {
     const { data } = await supabase
       .from("projects")
-      .select("id, name")
+      .select("id, name, municipality, state")
       .order("created_at", { ascending: false });
     setProjects(data || []);
   }
@@ -1238,7 +1243,7 @@ export default function TasksPage() {
               }}
             >
               <Folder size={11} />
-              {task.projects?.name || "Sem projeto"}
+              {task.projects ? formatProjectDisplayName(task.projects) : "Sem projeto"}
             </span>
 
             {task.users?.name ? (
@@ -1693,7 +1698,7 @@ export default function TasksPage() {
                       <option value="">Selecione o projeto</option>
                       {projects.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name}
+                          {formatProjectDisplayName(p)}
                         </option>
                       ))}
                     </Select>
@@ -1962,7 +1967,7 @@ export default function TasksPage() {
                     <option value="">Selecione um projeto</option>
                     {projects.map((project) => (
                       <option key={project.id} value={project.id}>
-                        {project.name}
+                        {formatProjectDisplayName(project)}
                       </option>
                     ))}
                   </Select>
@@ -2093,7 +2098,7 @@ export default function TasksPage() {
             <option value="">Todos os projetos</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.name}
+                {formatProjectDisplayName(project)}
               </option>
             ))}
           </Select>

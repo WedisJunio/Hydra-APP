@@ -29,6 +29,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { canCreateChatGroup } from "@/lib/permissions";
 import { getTodayLocalISO } from "@/lib/utils";
 import { downloadChatTranscriptPdf } from "@/lib/chat-export-pdf";
+import { formatProjectDisplayName } from "@/lib/project-display";
 
 type Message = {
   id: string;
@@ -47,6 +48,8 @@ type Message = {
 type Project = {
   id: string;
   name: string;
+  municipality?: string | null;
+  state?: string | null;
 };
 
 type ChatGroup = {
@@ -123,7 +126,7 @@ export default function ChatPage() {
   async function loadProjects() {
     const { data, error } = await supabase
       .from("projects")
-      .select("id, name")
+      .select("id, name, municipality, state")
       .order("name", { ascending: true });
     if (error) {
       showErrorToast("Erro ao carregar projetos", getSupabaseErrorMessage(error));
@@ -380,7 +383,13 @@ export default function ChatPage() {
   );
 
   const projectById = useMemo(
-    () => Object.fromEntries(projects.map((project) => [project.id, project.name])),
+    () =>
+      Object.fromEntries(
+        projects.map((project) => [
+          project.id,
+          formatProjectDisplayName(project),
+        ])
+      ),
     [projects]
   );
 

@@ -22,6 +22,8 @@ export type MonthDayTask = {
 export type MonthDayProject = {
   id: string;
   name: string;
+  municipality?: string | null;
+  state?: string | null;
   planned_end_date: string;
 };
 

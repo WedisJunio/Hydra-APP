@@ -45,6 +45,7 @@ import {
   type MonthDayTask,
 } from "@/components/calendar/month-calendar-grid";
 import { getTodayLocalISO } from "@/lib/utils";
+import { formatProjectDisplayName } from "@/lib/project-display";
 
 type Room = {
   id: string;
@@ -301,7 +302,7 @@ export default function CalendarPage() {
           .neq("status", "completed"),
         supabase
           .from("projects")
-          .select("id, name, planned_end_date")
+          .select("id, name, municipality, state, planned_end_date")
           .not("planned_end_date", "is", null)
           .gte("planned_end_date", start)
           .lte("planned_end_date", end),
@@ -759,7 +760,7 @@ export default function CalendarPage() {
                             background: "var(--surface-2)",
                           }}
                         >
-                          <span className="text-sm font-medium">{p.name}</span>
+                          <span className="text-sm font-medium">{formatProjectDisplayName(p)}</span>
                         </li>
                       ))}
                     </ul>
