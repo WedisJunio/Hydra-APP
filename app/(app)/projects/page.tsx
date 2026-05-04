@@ -240,6 +240,109 @@ function StatTile({
   );
 }
 
+function ProjectDateChip({
+  icon,
+  label,
+  value,
+  tone = "muted",
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone?: "muted" | "success" | "danger" | "warning";
+}) {
+  const palette: Record<
+    NonNullable<"muted" | "success" | "danger" | "warning">,
+    { bg: string; border: string; iconBg: string; iconFg: string; valueColor: string }
+  > = {
+    muted: {
+      bg: "var(--surface-2)",
+      border: "var(--border)",
+      iconBg: "var(--surface-3)",
+      iconFg: "var(--muted-fg)",
+      valueColor: "var(--foreground)",
+    },
+    success: {
+      bg: "var(--success-soft)",
+      border: "color-mix(in srgb, var(--success) 25%, transparent)",
+      iconBg: "color-mix(in srgb, var(--success) 18%, transparent)",
+      iconFg: "var(--success)",
+      valueColor: "var(--success-fg)",
+    },
+    danger: {
+      bg: "var(--danger-soft)",
+      border: "color-mix(in srgb, var(--danger) 25%, transparent)",
+      iconBg: "color-mix(in srgb, var(--danger) 18%, transparent)",
+      iconFg: "var(--danger)",
+      valueColor: "var(--danger-fg)",
+    },
+    warning: {
+      bg: "var(--warning-soft)",
+      border: "color-mix(in srgb, var(--warning) 25%, transparent)",
+      iconBg: "color-mix(in srgb, var(--warning) 18%, transparent)",
+      iconFg: "var(--warning)",
+      valueColor: "var(--warning-fg)",
+    },
+  };
+  const style = palette[tone];
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 10px",
+        borderRadius: 10,
+        background: style.bg,
+        border: `1px solid ${style.border}`,
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 7,
+          background: style.iconBg,
+          color: style.iconFg,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </div>
+      <div style={{ minWidth: 0, lineHeight: 1.15 }}>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--muted-fg)",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: style.valueColor,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {value}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AvatarStack({
   users,
   max = 4,
@@ -1046,27 +1149,38 @@ export default function ProjectsPage() {
                     {risk.label}
                   </span>
                 </div>
-                <div className="flex items-center gap-3 mt-1 text-xs text-muted flex-wrap">
-                  <span className="inline-flex items-center gap-1">
-                    <CalendarDays size={11} />
-                    {dates.plannedEnd
-                      ? `Previsão: ${formatBRDate(dates.plannedEnd)}`
-                      : "Sem previsão de término"}
-                  </span>
+                <div
+                  style={{
+                    marginTop: 8,
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                    gap: 6,
+                  }}
+                >
+                  <ProjectDateChip
+                    icon={<CalendarDays size={11} />}
+                    label="Previsão"
+                    value={
+                      dates.plannedEnd
+                        ? formatBRDate(dates.plannedEnd)
+                        : "Sem previsão"
+                    }
+                    tone="muted"
+                  />
                   {dates.actualEnd && (
-                    <>
-                      <span>•</span>
-                      <span
-                        className="inline-flex items-center gap-1"
-                        style={{ color: "var(--success)", fontWeight: 600 }}
-                      >
-                        <CheckCircle2 size={11} />
-                        {`Concluído: ${formatBRDate(dates.actualEnd)}`}
-                      </span>
-                    </>
+                    <ProjectDateChip
+                      icon={<CheckCircle2 size={11} />}
+                      label="Concluído"
+                      value={formatBRDate(dates.actualEnd)}
+                      tone="success"
+                    />
                   )}
-                  <span>•</span>
-                  <span>Criado em {formatBRDate(project.created_at?.slice(0, 10))}</span>
+                  <ProjectDateChip
+                    icon={<Sparkles size={11} />}
+                    label="Criado"
+                    value={formatBRDate(project.created_at?.slice(0, 10))}
+                    tone="muted"
+                  />
                 </div>
               </div>
             </div>
