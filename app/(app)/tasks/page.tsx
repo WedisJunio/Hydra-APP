@@ -468,6 +468,33 @@ export default function TasksPage() {
   }
 
   /**
+   * Previsao de entrega no cadastro do projeto = maior planned_due_date
+   * entre as tarefas (fallback no client; existe trigger equivalente).
+   */
+  async function recalcProjectPlannedEndDate(projectId: string | null | undefined) {
+    if (!projectId) return;
+    try {
+      const { data: rows } = await supabase
+        .from("tasks")
+        .select("planned_due_date")
+        .eq("project_id", projectId);
+
+      const dates = (rows ?? [])
+        .map((t) => t.planned_due_date)
+        .filter((d): d is string => !!d);
+      const nextEnd =
+        dates.length > 0 ? dates.reduce((max, d) => (d > max ? d : max)) : null;
+
+      await supabase
+        .from("projects")
+        .update({ planned_end_date: nextEnd })
+        .eq("id", projectId);
+    } catch {
+      // ignorar
+    }
+  }
+
+  /**
    * Recalcula projects.actual_end_date com base nas tarefas atuais.
    * - Todas concluidas -> grava a maior data de conclusao.
    * - Caso contrario   -> grava NULL.
@@ -509,6 +536,12 @@ export default function TasksPage() {
     }
   }
 
+  /** Previsão (último prazo das tarefas) + término real (100 % concluído). */
+  async function syncProjectScheduleColumns(projectId: string | null | undefined) {
+    await recalcProjectPlannedEndDate(projectId);
+    await recalcProjectActualEndDate(projectId);
+  }
+
   async function handleCreateTask() {
     if (!newTaskTitle.trim() || !selectedProjectId) return;
     const profile = await getCurrentProfile();
@@ -546,7 +579,7 @@ export default function TasksPage() {
       selectedAssignedTo || null,
       profile.id
     );
-    await recalcProjectActualEndDate(selectedProjectId);
+    await syncProjectScheduleColumns(selectedProjectId);
 
     setNewTaskTitle("");
     setNewTaskDescription("");
@@ -591,7 +624,7 @@ export default function TasksPage() {
     }
 
     await ensureTaskTeamMembership(quickAddProjectId, null, profile.id);
-    await recalcProjectActualEndDate(quickAddProjectId);
+    await syncProjectScheduleColumns(quickAddProjectId);
 
     setQuickAddTitle("");
     setQuickAddColumn(null);
@@ -813,7 +846,7 @@ export default function TasksPage() {
       );
       return;
     }
-    await recalcProjectActualEndDate(task.project_id);
+    await syncProjectScheduleColumns(task.project_id);
     await loadTasks({ silent: true });
     showSuccessToast(
       "Tarefa concluída",
@@ -872,7 +905,7 @@ export default function TasksPage() {
       );
       return;
     }
-    await recalcProjectActualEndDate(task.project_id);
+    await syncProjectScheduleColumns(task.project_id);
     await loadTasks({ silent: true });
     showSuccessToast(
       "Status atualizado",
@@ -900,7 +933,7 @@ export default function TasksPage() {
       showErrorToast("Não foi possível excluir a tarefa", getSupabaseErrorMessage(error));
       return;
     }
-    await recalcProjectActualEndDate(task?.project_id);
+    await syncProjectScheduleColumns(task?.project_id);
     showSuccessToast("Tarefa excluída", "A tarefa foi removida.");
   }
 
@@ -954,6 +987,7 @@ export default function TasksPage() {
         editedAssignedTo || null,
         currentProfileId ?? ""
       );
+      await syncProjectScheduleColumns(editedTask.project_id);
     }
 
     handleCancelEdit();

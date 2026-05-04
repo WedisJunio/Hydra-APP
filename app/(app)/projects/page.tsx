@@ -477,8 +477,6 @@ export default function ProjectsPage() {
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
-  const [newPlannedEndDate, setNewPlannedEndDate] = useState("");
-  const [newActualEndDate, setNewActualEndDate] = useState("");
   const [newManagerId, setNewManagerId] = useState("");
   const [newCoordinatorId, setNewCoordinatorId] = useState("");
   const [newLeaderId, setNewLeaderId] = useState("");
@@ -486,8 +484,6 @@ export default function ProjectsPage() {
 
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editedProjectName, setEditedProjectName] = useState("");
-  const [editedPlannedEndDate, setEditedPlannedEndDate] = useState("");
-  const [editedActualEndDate, setEditedActualEndDate] = useState("");
   const [editedManagerId, setEditedManagerId] = useState("");
   const [editedCoordinatorId, setEditedCoordinatorId] = useState("");
   const [editedLeaderId, setEditedLeaderId] = useState("");
@@ -687,8 +683,8 @@ export default function ProjectsPage() {
       .from("projects")
       .insert({
         name: newProjectName,
-        planned_end_date: newPlannedEndDate || null,
-        actual_end_date: newActualEndDate || null,
+        planned_end_date: null,
+        actual_end_date: null,
         manager_id: managerId,
         coordinator_id: newCoordinatorId || null,
         leader_id: newLeaderId || null,
@@ -721,8 +717,6 @@ export default function ProjectsPage() {
     }
 
     setNewProjectName("");
-    setNewPlannedEndDate("");
-    setNewActualEndDate("");
     setNewManagerId("");
     setNewCoordinatorId("");
     setNewLeaderId("");
@@ -736,8 +730,6 @@ export default function ProjectsPage() {
   function handleStartEdit(project: Project) {
     setEditingProjectId(project.id);
     setEditedProjectName(project.name);
-    setEditedPlannedEndDate(project.planned_end_date || "");
-    setEditedActualEndDate(project.actual_end_date || "");
     setEditedManagerId(project.manager_id || "");
     setEditedCoordinatorId(project.coordinator_id || "");
     setEditedLeaderId(project.leader_id || "");
@@ -753,8 +745,6 @@ export default function ProjectsPage() {
       .from("projects")
       .update({
         name: editedProjectName,
-        planned_end_date: editedPlannedEndDate || null,
-        actual_end_date: editedActualEndDate || null,
         manager_id: editedManagerId || null,
         coordinator_id: editedCoordinatorId || null,
         leader_id: editedLeaderId || null,
@@ -1021,21 +1011,29 @@ export default function ProjectsPage() {
                 onChange={(e) => setEditedProjectName(e.target.value)}
               />
             </Field>
-            <div className="grid-2">
-              <Field label="Data prevista">
-                <Input
-                  type="date"
-                  value={editedPlannedEndDate}
-                  onChange={(e) => setEditedPlannedEndDate(e.target.value)}
-                />
-              </Field>
-              <Field label="Data real">
-                <Input
-                  type="date"
-                  value={editedActualEndDate}
-                  onChange={(e) => setEditedActualEndDate(e.target.value)}
-                />
-              </Field>
+            <div
+              className="text-xs text-muted rounded-md px-3 py-2"
+              style={{
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                lineHeight: 1.45,
+              }}
+            >
+              <strong style={{ color: "var(--foreground)", display: "block", marginBottom: 4 }}>
+                Prazos do projeto (automático)
+              </strong>
+              A <strong>data prevista</strong> usa o maior{" "}
+              <em>prazo previsto das tarefas</em>.
+              {" "}
+              A <strong>data real</strong> aparece apenas quando todas as tarefas
+              estiverem concluídas.
+              <span className="block mt-2" style={{ color: "var(--muted-fg)" }}>
+                Pré-visualização atual: prevista{" "}
+                <strong>{dates.plannedEnd ? formatBRDate(dates.plannedEnd) : "—"}</strong>
+                {" · "}
+                término real{" "}
+                <strong>{project.actual_end_date ? formatBRDate(project.actual_end_date) : "—"}</strong>
+              </span>
             </div>
             <div className="grid-3">
               <Field label="Gerente">
@@ -2001,7 +1999,7 @@ export default function ProjectsPage() {
             <div>
               <div className="card-title">Novo projeto</div>
               <p className="text-xs text-muted mt-0.5">
-                Defina nome, prazos e a tríade de responsáveis
+                Responsáveis e nome; prazos vêm das tarefas automaticamente.
               </p>
             </div>
           </div>
@@ -2014,21 +2012,19 @@ export default function ProjectsPage() {
                   onChange={(e) => setNewProjectName(e.target.value)}
                 />
               </Field>
-              <div className="grid-2">
-                <Field label="Data prevista de entrega">
-                  <Input
-                    type="date"
-                    value={newPlannedEndDate}
-                    onChange={(e) => setNewPlannedEndDate(e.target.value)}
-                  />
-                </Field>
-                <Field label="Data real de entrega">
-                  <Input
-                    type="date"
-                    value={newActualEndDate}
-                    onChange={(e) => setNewActualEndDate(e.target.value)}
-                  />
-                </Field>
+              <div
+                className="text-xs text-muted rounded-md px-3 py-2"
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  lineHeight: 1.45,
+                }}
+              >
+                <strong style={{ color: "var(--foreground)" }}>Prazos</strong> são
+                atualizados sozinhos ao cadastrar tarefas com prazo previsto: a{" "}
+                <strong>previsão de entrega</strong> será a maior data entre as
+                tarefas; a <strong>data real</strong> será preenchida quando todas as
+                tarefas estiverem concluídas.
               </div>
               <div className="grid-3">
                 <Field label="Gerente">

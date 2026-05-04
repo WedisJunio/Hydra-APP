@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import type { Client, SanitationType } from "@/lib/saneamento/types";
 import { sanitationTypeLabel } from "@/lib/saneamento/types";
-import { dueDateFromBusinessDays, getTodayLocalISO } from "@/lib/utils";
 import {
   listClients,
   createSanitationProject,
@@ -37,7 +36,6 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
   const [municipality, setMunicipality] = useState("");
   const [state, setState] = useState("MG");
   const [contractValue, setContractValue] = useState("");
-  const [plannedDeliveryDays, setPlannedDeliveryDays] = useState("");
   const [notes, setNotes] = useState("");
   const [creating, setCreating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -65,7 +63,6 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
     setMunicipality("");
     setState("MG");
     setContractValue("");
-    setPlannedDeliveryDays("");
     setNotes("");
     setErrorMsg(null);
   }
@@ -95,8 +92,7 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
       municipality: municipality || null,
       state: state || null,
       contract_value: contractValue ? Number(contractValue) : null,
-      planned_end_date:
-        dueDateFromBusinessDays(getTodayLocalISO(), Number(plannedDeliveryDays)) || null,
+      planned_end_date: null,
       notes: notes || null,
     });
 
@@ -271,18 +267,19 @@ export function NewProjectModal({ open, onClose, onCreated }: Props) {
             </Field>
           </div>
 
-          <Field
-            label="Prazo de entrega (dias uteis)"
-            help="8h por dia, sem sabado, domingo e feriados."
+          <div
+            className="text-xs text-muted rounded-md px-3 py-2"
+            style={{
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              lineHeight: 1.45,
+            }}
           >
-            <Input
-              type="number"
-              min={1}
-              step={1}
-              value={plannedDeliveryDays}
-              onChange={(e) => setPlannedDeliveryDays(e.target.value)}
-            />
-          </Field>
+            O <strong>prazo previsto do projeto</strong> será calculado quando houver
+            tarefas com data prevista (usa a data mais tardia). O{" "}
+            <strong>término real</strong> é gravado quando todas as tarefas forem
+            concluídas.
+          </div>
 
           <Field label="Observações">
             <Textarea
