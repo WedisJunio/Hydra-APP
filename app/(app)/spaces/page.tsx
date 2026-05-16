@@ -1798,6 +1798,7 @@ export default function SpacesPage() {
                   /* LIST ITEMS (full width) */
                   <ListItemsSection
                     listNodeId={selectedNode.id}
+                    projectId={selectedNode.project_id ?? null}
                     enabled={extensionsOk}
                     defaultView={(selectedNode.default_view as WorkspaceViewMode) || "list"}
                     userViewMode={userPrefs.listViewByNode?.[selectedNode.id] ?? null}

@@ -8,15 +8,20 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import Link from "next/link";
 import {
   Plus,
   Trash2,
-  GripVertical,
   LayoutList,
   LayoutGrid,
   ChevronDown,
   ChevronRight,
-  Circle,
+  ExternalLink,
+  Briefcase,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -24,7 +29,7 @@ import { getCurrentProfile } from "@/lib/supabase/profile";
 import { getSupabaseErrorMessage, logSupabaseUnlessJwt } from "@/lib/supabase/errors";
 import type { KanbanColumnDef, CustomFieldDef, WorkspaceViewMode } from "@/lib/workspaces/spaces-shared";
 import { parseKanbanColumns, DEFAULT_KANBAN_COLUMNS } from "@/lib/workspaces/spaces-shared";
-import { showErrorToast, showSuccessToast } from "@/lib/toast";
+import { showErrorToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
@@ -39,8 +44,19 @@ export type WorkspaceListItemRow = {
   created_at: string;
 };
 
+type ProjectTask = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string | null;
+  planned_due_date: string | null;
+  assigned_to: string | null;
+  description: string | null;
+};
+
 type Props = {
   listNodeId: string;
+  projectId?: string | null;
   enabled: boolean;
   defaultView: WorkspaceViewMode;
   userViewMode: WorkspaceViewMode | null;
@@ -49,6 +65,26 @@ type Props = {
   customFieldDefs: CustomFieldDef[];
   podeEditarItens: boolean;
 };
+
+// ─── Task status / priority configs ─────────────────────────────────────────
+
+const TASK_STATUS_ORDER = ["pending", "in_progress", "completed", "cancelled"];
+
+const TASK_STATUS_CONFIG: Record<string, { label: string; color: string; Icon: typeof CheckCircle2 }> = {
+  pending:     { label: "A fazer",      color: "#64748b", Icon: Clock },
+  in_progress: { label: "Em andamento", color: "#f59e0b", Icon: AlertCircle },
+  completed:   { label: "Concluído",    color: "#22c55e", Icon: CheckCircle2 },
+  cancelled:   { label: "Cancelado",    color: "#ef4444", Icon: XCircle },
+};
+
+const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
+  low:      { label: "Baixa",   color: "#64748b" },
+  medium:   { label: "Média",   color: "#3b82f6" },
+  high:     { label: "Alta",    color: "#f59e0b" },
+  critical: { label: "Crítica", color: "#ef4444" },
+};
+
+const TASK_GRID = "36px 1fr 80px 110px";
 
 // ─── Cores automáticas por status ───────────────────────────────────────────
 
@@ -94,6 +130,269 @@ function formatFieldValue(val: string | number | null, type: CustomFieldDef["typ
   }
   if (type === "date") return String(val).slice(0, 10);
   return String(val);
+}
+
+// ─── Linha de tarefa do projeto (read-only) ──────────────────────────────────
+
+function ProjectTaskRow({ task }: { task: ProjectTask }) {
+  const status = TASK_STATUS_CONFIG[task.status] ?? { label: task.status, color: "#64748b" };
+  const priority = task.priority ? PRIORITY_CONFIG[task.priority] : null;
+  const isOverdue =
+    task.planned_due_date &&
+    task.status !== "completed" &&
+    task.status !== "cancelled" &&
+    new Date(task.planned_due_date) < new Date();
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: TASK_GRID,
+        alignItems: "center",
+        minHeight: 36,
+        borderBottom: "1px solid var(--border)",
+        transition: "background 0.1s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface-2)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+    >
+      {/* Status dot */}
+      <div className="flex items-center justify-center">
+        <div
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: "50%",
+            background: task.status === "completed" ? status.color : "transparent",
+            border: `2px solid ${status.color}`,
+            flexShrink: 0,
+          }}
+        />
+      </div>
+
+      {/* Title */}
+      <div
+        style={{
+          padding: "4px 8px 4px 0",
+          fontSize: 13,
+          fontWeight: 500,
+          color: task.status === "completed" ? "var(--muted-fg)" : "var(--foreground)",
+          textDecoration: task.status === "completed" ? "line-through" : "none",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={task.title}
+      >
+        {task.title}
+        {task.description && (
+          <span style={{ fontSize: 11, color: "var(--muted-fg)", marginLeft: 6, fontWeight: 400 }}>
+            {task.description.slice(0, 60)}{task.description.length > 60 ? "…" : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Priority */}
+      <div style={{ padding: "4px 8px", display: "flex", alignItems: "center" }}>
+        {priority && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: priority.color,
+              background: `color-mix(in srgb, ${priority.color} 14%, transparent)`,
+              borderRadius: 4,
+              padding: "2px 6px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {priority.label}
+          </span>
+        )}
+      </div>
+
+      {/* Due date */}
+      <div
+        style={{
+          padding: "4px 8px",
+          fontSize: 11,
+          fontWeight: isOverdue ? 700 : 400,
+          color: isOverdue ? "#ef4444" : "var(--muted-fg)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {task.planned_due_date ? task.planned_due_date.slice(0, 10) : "—"}
+        {isOverdue && (
+          <span style={{ marginLeft: 4, fontSize: 9, background: "#ef4444", color: "#fff", borderRadius: 3, padding: "1px 4px", fontWeight: 700 }}>
+            ATRASADO
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProjectTaskGroup({
+  statusKey,
+  tasks,
+}: {
+  statusKey: string;
+  tasks: ProjectTask[];
+}) {
+  const [open, setOpen] = useState(true);
+  const cfg = TASK_STATUS_CONFIG[statusKey] ?? { label: statusKey, color: "#64748b", Icon: Clock };
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: TASK_GRID,
+          alignItems: "center",
+          minHeight: 34,
+          background: `color-mix(in srgb, ${cfg.color} 6%, var(--surface-2))`,
+          borderBottom: "1px solid var(--border)",
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <div className="flex items-center justify-center">
+          {open ? <ChevronDown size={13} style={{ color: cfg.color }} /> : <ChevronRight size={13} style={{ color: cfg.color }} />}
+        </div>
+        <div className="flex items-center gap-2">
+          <div style={{ width: 10, height: 10, borderRadius: "50%", background: cfg.color, flexShrink: 0, boxShadow: `0 0 0 2px color-mix(in srgb, ${cfg.color} 25%, transparent)` }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: cfg.color, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            {cfg.label}
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-fg)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 999, padding: "0 6px", minWidth: 20, textAlign: "center" }}>
+            {tasks.length}
+          </span>
+        </div>
+        <div style={{ padding: "0 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted-fg)", letterSpacing: "0.05em" }}>Prioridade</div>
+        <div style={{ padding: "0 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted-fg)", letterSpacing: "0.05em" }}>Prazo</div>
+      </div>
+      {open && tasks.map((t) => <ProjectTaskRow key={t.id} task={t} />)}
+    </div>
+  );
+}
+
+function ProjectTasksSection({
+  tasks,
+  projectId,
+}: {
+  tasks: ProjectTask[];
+  projectId: string;
+}) {
+  const grouped = useMemo(() => {
+    const map: Record<string, ProjectTask[]> = {};
+    for (const t of tasks) {
+      if (!map[t.status]) map[t.status] = [];
+      map[t.status].push(t);
+    }
+    // Order by TASK_STATUS_ORDER, then any unknown statuses
+    const known = TASK_STATUS_ORDER.filter((k) => map[k]?.length);
+    const unknown = Object.keys(map).filter((k) => !TASK_STATUS_ORDER.includes(k));
+    return [...known, ...unknown];
+  }, [tasks]);
+
+  if (tasks.length === 0) {
+    return (
+      <div
+        style={{
+          padding: "16px 20px",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          borderBottom: "1px solid var(--border)",
+          background: "var(--surface-2)",
+        }}
+      >
+        <Briefcase size={14} style={{ color: "var(--muted-fg)" }} />
+        <span style={{ fontSize: 12, color: "var(--muted-fg)" }}>
+          Nenhuma tarefa cadastrada neste projeto ainda.
+        </span>
+        <Link href={`/tasks?project=${projectId}`} style={{ marginLeft: "auto" }}>
+          <Button size="sm" variant="ghost" leftIcon={<ExternalLink size={12} />} style={{ fontSize: 11 }}>
+            Ver tarefas
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Section header */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "6px 12px 6px 8px",
+          background: "color-mix(in srgb, var(--primary) 6%, var(--surface-2))",
+          borderBottom: "1px solid var(--border)",
+          position: "sticky",
+          top: 0,
+          zIndex: 2,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Briefcase size={13} style={{ color: "var(--primary)" }} />
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--primary)" }}>
+            Tarefas do projeto
+          </span>
+          <span style={{ fontSize: 11, color: "var(--muted-fg)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 999, padding: "0 6px" }}>
+            {tasks.length}
+          </span>
+        </div>
+        <Link href={`/tasks`}>
+          <Button size="sm" variant="ghost" leftIcon={<ExternalLink size={11} />} style={{ fontSize: 11 }}>
+            Gerenciar tarefas
+          </Button>
+        </Link>
+      </div>
+
+      {/* Column header */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: TASK_GRID,
+          alignItems: "center",
+          minHeight: 30,
+          background: "var(--surface-2)",
+          borderBottom: "1px solid var(--border)",
+          position: "sticky",
+          top: 33,
+          zIndex: 1,
+        }}
+      >
+        <div />
+        <div style={{ padding: "4px 8px 4px 0", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-fg)" }}>
+          Nome
+        </div>
+        <div style={{ padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-fg)" }}>
+          Prioridade
+        </div>
+        <div style={{ padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-fg)" }}>
+          Prazo
+        </div>
+      </div>
+
+      {/* Groups */}
+      {grouped.map((statusKey) => (
+        <ProjectTaskGroup
+          key={statusKey}
+          statusKey={statusKey}
+          tasks={([] as ProjectTask[]).concat(
+            TASK_STATUS_ORDER.includes(statusKey)
+              ? tasks.filter((t) => t.status === statusKey)
+              : tasks.filter((t) => t.status === statusKey)
+          )}
+        />
+      ))}
+    </div>
+  );
 }
 
 // ─── Componente de linha de item (list view) ────────────────────────────────
@@ -610,6 +909,7 @@ function KanbanItemCard({
 
 export function ListItemsSection({
   listNodeId,
+  projectId,
   enabled,
   defaultView,
   userViewMode,
@@ -619,6 +919,7 @@ export function ListItemsSection({
   podeEditarItens,
 }: Props) {
   const [items, setItems] = useState<WorkspaceListItemRow[]>([]);
+  const [projectTasks, setProjectTasks] = useState<ProjectTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [dragItemId, setDragItemId] = useState<string | null>(null);
 
@@ -631,21 +932,45 @@ export function ListItemsSection({
   );
 
   const load = useCallback(async () => {
-    if (!enabled || !listNodeId) { setItems([]); return; }
+    if (!listNodeId) { setItems([]); setProjectTasks([]); return; }
     setLoading(true);
-    const { data, error } = await supabase
-      .from("workspace_list_items")
-      .select("id, list_node_id, title, status_key, sort_order, custom_values, created_at")
-      .eq("list_node_id", listNodeId)
-      .order("sort_order")
-      .order("created_at");
 
-    if (error) { logSupabaseUnlessJwt("[list-items]", error); setItems([]); setLoading(false); return; }
+    // Load project tasks in parallel with workspace items
+    const [tasksResult, itemsResult] = await Promise.all([
+      projectId
+        ? supabase
+            .from("tasks")
+            .select("id, title, status, priority, planned_due_date, assigned_to, description")
+            .eq("project_id", projectId)
+            .order("status")
+            .order("planned_due_date", { ascending: true, nullsFirst: false })
+        : Promise.resolve({ data: [], error: null }),
+      enabled
+        ? supabase
+            .from("workspace_list_items")
+            .select("id, list_node_id, title, status_key, sort_order, custom_values, created_at")
+            .eq("list_node_id", listNodeId)
+            .order("sort_order")
+            .order("created_at")
+        : Promise.resolve({ data: [], error: null }),
+    ]);
 
-    const rows = (data || []) as Array<Omit<WorkspaceListItemRow, "custom_values"> & { custom_values?: unknown }>;
-    setItems(rows.map((r) => ({ ...r, custom_values: parseCustomValues(r.custom_values) })));
+    if (tasksResult.error) {
+      logSupabaseUnlessJwt("[list-items] tasks", tasksResult.error);
+    } else {
+      setProjectTasks((tasksResult.data ?? []) as ProjectTask[]);
+    }
+
+    if (itemsResult.error) {
+      logSupabaseUnlessJwt("[list-items]", itemsResult.error);
+      setItems([]);
+    } else {
+      const rows = (itemsResult.data || []) as Array<Omit<WorkspaceListItemRow, "custom_values"> & { custom_values?: unknown }>;
+      setItems(rows.map((r) => ({ ...r, custom_values: parseCustomValues(r.custom_values) })));
+    }
+
     setLoading(false);
-  }, [enabled, listNodeId]);
+  }, [enabled, listNodeId, projectId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -752,85 +1077,122 @@ export function ListItemsSection({
       {/* ── LISTA agrupada ── */}
       {!loading && effectiveView === "list" && (
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {/* Column header row */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `36px 1fr ${customFieldDefs.map(() => "160px").join(" ")} 36px`,
-              alignItems: "center",
-              minHeight: 36,
-              background: "var(--surface-2)",
-              borderBottom: "1px solid var(--border)",
-              position: "sticky",
-              top: 0,
-              zIndex: 1,
-            }}
-          >
-            <div />
-            <div style={{ padding: "4px 8px 4px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-fg)" }}>
-              Nome
-            </div>
-            {customFieldDefs.map((f) => (
+
+          {/* ── Tarefas do projeto vinculado ── */}
+          {projectId && (
+            <ProjectTasksSection tasks={projectTasks} projectId={projectId} />
+          )}
+
+          {/* ── Itens da lista (workspace) ── */}
+          {enabled && (
+            <>
+              {/* Section divider / header when project tasks are shown */}
+              {projectId && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "6px 12px 6px 8px",
+                    background: "color-mix(in srgb, var(--warning) 5%, var(--surface-2))",
+                    borderBottom: "1px solid var(--border)",
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 2,
+                  }}
+                >
+                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--warning)" }}>
+                    Itens personalizados
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--muted-fg)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 999, padding: "0 6px" }}>
+                    {items.length}
+                  </span>
+                </div>
+              )}
+
+              {/* Column header row */}
               <div
-                key={f.id}
                 style={{
-                  padding: "4px 8px",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  color: "var(--muted-fg)",
-                  borderLeft: "1px solid var(--border)",
+                  display: "grid",
+                  gridTemplateColumns: `36px 1fr ${customFieldDefs.map(() => "160px").join(" ")} 36px`,
+                  alignItems: "center",
+                  minHeight: 36,
+                  background: "var(--surface-2)",
+                  borderBottom: "1px solid var(--border)",
+                  position: "sticky",
+                  top: projectId ? 33 : 0,
+                  zIndex: 1,
                 }}
               >
-                {f.name}
+                <div />
+                <div style={{ padding: "4px 8px 4px 0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-fg)" }}>
+                  Nome
+                </div>
+                {customFieldDefs.map((f) => (
+                  <div
+                    key={f.id}
+                    style={{
+                      padding: "4px 8px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      color: "var(--muted-fg)",
+                      borderLeft: "1px solid var(--border)",
+                    }}
+                  >
+                    {f.name}
+                  </div>
+                ))}
+                <div />
               </div>
-            ))}
-            <div />
-          </div>
-
-          {/* Status groups */}
-          {cols.length === 0 && items.length === 0 && (
-            <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--muted-fg)", fontSize: 13 }}>
-              Nenhum item. Clique em "Add Tarefa" para criar o primeiro.
-            </div>
+            </>
           )}
-          {cols.map((col, idx) => (
-            <StatusGroup
-              key={col.key}
-              col={col}
-              color={colColors[col.key] ?? getColColor(col, idx)}
-              items={items.filter((i) => i.status_key === col.key)}
-              customFieldDefs={customFieldDefs}
-              podeEditarItens={podeEditarItens}
-              cols={cols}
-              setItems={setItems}
-              patchItem={patchItem}
-              removeItem={removeItem}
-              onAddItem={addItem}
-            />
-          ))}
 
-          {/* Items sem status known */}
-          {(() => {
-            const knownKeys = new Set(cols.map((c) => c.key));
-            const orphans = items.filter((i) => !knownKeys.has(i.status_key));
-            if (!orphans.length) return null;
-            return (
-              <StatusGroup
-                col={{ key: "__orphan__", label: "Sem status" }}
-                color="#64748b"
-                items={orphans}
-                customFieldDefs={customFieldDefs}
-                podeEditarItens={podeEditarItens}
-                cols={cols}
-                setItems={setItems}
-                patchItem={patchItem}
-                removeItem={removeItem}
-                onAddItem={addItem}
-              />
-            );
-          })()}
+          {/* Workspace item groups */}
+          {enabled && (
+            <>
+              {cols.length === 0 && items.length === 0 && !projectId && (
+                <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--muted-fg)", fontSize: 13 }}>
+                  Nenhum item. Clique em "Add Tarefa" para criar o primeiro.
+                </div>
+              )}
+              {cols.map((col, idx) => (
+                <StatusGroup
+                  key={col.key}
+                  col={col}
+                  color={colColors[col.key] ?? getColColor(col, idx)}
+                  items={items.filter((i) => i.status_key === col.key)}
+                  customFieldDefs={customFieldDefs}
+                  podeEditarItens={podeEditarItens}
+                  cols={cols}
+                  setItems={setItems}
+                  patchItem={patchItem}
+                  removeItem={removeItem}
+                  onAddItem={addItem}
+                />
+              ))}
+              {(() => {
+                const knownKeys = new Set(cols.map((c) => c.key));
+                const orphans = items.filter((i) => !knownKeys.has(i.status_key));
+                if (!orphans.length) return null;
+                return (
+                  <StatusGroup
+                    col={{ key: "__orphan__", label: "Sem status" }}
+                    color="#64748b"
+                    items={orphans}
+                    customFieldDefs={customFieldDefs}
+                    podeEditarItens={podeEditarItens}
+                    cols={cols}
+                    setItems={setItems}
+                    patchItem={patchItem}
+                    removeItem={removeItem}
+                    onAddItem={addItem}
+                  />
+                );
+              })()}
+            </>
+          )}
         </div>
       )}
 
