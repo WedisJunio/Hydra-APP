@@ -236,10 +236,12 @@ function SidebarTree({
   podeEditar: boolean;
   onMoveUpDown: (node: WorkspaceNode, dir: -1 | 1) => void;
   onAddChild?: (kind: "folder" | "list", parentId: string) => void;
+  onAddProject?: (parentId: string) => void;
   onDeleteNode?: (id: string) => void;
 }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
 
+  // Desestrutura onAddProject do closure para usar no renderBranch
   function renderBranch(parentId: string | null, depth: number) {
     const list = nodes
       .filter((n) => n.space_id === spaceId && n.parent_id === parentId)
@@ -340,29 +342,45 @@ function SidebarTree({
                 style={{ display: "flex", alignItems: "center", gap: 1, paddingRight: 4, flexShrink: 0 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Add subfolder / add list (folders only) */}
-                {isFolder && onAddChild && (
+                {/* Add subfolder / add list / add project (folders only) */}
+                {isFolder && (
                   <>
-                    <button
-                      type="button"
-                      title="Nova subpasta"
-                      onClick={(e) => { e.stopPropagation(); onAddChild("folder", node.id); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "var(--muted-fg)", display: "flex", alignItems: "center", gap: 2, fontSize: 9, fontWeight: 700 }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--warning)"; e.currentTarget.style.background = "color-mix(in srgb, var(--warning) 12%, transparent)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
-                    >
-                      <Folder size={10} /><Plus size={8} />
-                    </button>
-                    <button
-                      type="button"
-                      title="Nova lista"
-                      onClick={(e) => { e.stopPropagation(); onAddChild("list", node.id); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "var(--muted-fg)", display: "flex", alignItems: "center", gap: 2, fontSize: 9, fontWeight: 700 }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.background = "color-mix(in srgb, var(--primary) 12%, transparent)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
-                    >
-                      <ListTodo size={10} /><Plus size={8} />
-                    </button>
+                    {onAddChild && (
+                      <>
+                        <button
+                          type="button"
+                          title="Nova subpasta"
+                          onClick={(e) => { e.stopPropagation(); onAddChild("folder", node.id); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "var(--muted-fg)", display: "flex", alignItems: "center", gap: 2, fontSize: 9, fontWeight: 700 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--warning)"; e.currentTarget.style.background = "color-mix(in srgb, var(--warning) 12%, transparent)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
+                        >
+                          <Folder size={10} /><Plus size={8} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Nova lista"
+                          onClick={(e) => { e.stopPropagation(); onAddChild("list", node.id); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "var(--muted-fg)", display: "flex", alignItems: "center", gap: 2, fontSize: 9, fontWeight: 700 }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.background = "color-mix(in srgb, var(--primary) 12%, transparent)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
+                        >
+                          <ListTodo size={10} /><Plus size={8} />
+                        </button>
+                      </>
+                    )}
+                    {onAddProject && (
+                      <button
+                        type="button"
+                        title="Vincular projeto nesta pasta"
+                        onClick={(e) => { e.stopPropagation(); onAddProject(node.id); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "var(--muted-fg)", display: "flex", alignItems: "center", gap: 2, fontSize: 9, fontWeight: 700 }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "#0d9488"; e.currentTarget.style.background = "color-mix(in srgb, #0d9488 12%, transparent)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
+                      >
+                        <Briefcase size={10} /><Plus size={8} />
+                      </button>
+                    )}
                   </>
                 )}
 
@@ -844,11 +862,13 @@ function AddNodeBtn({
 function ProjectPickerModal({
   projects,
   linkedProjectIds,
+  parentFolderName,
   onClose,
   onSelect,
 }: {
   projects: ProjectPick[];
   linkedProjectIds: Set<string>;
+  parentFolderName: string | null;
   onClose: () => void;
   onSelect: (project: ProjectPick) => void;
 }) {
@@ -875,10 +895,24 @@ function ProjectPickerModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-2)" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", background: "var(--surface-2)" }}>
           <div>
-            <span className="text-sm font-bold">Adicionar projeto ao espaço</span>
-            <p className="text-xs text-muted mt-0.5">Selecione um projeto cadastrado para vincular como lista.</p>
+            <span className="text-sm font-bold">Vincular projeto</span>
+            {parentFolderName ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+                <Folder size={12} style={{ color: "var(--warning)", flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "var(--muted-fg)" }}>
+                  Será adicionado em <strong style={{ color: "var(--foreground)" }}>{parentFolderName}</strong>
+                </span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4, background: "color-mix(in srgb, var(--warning) 12%, transparent)", borderRadius: 6, padding: "4px 8px" }}>
+                <Folder size={12} style={{ color: "var(--warning)", flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>
+                  Passe o mouse sobre uma pasta na barra lateral e clique em 💼+ para vincular dentro dela.
+                </span>
+              </div>
+            )}
           </div>
           <Button size="icon-sm" variant="ghost" onClick={onClose}><X size={16} /></Button>
         </div>
@@ -1060,6 +1094,7 @@ export default function SpacesPage() {
   const [addSpaceOpen, setAddSpaceOpen] = useState(false);
   const [addingNode, setAddingNode] = useState<{ kind: "folder" | "list"; parentId: string | null } | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [projectPickerParentId, setProjectPickerParentId] = useState<string | null>(null);
   const prefsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userIdRef = useRef<string | null>(null);
   userIdRef.current = userId;
@@ -1216,12 +1251,14 @@ export default function SpacesPage() {
 
   async function createListFromProject(project: ProjectPick) {
     if (!selectedSpaceId || !podeEditarNos) return;
+    const parentId = projectPickerParentId;
     setProjectPickerOpen(false);
-    const sibs = siblingsOf(nodes, selectedSpaceId, null);
+    setProjectPickerParentId(null);
+    const sibs = siblingsOf(nodes, selectedSpaceId, parentId);
     const nextOrder = sibs.length > 0 ? Math.max(...sibs.map((x) => x.sort_order)) + 1 : 0;
     const insert: Record<string, unknown> = {
       space_id: selectedSpaceId,
-      parent_id: null,
+      parent_id: parentId,
       kind: "list",
       name: project.name,
       sort_order: nextOrder,
@@ -1231,7 +1268,10 @@ export default function SpacesPage() {
     if (extensionsOk) { insert.default_view = "list"; insert.custom_field_definitions = []; }
     const { error } = await supabase.from("workspace_space_nodes").insert(insert);
     if (error) { showErrorToast("Não foi possível adicionar projeto", getSupabaseErrorMessage(error)); return; }
-    showSuccessToast(`Projeto "${project.name}" adicionado ao espaço`);
+    const parentName = parentId ? nodes.find((n) => n.id === parentId)?.name : null;
+    showSuccessToast(`Projeto "${project.name}" adicionado${parentName ? ` em "${parentName}"` : ""}`);
+    // Expand the parent folder automatically
+    if (parentId) setExpandedFolders((prev) => ({ ...prev, [parentId]: true }));
     await loadAll();
   }
 
@@ -1459,6 +1499,7 @@ export default function SpacesPage() {
                         podeEditar={podeEditarNos}
                         onMoveUpDown={(node, dir) => void moveNode(node as WorkspaceNode, dir)}
                         onAddChild={(kind, parentId) => setAddingNode({ kind, parentId })}
+                        onAddProject={(folderId) => { setProjectPickerParentId(folderId); setProjectPickerOpen(true); }}
                         onDeleteNode={(id) => void handleDeleteNode(id)}
                       />
                     </div>
@@ -1857,7 +1898,8 @@ export default function SpacesPage() {
                 .map((n) => n.project_id!)
             )
           }
-          onClose={() => setProjectPickerOpen(false)}
+          parentFolderName={projectPickerParentId ? (nodesInSpace.find((n) => n.id === projectPickerParentId)?.name ?? null) : null}
+          onClose={() => { setProjectPickerOpen(false); setProjectPickerParentId(null); }}
           onSelect={(project) => void createListFromProject(project)}
         />
       )}
