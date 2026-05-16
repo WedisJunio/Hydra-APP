@@ -30,6 +30,7 @@ import {
   Eye,
 } from "lucide-react";
 
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
 import { getSupabaseErrorMessage, isMissingPlannedEndTargetColumn, isLikelyJwtExpiredMessage, logSupabaseUnlessJwt } from "@/lib/supabase/errors";
@@ -498,6 +499,7 @@ function FilterChip({
 // ─── Página principal ───────────────────────────────────────────────────────
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [members, setMembers] = useState<ProjectMember[]>([]);
@@ -526,6 +528,8 @@ export default function ProjectsPage() {
   const [editedManagerId, setEditedManagerId] = useState("");
   const [editedCoordinatorId, setEditedCoordinatorId] = useState("");
   const [editedLeaderId, setEditedLeaderId] = useState("");
+  const [editedDiscipline, setEditedDiscipline] = useState("");
+  const [editedMunicipality, setEditedMunicipality] = useState("");
 
   const [memberProjectId, setMemberProjectId] = useState<string | null>(null);
   const [memberUserId, setMemberUserId] = useState("");
@@ -843,6 +847,8 @@ export default function ProjectsPage() {
     setEditedManagerId(project.manager_id || "");
     setEditedCoordinatorId(project.coordinator_id || "");
     setEditedLeaderId(project.leader_id || "");
+    setEditedDiscipline(project.discipline || "");
+    setEditedMunicipality(project.municipality || "");
   }
 
   function handleCancelEdit() {
@@ -858,6 +864,8 @@ export default function ProjectsPage() {
       manager_id: editedManagerId || null,
       coordinator_id: editedCoordinatorId || null,
       leader_id: editedLeaderId || null,
+      discipline: editedDiscipline || null,
+      municipality: editedMunicipality.trim() || null,
     };
 
     const patch = target ? { ...baseUpdate, planned_end_target: target } : baseUpdate;
@@ -1180,6 +1188,30 @@ export default function ProjectsPage() {
                 <strong>{project.actual_end_date ? formatBRDate(project.actual_end_date) : "—"}</strong>
               </span>
             </div>
+            <div className="grid-2">
+              <Field label="Disciplina">
+                <Select
+                  value={editedDiscipline}
+                  onChange={(e) => setEditedDiscipline(e.target.value)}
+                >
+                  <option value="">Selecione</option>
+                  <option value="saneamento">Saneamento</option>
+                  <option value="ampliacao">Ampliação</option>
+                  <option value="estrutural">Estrutural</option>
+                  <option value="hidraulico">Hidráulico</option>
+                  <option value="eletrico">Elétrico</option>
+                  <option value="civil">Civil</option>
+                  <option value="outro">Outro</option>
+                </Select>
+              </Field>
+              <Field label="Município">
+                <Input
+                  value={editedMunicipality}
+                  onChange={(e) => setEditedMunicipality(e.target.value)}
+                  placeholder="Ex.: Leopoldina"
+                />
+              </Field>
+            </div>
             <div className="grid-3">
               <Field label="Gerente">
                 <Select
@@ -1279,13 +1311,19 @@ export default function ProjectsPage() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3
+                    onClick={(e) => { e.stopPropagation(); setDetailProjectId(project.id); }}
                     style={{
                       fontSize: 17,
                       fontWeight: 700,
                       margin: 0,
                       letterSpacing: "-0.01em",
                       color: "var(--foreground)",
+                      cursor: "pointer",
+                      transition: "color 0.12s ease",
                     }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground)"; }}
+                    title="Clique para ver detalhes e disciplinas"
                   >
                     {formatProjectDisplayName(project)}
                   </h3>
@@ -2831,6 +2869,133 @@ export default function ProjectsPage() {
                   gap: 16,
                 }}
               >
+                {/* ── Disciplinas (destaque principal) ── */}
+                {(() => {
+                  const discKey = disciplineTabKey(proj.discipline);
+                  const projectDisciplines: { key: string; label: string; isSaneamento: boolean }[] = [];
+
+                  if (discKey) {
+                    const isSane = discKey.toLowerCase().includes("saneamento");
+                    projectDisciplines.push({ key: discKey, label: getDisciplineLabel(discKey), isSaneamento: isSane });
+                  }
+                  // Se tem sanitation_type mas discipline não é saneamento, também qualifica
+                  if (proj.sanitation_type && !projectDisciplines.some((d) => d.isSaneamento)) {
+                    projectDisciplines.push({ key: "saneamento", label: "Saneamento", isSaneamento: true });
+                  }
+
+                  if (projectDisciplines.length === 0) {
+                    return (
+                      <div
+                        style={{
+                          padding: "16px",
+                          borderRadius: 12,
+                          border: "2px dashed var(--border)",
+                          textAlign: "center",
+                          color: "var(--muted-fg)",
+                          fontSize: 13,
+                        }}
+                      >
+                        <GanttChartSquare size={22} style={{ margin: "0 auto 6px", opacity: 0.4 }} />
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Sem disciplina definida</div>
+                        <div style={{ fontSize: 12 }}>
+                          Clique em <strong>Editar</strong> para definir a disciplina do projeto.
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          color: "var(--muted-fg)",
+                          marginBottom: 10,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <GanttChartSquare size={12} />
+                        Disciplinas — clique para abrir
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {projectDisciplines.map((disc) => {
+                          const discColor = disc.isSaneamento ? "var(--info)" : "var(--primary)";
+                          return (
+                            <button
+                              key={disc.key}
+                              type="button"
+                              onClick={() => {
+                                if (disc.isSaneamento) {
+                                  router.push(`/saneamento/${proj.id}`);
+                                } else {
+                                  setDetailProjectId(null);
+                                  setActiveProjectsTab(disc.key);
+                                }
+                              }}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 14,
+                                padding: "14px 16px",
+                                borderRadius: 12,
+                                border: `1.5px solid color-mix(in srgb, ${discColor} 30%, var(--border))`,
+                                background: `color-mix(in srgb, ${discColor} 8%, var(--surface))`,
+                                cursor: "pointer",
+                                textAlign: "left",
+                                width: "100%",
+                                transition: "all 0.15s ease",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = `color-mix(in srgb, ${discColor} 16%, var(--surface))`;
+                                e.currentTarget.style.borderColor = discColor;
+                                e.currentTarget.style.transform = "translateX(3px)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = `color-mix(in srgb, ${discColor} 8%, var(--surface))`;
+                                e.currentTarget.style.borderColor = `color-mix(in srgb, ${discColor} 30%, var(--border))`;
+                                e.currentTarget.style.transform = "translateX(0)";
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 10,
+                                  background: `color-mix(in srgb, ${discColor} 18%, var(--surface-2))`,
+                                  color: discColor,
+                                  border: `1px solid color-mix(in srgb, ${discColor} 35%, transparent)`,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {getDisciplineIcon(disc.key)}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
+                                  {disc.label}
+                                </div>
+                                <div style={{ fontSize: 12, color: "var(--muted-fg)", marginTop: 1 }}>
+                                  {disc.isSaneamento
+                                    ? "Abrir módulo de saneamento com etapas, concepção e aprovações"
+                                    : `Abrir painel da disciplina ${disc.label.toLowerCase()}`}
+                                </div>
+                              </div>
+                              <ChevronRight size={16} style={{ color: discColor, flexShrink: 0 }} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Progress */}
                 <div
                   style={{
