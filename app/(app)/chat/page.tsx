@@ -278,7 +278,7 @@ export default function ChatPage() {
       showErrorToast("Sem permissão", "Você não tem permissão para criar grupos.");
       return;
     }
-    const groupName = window.prompt("Nome do novo grupo avulso:");
+    const groupName = window.prompt("Nome do novo grupo:");
     if (!groupName || !groupName.trim()) return;
 
     const profile = await getCurrentProfile();
@@ -311,7 +311,7 @@ export default function ChatPage() {
     await loadGroupMembers(group.id);
     setSelectedGroupId(group.id);
     if (isNarrow) setMobilePanel("chat");
-    showSuccessToast("Grupo criado", "Grupo avulso criado com sucesso.");
+    showSuccessToast("Grupo criado", "Grupo criado com sucesso.");
   }
 
   async function handleSendMessage() {
@@ -687,7 +687,7 @@ export default function ChatPage() {
     }
     await loadGroupMembers(selectedGroupId);
     setMemberSearch("");
-    showSuccessToast("Pessoa adicionada", "O grupo avulso foi atualizado.");
+    showSuccessToast("Pessoa adicionada", "O grupo foi atualizado.");
   }
 
   async function removeMember(userId: string) {
@@ -722,7 +722,7 @@ export default function ChatPage() {
       channelTitle,
       groupTypeLabel: selectedGroup?.project_id
         ? "Projeto vinculado"
-        : "Grupo avulso",
+        : "Grupo",
       messages,
       exportedBy: profile?.name || profile?.email || null,
       generatedAt: new Date(),
@@ -742,7 +742,7 @@ export default function ChatPage() {
     <div>
       <PageHeader
         title="Chat"
-        description="Grupos por projeto e avulsos, mensagens em tempo real."
+        description="Grupos por projeto e grupos gerais, mensagens em tempo real."
         className="mb-4"
       />
 
@@ -773,7 +773,7 @@ export default function ChatPage() {
                   variant="secondary"
                   leftIcon={<Plus size={14} />}
                   onClick={handleCreateGroup}
-                  title="Novo grupo avulso"
+                  title="Novo grupo"
                 >
                   Novo
                 </Button>
@@ -831,7 +831,7 @@ export default function ChatPage() {
                     </span>
                     <span className="chat-group-label truncate">{label}</span>
                     <Badge variant={isProjectGroup ? "info" : "neutral"}>
-                      {isProjectGroup ? "Projeto" : "Avulso"}
+                      {isProjectGroup ? "Projeto" : "Grupo"}
                     </Badge>
                     {isMuted && <Badge variant="warning">Silenciado</Badge>}
                   </button>
@@ -934,7 +934,7 @@ export default function ChatPage() {
                     <h3 className="chat-members-title">Participantes</h3>
                     <p className="chat-members-sub">
                       {isSelectedAdHocGroup
-                        ? "Controle quem participa deste grupo avulso."
+                        ? "Controle quem participa deste grupo."
                         : "Grupos de projeto seguem a equipe vinculada ao projeto."}
                     </p>
                   </div>

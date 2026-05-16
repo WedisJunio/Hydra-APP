@@ -90,6 +90,21 @@ EXECUTE FUNCTION public.ensure_project_chat_group();
 
 -- ─── 5. Helpers de acesso para RLS ────────────────────────────────────────────
 
+CREATE OR REPLACE FUNCTION public.is_chat_group_member(p_chat_group_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.chat_group_members cgm
+    WHERE cgm.chat_group_id = p_chat_group_id
+      AND cgm.user_id = public.current_app_user_id()
+  );
+$$;
+
 CREATE OR REPLACE FUNCTION public.can_access_chat_group(p_chat_group_id UUID)
 RETURNS BOOLEAN
 LANGUAGE SQL
@@ -108,12 +123,7 @@ AS $$
             cg.project_id IS NULL
             AND (
               cg.created_by = public.current_app_user_id()
-              OR EXISTS (
-                SELECT 1
-                FROM public.chat_group_members cgm
-                WHERE cgm.chat_group_id = cg.id
-                  AND cgm.user_id = public.current_app_user_id()
-              )
+              OR public.is_chat_group_member(cg.id)
             )
           )
           OR public.is_project_member(cg.project_id)
@@ -139,12 +149,7 @@ CREATE POLICY chat_groups_select ON public.chat_groups
       project_id IS NULL
       AND (
         created_by = public.current_app_user_id()
-        OR EXISTS (
-          SELECT 1
-          FROM public.chat_group_members cgm
-          WHERE cgm.chat_group_id = id
-            AND cgm.user_id = public.current_app_user_id()
-        )
+        OR public.is_chat_group_member(id)
       )
     )
   );
@@ -189,12 +194,7 @@ CREATE POLICY chat_group_members_select ON public.chat_group_members
         AND (
           cg.created_by = public.current_app_user_id()
           OR public.is_project_member(cg.project_id)
-          OR EXISTS (
-            SELECT 1
-            FROM public.chat_group_members mine
-            WHERE mine.chat_group_id = chat_group_id
-              AND mine.user_id = public.current_app_user_id()
-          )
+          OR public.is_chat_group_member(chat_group_id)
         )
     )
   );
@@ -233,6 +233,49 @@ CREATE POLICY chat_group_members_delete ON public.chat_group_members
           )
         )
     )
+  );
+
+-- ─── 6c. Storage: chat attachments ───────────────────────────────────────────
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('chat-attachments', 'chat-attachments', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS chat_attachments_select ON storage.objects;
+DROP POLICY IF EXISTS chat_attachments_insert ON storage.objects;
+DROP POLICY IF EXISTS chat_attachments_update ON storage.objects;
+DROP POLICY IF EXISTS chat_attachments_delete ON storage.objects;
+
+CREATE POLICY chat_attachments_select ON storage.objects
+  FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'chat-attachments'
+    AND public.can_access_chat_group((storage.foldername(name))[1]::uuid)
+  );
+
+CREATE POLICY chat_attachments_insert ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'chat-attachments'
+    AND public.can_access_chat_group((storage.foldername(name))[1]::uuid)
+  );
+
+CREATE POLICY chat_attachments_update ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (
+    bucket_id = 'chat-attachments'
+    AND public.can_access_chat_group((storage.foldername(name))[1]::uuid)
+  )
+  WITH CHECK (
+    bucket_id = 'chat-attachments'
+    AND public.can_access_chat_group((storage.foldername(name))[1]::uuid)
+  );
+
+CREATE POLICY chat_attachments_delete ON storage.objects
+  FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'chat-attachments'
+    AND public.can_access_chat_group((storage.foldername(name))[1]::uuid)
   );
 
 -- ─── 7. RLS: messages (agora com chat_group_id) ──────────────────────────────

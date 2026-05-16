@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { Plus, Trash2, GripVertical, LayoutList, LayoutGrid } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -48,6 +48,187 @@ function parseCustomValues(raw: unknown): Record<string, string | number | null>
     else out[k] = String(v);
   }
   return out;
+}
+
+type KanbanCardProps = {
+  item: WorkspaceListItemRow;
+  cols: KanbanColumnDef[];
+  customFieldDefs: CustomFieldDef[];
+  podeEditarItens: boolean;
+  setItems: Dispatch<SetStateAction<WorkspaceListItemRow[]>>;
+  patchItem: (id: string, patch: Record<string, unknown>) => Promise<void>;
+  removeItem: (id: string) => Promise<void>;
+  setCustomValueForId: (itemId: string, fieldId: string, value: string | number | null) => void;
+  dragProps: {
+    draggable: boolean;
+    onDragStart: (e: React.DragEvent) => void;
+    onDragEnd: () => void;
+    dragging: boolean;
+  };
+};
+
+function KanbanItemCard({
+  item: it,
+  cols,
+  customFieldDefs,
+  podeEditarItens,
+  setItems,
+  patchItem,
+  removeItem,
+  setCustomValueForId,
+  dragProps,
+}: KanbanCardProps) {
+  return (
+    <Card
+      padded={false}
+      className="overflow-hidden"
+      draggable={dragProps.draggable}
+      onDragStart={dragProps.onDragStart}
+      onDragEnd={dragProps.onDragEnd}
+      style={{
+        cursor: dragProps.draggable ? "grab" : "default",
+        opacity: dragProps.dragging ? 0.65 : 1,
+        border: "1px solid color-mix(in srgb, var(--primary) 12%, var(--border))",
+        boxShadow: "0 4px 14px color-mix(in srgb, var(--foreground) 8%, transparent)",
+        background:
+          "linear-gradient(190deg, var(--surface) 0%, color-mix(in srgb, var(--surface-2) 45%, var(--surface)) 100%)",
+      }}
+    >
+      <div
+        className="h-0.5 w-full"
+        style={{
+          background: "linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 40%, var(--info)))",
+        }}
+      />
+      <div className="p-3 space-y-3">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-muted mb-1">Título</div>
+          <Input
+            value={it.title}
+            onChange={(e) =>
+              setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, title: e.target.value } : x)))
+            }
+            onBlur={(e) => {
+              const t = e.target.value.trim();
+              if (t && t !== it.title) void patchItem(it.id, { title: t });
+            }}
+            disabled={!podeEditarItens}
+            className="text-sm font-bold"
+            style={{ letterSpacing: "-0.02em" }}
+          />
+        </div>
+
+        {customFieldDefs.length > 0 && (
+          <div
+            className="space-y-2.5 pt-1 border-t"
+            style={{ borderColor: "color-mix(in srgb, var(--border) 65%, transparent)" }}
+          >
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted">Campos</div>
+            {customFieldDefs.map((f) => (
+              <div key={f.id}>
+                <label className="text-[11px] font-semibold text-muted block mb-1">{f.name}</label>
+                {f.type === "text" && (
+                  <Input
+                    value={String(it.custom_values[f.id] ?? "")}
+                    onChange={(e) =>
+                      setItems((prev) =>
+                        prev.map((x) =>
+                          x.id === it.id
+                            ? { ...x, custom_values: { ...x.custom_values, [f.id]: e.target.value } }
+                            : x
+                        )
+                      )
+                    }
+                    onBlur={(e) => setCustomValueForId(it.id, f.id, e.target.value || null)}
+                    disabled={!podeEditarItens}
+                    className="text-sm"
+                  />
+                )}
+                {f.type === "number" && (
+                  <Input
+                    type="number"
+                    value={
+                      it.custom_values[f.id] === null || it.custom_values[f.id] === undefined
+                        ? ""
+                        : String(it.custom_values[f.id])
+                    }
+                    onChange={(e) => {
+                      const v = e.target.value === "" ? null : Number(e.target.value);
+                      setItems((prev) =>
+                        prev.map((x) =>
+                          x.id === it.id ? { ...x, custom_values: { ...x.custom_values, [f.id]: v } } : x
+                        )
+                      );
+                    }}
+                    onBlur={(e) => {
+                      const v = e.target.value === "" ? null : Number(e.target.value);
+                      setCustomValueForId(it.id, f.id, v);
+                    }}
+                    disabled={!podeEditarItens}
+                    className="text-sm tabular-nums"
+                  />
+                )}
+                {f.type === "date" && (
+                  <Input
+                    type="date"
+                    value={String(it.custom_values[f.id] ?? "").slice(0, 10)}
+                    onChange={(e) => setCustomValueForId(it.id, f.id, e.target.value || null)}
+                    disabled={!podeEditarItens}
+                    className="text-sm"
+                  />
+                )}
+                {f.type === "select" && (
+                  <Select
+                    value={String(it.custom_values[f.id] ?? "")}
+                    onChange={(e) => setCustomValueForId(it.id, f.id, e.target.value || null)}
+                    disabled={!podeEditarItens}
+                  >
+                    <option value="">— Selecionar —</option>
+                    {(f.options || []).map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div
+          className="pt-1 border-t space-y-1.5"
+          style={{ borderColor: "color-mix(in srgb, var(--border) 65%, transparent)" }}
+        >
+          <label className="text-[10px] font-bold uppercase tracking-wider text-muted">Coluna do quadro</label>
+          <Select
+            value={it.status_key}
+            onChange={(e) => void patchItem(it.id, { status_key: e.target.value })}
+            disabled={!podeEditarItens}
+            className="text-sm font-semibold"
+          >
+            {cols.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        {podeEditarItens && (
+          <Button
+            size="sm"
+            variant="danger-ghost"
+            className="w-full"
+            leftIcon={<Trash2 size={14} />}
+            onClick={() => void removeItem(it.id)}
+          >
+            Excluir cartão
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 export function ListItemsSection({
@@ -143,9 +324,15 @@ export function ListItemsSection({
     await load();
   }
 
+  function setCustomValueForId(itemId: string, fieldId: string, value: string | number | null) {
+    const it = items.find((i) => i.id === itemId);
+    if (!it) return;
+    const next = { ...it.custom_values, [fieldId]: value };
+    void patchItem(itemId, { custom_values: next });
+  }
+
   function setCustomValue(item: WorkspaceListItemRow, fieldId: string, value: string | number | null) {
-    const next = { ...item.custom_values, [fieldId]: value };
-    void patchItem(item.id, { custom_values: next });
+    setCustomValueForId(item.id, fieldId, value);
   }
 
   if (!enabled) {
@@ -345,9 +532,11 @@ export function ListItemsSection({
                 key={col.key}
                 className="flex-shrink-0 rounded-xl flex flex-col"
                 style={{
-                  width: 260,
+                  width: 288,
+                  minWidth: 288,
                   background: "var(--surface-2)",
-                  border: "1px solid var(--border)",
+                  border: "1px solid color-mix(in srgb, var(--border) 85%, var(--primary))",
+                  boxShadow: "inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent)",
                 }}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -362,59 +551,46 @@ export function ListItemsSection({
                 }}
               >
                 <div
-                  className="px-3 py-2 font-bold text-xs uppercase border-b"
-                  style={{ borderColor: "var(--border)" }}
+                  className="px-3 py-2.5 font-bold text-xs uppercase border-b flex items-center justify-between gap-2"
+                  style={{
+                    borderColor: "var(--border)",
+                    background:
+                      "linear-gradient(90deg, color-mix(in srgb, var(--primary) 10%, var(--surface-2)), var(--surface-2))",
+                  }}
                 >
-                  {col.label}{" "}
-                  <span className="text-muted">({colItems.length})</span>
+                  <span className="truncate">{col.label}</span>
+                  <span
+                    className="tabular-nums shrink-0 px-1.5 py-0.5 rounded-md text-[10px]"
+                    style={{
+                      background: "color-mix(in srgb, var(--foreground) 8%, transparent)",
+                      color: "var(--muted-fg)",
+                    }}
+                  >
+                    {colItems.length}
+                  </span>
                 </div>
-                <div className="p-2 flex flex-col gap-2 flex-1 overflow-y-auto" style={{ maxHeight: 420 }}>
+                <div className="p-2.5 flex flex-col gap-3 flex-1 overflow-y-auto" style={{ maxHeight: 480 }}>
                   {colItems.map((it) => (
-                    <Card
+                    <KanbanItemCard
                       key={it.id}
-                      className="p-2 shadow-sm"
-                      draggable={podeEditarItens}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("application/x-workspace-list-item", it.id);
-                        setDragItemId(it.id);
+                      item={it}
+                      cols={cols}
+                      customFieldDefs={customFieldDefs}
+                      podeEditarItens={podeEditarItens}
+                      setItems={setItems}
+                      patchItem={patchItem}
+                      removeItem={removeItem}
+                      setCustomValueForId={setCustomValueForId}
+                      dragProps={{
+                        draggable: podeEditarItens,
+                        onDragStart: (e) => {
+                          e.dataTransfer.setData("application/x-workspace-list-item", it.id);
+                          setDragItemId(it.id);
+                        },
+                        onDragEnd: () => setDragItemId(null),
+                        dragging: dragItemId === it.id,
                       }}
-                      onDragEnd={() => setDragItemId(null)}
-                      style={{
-                        opacity: dragItemId === it.id ? 0.6 : 1,
-                        cursor: podeEditarItens ? "grab" : "default",
-                      }}
-                    >
-                      <Input
-                        value={it.title}
-                        onChange={(e) =>
-                          setItems((prev) =>
-                            prev.map((x) => (x.id === it.id ? { ...x, title: e.target.value } : x))
-                          )
-                        }
-                        onBlur={(e) => {
-                          if (e.target.value.trim() !== it.title)
-                            void patchItem(it.id, { title: e.target.value.trim() || it.title });
-                        }}
-                        disabled={!podeEditarItens}
-                        className="text-sm font-semibold mb-2"
-                      />
-                      {customFieldDefs.slice(0, 3).map((f) => (
-                        <div key={f.id} className="text-[11px] text-muted mb-0.5">
-                          <span className="font-semibold">{f.name}: </span>
-                          {String(it.custom_values[f.id] ?? "—")}
-                        </div>
-                      ))}
-                      {podeEditarItens && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="mt-1 w-full"
-                          onClick={() => void removeItem(it.id)}
-                        >
-                          Excluir
-                        </Button>
-                      )}
-                    </Card>
+                    />
                   ))}
                 </div>
               </div>

@@ -33,18 +33,17 @@ import {
   type CustomFieldDef,
   computeTreeMove,
   computeMoveToRootEnd,
-  parseKanbanColumns,
   parseCustomFieldDefs,
-  DEFAULT_KANBAN_COLUMNS,
 } from "@/lib/workspaces/spaces-shared";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { Field, Input, Select } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { WorkspaceTreeDnD } from "@/components/spaces/workspace-tree";
 import { ListItemsSection } from "@/components/spaces/list-items-section";
+import { KanbanColumnsEditor } from "@/components/spaces/kanban-columns-editor";
 
 type UserPrefsPayload = {
   treeExpanded?: Record<string, boolean>;
@@ -152,6 +151,109 @@ const SPACE_ICON_MAP: Record<string, LucideIcon> = {
 function SpaceGlyph({ icon, color, size = 16 }: { icon: string; color: string; size?: number }) {
   const Icon = SPACE_ICON_MAP[icon] ?? Layers;
   return <Icon size={size} style={{ color }} />;
+}
+
+function normalizePickerHex(v: string): string {
+  const s = v.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(s)) return s.toLowerCase();
+  if (!/^#[0-9A-Fa-f]{3}$/i.test(s)) return "#6366f1";
+  const x = s.slice(1);
+  return `#${x[0]}${x[0]}${x[1]}${x[1]}${x[2]}${x[2]}`.toLowerCase();
+}
+
+function SpaceColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const pickerHex = normalizePickerHex(value);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {COLOR_PRESETS.map((c) => {
+          const active = value.toLowerCase() === c.toLowerCase();
+          return (
+            <button
+              key={c}
+              type="button"
+              title={c}
+              onClick={() => onChange(c)}
+              className="shrink-0 rounded-full transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+              style={{
+                width: 30,
+                height: 30,
+                background: c,
+                border: active
+                  ? "3px solid var(--foreground)"
+                  : "2px solid color-mix(in srgb, var(--border) 80%, transparent)",
+                boxShadow: active ? "0 0 0 2px color-mix(in srgb, var(--primary) 45%, transparent)" : undefined,
+              }}
+              aria-label={`Cor ${c}`}
+              aria-pressed={active}
+            />
+          );
+        })}
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <label
+          className="relative flex h-10 w-11 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+          title="Cor personalizada"
+        >
+          <input
+            type="color"
+            value={pickerHex}
+            onChange={(e) => onChange(e.target.value.toLowerCase())}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            aria-label="Abrir seletor de cor"
+          />
+          <span className="pointer-events-none absolute inset-0" style={{ background: pickerHex }} />
+        </label>
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="min-w-0 flex-1 font-mono text-xs"
+          placeholder="#6366f1"
+          spellCheck={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SpaceIconPicker({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+  return (
+    <div className="grid grid-cols-4 gap-2">
+      {SPACE_ICON_KEYS.map((k) => {
+        const Icon = SPACE_ICON_MAP[k] ?? Layers;
+        const active = value === k;
+        return (
+          <button
+            key={k}
+            type="button"
+            onClick={() => onChange(k)}
+            className="flex flex-col items-center gap-1 rounded-xl border p-2 transition-all hover:border-[var(--primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+            style={{
+              borderColor: active ? "var(--primary)" : "var(--border)",
+              background: active ? "color-mix(in srgb, var(--primary) 16%, var(--surface))" : "var(--surface)",
+              boxShadow: active ? "inset 0 1px 0 rgba(255, 255, 255, 0.06)" : undefined,
+            }}
+            aria-label={`Ícone ${k}`}
+            aria-pressed={active}
+          >
+            <Icon size={22} style={{ color: active ? "var(--primary)" : "var(--muted-fg)" }} />
+            <span
+              className="w-full truncate text-center text-[9px] font-semibold leading-tight"
+              style={{ color: active ? "var(--foreground)" : "var(--muted-fg)" }}
+            >
+              {k}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function schemaLikelyMissing(err: unknown): boolean {
@@ -699,26 +801,12 @@ export default function SpacesPage() {
                   placeholder="Ex.: COPASA"
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Cor">
-                  <Select value={newSpaceColor} onChange={(e) => setNewSpaceColor(e.target.value)}>
-                    {COLOR_PRESETS.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Ícone">
-                  <Select value={newSpaceIcon} onChange={(e) => setNewSpaceIcon(e.target.value)}>
-                    {SPACE_ICON_KEYS.map((k) => (
-                      <option key={k} value={k}>
-                        {k}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
+              <Field label="Cor">
+                <SpaceColorPicker value={newSpaceColor} onChange={setNewSpaceColor} />
+              </Field>
+              <Field label="Ícone">
+                <SpaceIconPicker value={newSpaceIcon} onChange={setNewSpaceIcon} />
+              </Field>
               <Button
                 className="w-full"
                 leftIcon={<Plus size={14} />}
@@ -858,28 +946,18 @@ function SpaceEditor({
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
       <div className="text-xs font-bold uppercase text-muted mb-2">Personalizar este espaço</div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="space-y-3">
         <Field label="Nome">
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label="Cor">
-          <Select value={color} onChange={(e) => setColor(e.target.value)}>
-            {COLOR_PRESETS.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Ícone">
-          <Select value={icon} onChange={(e) => setIcon(e.target.value)}>
-            {SPACE_ICON_KEYS.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Cor">
+            <SpaceColorPicker value={color} onChange={setColor} />
+          </Field>
+          <Field label="Ícone">
+            <SpaceIconPicker value={icon} onChange={setIcon} />
+          </Field>
+        </div>
       </div>
       <Button
         className="mt-3"
@@ -916,9 +994,6 @@ function NodeInspector({
   const [name, setName] = useState(node.name);
   const [color, setColor] = useState(node.color || "");
   const [projectId, setProjectId] = useState(node.project_id || "");
-  const [kanbanJson, setKanbanJson] = useState(
-    () => JSON.stringify(parseKanbanColumns(node.kanban_columns), null, 2)
-  );
   const [customFields, setCustomFields] = useState<CustomFieldDef[]>(
     () => node.custom_field_definitions ?? []
   );
@@ -927,26 +1002,10 @@ function NodeInspector({
     setName(node.name);
     setColor(node.color || "");
     setProjectId(node.project_id || "");
-    setKanbanJson(JSON.stringify(parseKanbanColumns(node.kanban_columns), null, 2));
     setCustomFields(node.custom_field_definitions ?? []);
-  }, [node.id, node.name, node.color, node.project_id, node.kanban_columns, node.custom_field_definitions]);
+  }, [node.id, node.name, node.color, node.project_id, node.custom_field_definitions]);
 
   const linked = node.projects;
-
-  function saveKanbanJson() {
-    try {
-      const parsed = JSON.parse(kanbanJson) as unknown;
-      const cols = parseKanbanColumns(parsed);
-      if (cols.length === 0) {
-        showErrorToast("JSON inválido", "Informe ao menos uma coluna { key, label }.");
-        return;
-      }
-      onPatch({ kanban_columns: cols });
-      showSuccessToast("Colunas salvas", "");
-    } catch {
-      showErrorToast("JSON inválido", "Verifique a sintaxe do array.");
-    }
-  }
 
   function addCustomField() {
     const id = `cf_${crypto.randomUUID().slice(0, 8)}`;
@@ -1030,30 +1089,16 @@ function NodeInspector({
               </p>
             </Field>
 
-            <Field
-              label="Colunas do quadro (JSON)"
-              help='Ex.: [{"key":"todo","label":"A fazer"},{"key":"done","label":"Feito"}]'
-            >
-              <Textarea
-                value={kanbanJson}
-                onChange={(e) => setKanbanJson(e.target.value)}
-                disabled={!podeEditar}
-                rows={5}
-                className="font-mono text-xs"
+            <div className="mt-1">
+              <KanbanColumnsEditor
+                valueRaw={node.kanban_columns}
+                podeEditar={podeEditar}
+                onSave={(cols) => onPatch({ kanban_columns: cols })}
               />
-              <div className="flex gap-2 mt-2 flex-wrap">
-                {podeEditar && (
-                  <>
-                    <Button size="sm" variant="secondary" onClick={() => setKanbanJson(JSON.stringify(DEFAULT_KANBAN_COLUMNS, null, 2))}>
-                      Restaurar 3 colunas padrão
-                    </Button>
-                    <Button size="sm" onClick={saveKanbanJson}>
-                      Salvar colunas
-                    </Button>
-                  </>
-                )}
-              </div>
-            </Field>
+            </div>
+            <p className="text-xs text-muted mt-2 m-0">
+              Arraste as colunas com as setas. A chave interna identifica o cartão no banco — evite mudá-la depois de criar itens.
+            </p>
 
             <div>
               <div className="flex items-center justify-between mb-2">
