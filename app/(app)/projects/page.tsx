@@ -2869,7 +2869,196 @@ export default function ProjectsPage() {
                   gap: 16,
                 }}
               >
-                {/* ── Disciplinas (destaque principal) ── */}
+                {/* ── 1. FICHA ADMINISTRATIVA (prioridade máxima) ── */}
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      color: "var(--muted-fg)",
+                      marginBottom: 8,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <Info size={11} />
+                    Dados do projeto
+                  </div>
+                  <div
+                    style={{
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 12,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {[
+                      {
+                        label: "Município",
+                        value: proj.municipality
+                          ? `${proj.municipality}${proj.state ? ` / ${proj.state}` : ""}`
+                          : proj.state || "—",
+                        icon: <MapPin size={13} />,
+                        empty: !proj.municipality && !proj.state,
+                      },
+                      {
+                        label: "Disciplina",
+                        value: proj.discipline ? getDisciplineLabel(proj.discipline) : "—",
+                        icon: <GanttChartSquare size={13} />,
+                        empty: !proj.discipline,
+                      },
+                      {
+                        label: "Tipo de obra",
+                        value: proj.sanitation_type || "—",
+                        icon: <Droplets size={13} />,
+                        empty: !proj.sanitation_type,
+                        hidden: !proj.sanitation_type,
+                      },
+                      {
+                        label: "Criado em",
+                        value: formatBRDate(proj.created_at?.slice(0, 10)),
+                        icon: <Sparkles size={13} />,
+                        empty: false,
+                      },
+                      {
+                        label: "Meta de entrega",
+                        value: proj.planned_end_target ? formatBRDate(proj.planned_end_target) : "—",
+                        icon: <CalendarDays size={13} />,
+                        empty: !proj.planned_end_target,
+                      },
+                    ]
+                      .filter((r) => !r.hidden)
+                      .map((row, i, arr) => (
+                        <div
+                          key={row.label}
+                          style={{
+                            padding: "11px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none",
+                          }}
+                        >
+                          <span style={{ color: row.empty ? "var(--border)" : "var(--muted-fg)", flexShrink: 0 }}>
+                            {row.icon}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "var(--muted-fg)",
+                              fontWeight: 500,
+                              width: 120,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {row.label}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 13,
+                              fontWeight: row.empty ? 400 : 600,
+                              color: row.empty ? "var(--muted-fg)" : "var(--foreground)",
+                              flex: 1,
+                              fontStyle: row.empty ? "italic" : "normal",
+                            }}
+                          >
+                            {row.empty ? "Não informado" : row.value}
+                          </span>
+                          {row.empty && podeEditarProjeto && (
+                            <button
+                              type="button"
+                              onClick={() => { setDetailProjectId(null); handleStartEdit(proj); }}
+                              style={{
+                                fontSize: 11,
+                                color: "var(--primary)",
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                                padding: "2px 6px",
+                                borderRadius: 6,
+                                flexShrink: 0,
+                              }}
+                            >
+                              + Editar
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* ── 2. EQUIPE ── */}
+                {projectMembers.length > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                        color: "var(--muted-fg)",
+                        marginBottom: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                      }}
+                    >
+                      <UsersIcon size={11} /> Equipe responsável
+                    </div>
+                    <div
+                      style={{
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 12,
+                        overflow: "hidden",
+                      }}
+                    >
+                      {projectMembers.map((m, i) => (
+                        <div
+                          key={m.user_id}
+                          style={{
+                            padding: "10px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            borderBottom: i < projectMembers.length - 1 ? "1px solid var(--border)" : "none",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 30, height: 30, borderRadius: 999,
+                              background: "var(--primary-soft)",
+                              color: "var(--primary)",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 12, fontWeight: 700, flexShrink: 0,
+                              border: "1px solid color-mix(in srgb, var(--primary) 25%, transparent)",
+                            }}
+                          >
+                            {(m.users?.name || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", flex: 1 }}>
+                            {m.users?.name || m.user_id}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 11, fontWeight: 600, color: "var(--muted-fg)",
+                              padding: "2px 8px", borderRadius: 999,
+                              background: "var(--surface-2)", border: "1px solid var(--border)",
+                            }}
+                          >
+                            {getRoleLabel(m.role)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── 3. DISCIPLINAS — ação principal ── */}
                 {(() => {
                   const discKey = disciplineTabKey(proj.discipline);
                   const projectDisciplines: { key: string; label: string; isSaneamento: boolean }[] = [];
@@ -2878,7 +3067,6 @@ export default function ProjectsPage() {
                     const isSane = discKey.toLowerCase().includes("saneamento");
                     projectDisciplines.push({ key: discKey, label: getDisciplineLabel(discKey), isSaneamento: isSane });
                   }
-                  // Se tem sanitation_type mas discipline não é saneamento, também qualifica
                   if (proj.sanitation_type && !projectDisciplines.some((d) => d.isSaneamento)) {
                     projectDisciplines.push({ key: "saneamento", label: "Saneamento", isSaneamento: true });
                   }
@@ -2895,10 +3083,18 @@ export default function ProjectsPage() {
                           fontSize: 13,
                         }}
                       >
-                        <GanttChartSquare size={22} style={{ margin: "0 auto 6px", opacity: 0.4 }} />
+                        <GanttChartSquare size={22} style={{ margin: "0 auto 8px", opacity: 0.35 }} />
                         <div style={{ fontWeight: 600, marginBottom: 4 }}>Sem disciplina definida</div>
                         <div style={{ fontSize: 12 }}>
-                          Clique em <strong>Editar</strong> para definir a disciplina do projeto.
+                          Clique em{" "}
+                          <button
+                            type="button"
+                            onClick={() => { setDetailProjectId(null); handleStartEdit(proj); }}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary)", fontWeight: 700, padding: 0 }}
+                          >
+                            Editar projeto
+                          </button>{" "}
+                          para definir a disciplina.
                         </div>
                       </div>
                     );
@@ -2908,19 +3104,19 @@ export default function ProjectsPage() {
                     <div>
                       <div
                         style={{
-                          fontSize: 11,
+                          fontSize: 10,
                           fontWeight: 700,
                           textTransform: "uppercase",
-                          letterSpacing: "0.06em",
+                          letterSpacing: "0.08em",
                           color: "var(--muted-fg)",
-                          marginBottom: 10,
+                          marginBottom: 8,
                           display: "flex",
                           alignItems: "center",
-                          gap: 6,
+                          gap: 5,
                         }}
                       >
-                        <GanttChartSquare size={12} />
-                        Disciplinas — clique para abrir
+                        <GanttChartSquare size={11} />
+                        Abrir módulo da disciplina
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {projectDisciplines.map((disc) => {
@@ -2963,9 +3159,9 @@ export default function ProjectsPage() {
                             >
                               <div
                                 style={{
-                                  width: 40,
-                                  height: 40,
-                                  borderRadius: 10,
+                                  width: 42,
+                                  height: 42,
+                                  borderRadius: 11,
                                   background: `color-mix(in srgb, ${discColor} 18%, var(--surface-2))`,
                                   color: discColor,
                                   border: `1px solid color-mix(in srgb, ${discColor} 35%, transparent)`,
@@ -2978,16 +3174,16 @@ export default function ProjectsPage() {
                                 {getDisciplineIcon(disc.key)}
                               </div>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>
+                                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--foreground)" }}>
                                   {disc.label}
                                 </div>
-                                <div style={{ fontSize: 12, color: "var(--muted-fg)", marginTop: 1 }}>
+                                <div style={{ fontSize: 12, color: "var(--muted-fg)", marginTop: 2 }}>
                                   {disc.isSaneamento
-                                    ? "Abrir módulo de saneamento com etapas, concepção e aprovações"
-                                    : `Abrir painel da disciplina ${disc.label.toLowerCase()}`}
+                                    ? "Etapas técnicas, concepção, aprovações e histórico"
+                                    : `Painel completo da disciplina ${disc.label.toLowerCase()}`}
                                 </div>
                               </div>
-                              <ChevronRight size={16} style={{ color: discColor, flexShrink: 0 }} />
+                              <ChevronRight size={18} style={{ color: discColor, flexShrink: 0 }} />
                             </button>
                           );
                         })}
@@ -2996,184 +3192,43 @@ export default function ProjectsPage() {
                   );
                 })()}
 
-                {/* Progress */}
+                {/* ── 4. PROGRESSO (secundário) ── */}
                 <div
                   style={{
                     background: "var(--surface-2)",
                     border: "1px solid var(--border)",
                     borderRadius: 12,
-                    padding: "14px 16px",
+                    padding: "12px 14px",
                   }}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-fg)" }}>
-                      Progresso geral
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      Progresso das tarefas
                     </span>
-                    <strong style={{ fontSize: 20, fontWeight: 700, color: risk.color }}>
+                    <strong style={{ fontSize: 18, fontWeight: 700, color: risk.color }}>
                       {stats.progress}%
                     </strong>
                   </div>
                   <Progress value={stats.progress} />
                   <div
-                    className="flex items-center gap-4 mt-2"
-                    style={{ fontSize: 12, color: "var(--muted-fg)" }}
+                    className="flex items-center gap-3 mt-2 flex-wrap"
+                    style={{ fontSize: 11, color: "var(--muted-fg)" }}
                   >
                     <span><strong style={{ color: "var(--foreground)" }}>{stats.completedTasks}</strong> concluídas</span>
+                    <span>·</span>
                     <span><strong style={{ color: "var(--foreground)" }}>{stats.inProgressTasks}</strong> em andamento</span>
+                    <span>·</span>
                     <span><strong style={{ color: "var(--foreground)" }}>{stats.totalTasks}</strong> total</span>
                     {stats.delayedTasks > 0 && (
-                      <span style={{ color: "var(--danger)", fontWeight: 600 }}>
-                        ⚠ {stats.delayedTasks} atrasada{stats.delayedTasks > 1 ? "s" : ""}
-                      </span>
+                      <>
+                        <span>·</span>
+                        <span style={{ color: "var(--danger)", fontWeight: 600 }}>
+                          ⚠ {stats.delayedTasks} atrasada{stats.delayedTasks > 1 ? "s" : ""}
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>
-
-                {/* Datas */}
-                <div
-                  style={{
-                    background: "var(--surface)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 12,
-                    overflow: "hidden",
-                  }}
-                >
-                  {[
-                    { label: "Criado em", value: formatBRDate(proj.created_at?.slice(0, 10)), icon: <Sparkles size={13} /> },
-                    { label: "Previsão efetiva", value: dates.plannedEnd ? formatBRDate(dates.plannedEnd) : "—", icon: <CalendarDays size={13} /> },
-                    { label: "Meta (cliente)", value: proj.planned_end_target ? formatBRDate(proj.planned_end_target) : "—", icon: <CalendarDays size={13} /> },
-                    { label: "Término real", value: proj.actual_end_date ? formatBRDate(proj.actual_end_date) : "—", icon: <CheckCircle2 size={13} /> },
-                    { label: "Tempo produzido", value: formatSeconds(stats.totalSeconds), icon: <Clock size={13} /> },
-                  ].map((row, i, arr) => (
-                    <div
-                      key={row.label}
-                      style={{
-                        padding: "10px 14px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none",
-                      }}
-                    >
-                      <span style={{ color: "var(--muted-fg)", flexShrink: 0 }}>{row.icon}</span>
-                      <span style={{ fontSize: 12, color: "var(--muted-fg)", fontWeight: 500, width: 130, flexShrink: 0 }}>{row.label}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", flex: 1 }}>{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Equipe */}
-                {projectMembers.length > 0 && (
-                  <div>
-                    <div
-                      style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}
-                    >
-                      <UsersIcon size={12} /> Equipe ({projectMembers.length})
-                    </div>
-                    <div
-                      style={{
-                        background: "var(--surface)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 12,
-                        overflow: "hidden",
-                      }}
-                    >
-                      {projectMembers.map((m, i) => (
-                        <div
-                          key={m.user_id}
-                          style={{
-                            padding: "9px 14px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            borderBottom: i < projectMembers.length - 1 ? "1px solid var(--border)" : "none",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: 28, height: 28, borderRadius: 999,
-                              background: "var(--primary-soft)",
-                              color: "var(--primary)",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 11, fontWeight: 700, flexShrink: 0,
-                            }}
-                          >
-                            {(m.users?.name || "?").charAt(0).toUpperCase()}
-                          </div>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", flex: 1 }}>
-                            {m.users?.name || m.user_id}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 11, fontWeight: 600, color: "var(--muted-fg)",
-                              padding: "2px 8px", borderRadius: 999,
-                              background: "var(--surface-2)", border: "1px solid var(--border)",
-                            }}
-                          >
-                            {getRoleLabel(m.role)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Tarefas */}
-                {projectTasks.length > 0 && (
-                  <div>
-                    <div
-                      style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}
-                    >
-                      <CheckCircle2 size={12} /> Tarefas ({projectTasks.length})
-                    </div>
-                    <div
-                      style={{
-                        background: "var(--surface)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 12,
-                        overflow: "hidden",
-                        maxHeight: 300,
-                        overflowY: "auto",
-                      }}
-                    >
-                      {projectTasks.map((t, i) => {
-                        const tStatus = t.status === "completed" ? "success" : t.status === "in_progress" ? "info" : "warning";
-                        const tColor = tStatus === "success" ? "var(--success)" : tStatus === "info" ? "var(--info)" : "var(--warning)";
-                        const tLabel = t.status === "completed" ? "Concluída" : t.status === "in_progress" ? "Em andamento" : "Pendente";
-                        return (
-                          <div
-                            key={t.id}
-                            style={{
-                              padding: "9px 14px",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                              borderBottom: i < projectTasks.length - 1 ? "1px solid var(--border)" : "none",
-                            }}
-                          >
-                            <div style={{ width: 6, height: 6, borderRadius: 999, background: tColor, flexShrink: 0, marginTop: 1 }} />
-                            <span style={{ fontSize: 13, color: "var(--foreground)", flex: 1, fontWeight: 500, lineHeight: 1.3 }}>
-                              {t.title}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: 10, fontWeight: 700, color: tColor,
-                                padding: "2px 7px", borderRadius: 999,
-                                background: `color-mix(in srgb, ${tColor} 15%, transparent)`,
-                                border: `1px solid ${tColor}30`,
-                                letterSpacing: "0.03em",
-                                textTransform: "uppercase",
-                                flexShrink: 0,
-                              }}
-                            >
-                              {tLabel}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Footer */}
