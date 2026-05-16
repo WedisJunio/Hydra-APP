@@ -44,6 +44,10 @@ CREATE INDEX IF NOT EXISTS idx_workspace_space_nodes_project
 ALTER TABLE public.workspace_spaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workspace_space_nodes ENABLE ROW LEVEL SECURITY;
 
+-- Políticas de workspace_spaces: mutações usam has_full_portfolio_access() (admin, manager,
+-- coordinator, leader). Se você já rodou uma versão antiga só com coordinator+, execute de novo
+-- os DROP/CREATE abaixo para alinhar o banco.
+
 -- Leitura: qualquer usuário autenticado (organização interna).
 DROP POLICY IF EXISTS workspace_spaces_select ON public.workspace_spaces;
 CREATE POLICY workspace_spaces_select ON public.workspace_spaces
@@ -52,26 +56,18 @@ CREATE POLICY workspace_spaces_select ON public.workspace_spaces
 DROP POLICY IF EXISTS workspace_spaces_insert ON public.workspace_spaces;
 CREATE POLICY workspace_spaces_insert ON public.workspace_spaces
   FOR INSERT TO authenticated
-  WITH CHECK (
-    public.current_app_user_role() IN ('admin', 'manager', 'coordinator')
-  );
+  WITH CHECK (public.has_full_portfolio_access());
 
 DROP POLICY IF EXISTS workspace_spaces_update ON public.workspace_spaces;
 CREATE POLICY workspace_spaces_update ON public.workspace_spaces
   FOR UPDATE TO authenticated
-  USING (
-    public.current_app_user_role() IN ('admin', 'manager', 'coordinator')
-  )
-  WITH CHECK (
-    public.current_app_user_role() IN ('admin', 'manager', 'coordinator')
-  );
+  USING (public.has_full_portfolio_access())
+  WITH CHECK (public.has_full_portfolio_access());
 
 DROP POLICY IF EXISTS workspace_spaces_delete ON public.workspace_spaces;
 CREATE POLICY workspace_spaces_delete ON public.workspace_spaces
   FOR DELETE TO authenticated
-  USING (
-    public.current_app_user_role() IN ('admin', 'manager', 'coordinator')
-  );
+  USING (public.has_full_portfolio_access());
 
 DROP POLICY IF EXISTS workspace_space_nodes_select ON public.workspace_space_nodes;
 CREATE POLICY workspace_space_nodes_select ON public.workspace_space_nodes

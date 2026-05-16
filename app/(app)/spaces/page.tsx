@@ -172,9 +172,10 @@ function SpaceColorPicker({
   value: string;
   onChange: (hex: string) => void;
 }) {
+  const nativePickerRef = useRef<HTMLInputElement>(null);
   const pickerHex = normalizePickerHex(value);
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {COLOR_PRESETS.map((c) => {
           const active = value.toLowerCase() === c.toLowerCase();
@@ -184,7 +185,7 @@ function SpaceColorPicker({
               type="button"
               title={c}
               onClick={() => onChange(c)}
-              className="shrink-0 rounded-full transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+              className="flex-shrink-0 rounded-full transition-transform hover:scale-110 focus:outline-none"
               style={{
                 width: 30,
                 height: 30,
@@ -200,20 +201,33 @@ function SpaceColorPicker({
           );
         })}
       </div>
-      <div className="flex min-w-0 items-center gap-2">
-        <label
-          className="relative flex h-10 w-11 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+      <div className="relative flex min-w-0 items-center gap-2">
+        <input
+          ref={nativePickerRef}
+          type="color"
+          value={pickerHex}
+          onChange={(e) => onChange(e.target.value.toLowerCase())}
+          style={{
+            position: "absolute",
+            left: -10000,
+            width: 1,
+            height: 1,
+            opacity: 0,
+          }}
+          tabIndex={-1}
+          aria-hidden
+        />
+        <button
+          type="button"
+          className="h-10 w-11 flex-shrink-0 cursor-pointer rounded-lg border border-[var(--border)] p-0 focus:outline-none"
+          style={{
+            background: pickerHex,
+            boxShadow: "var(--shadow-xs)",
+          }}
           title="Cor personalizada"
-        >
-          <input
-            type="color"
-            value={pickerHex}
-            onChange={(e) => onChange(e.target.value.toLowerCase())}
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            aria-label="Abrir seletor de cor"
-          />
-          <span className="pointer-events-none absolute inset-0" style={{ background: pickerHex }} />
-        </label>
+          aria-label="Abrir seletor de cor"
+          onClick={() => nativePickerRef.current?.click()}
+        />
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -228,7 +242,7 @@ function SpaceColorPicker({
 
 function SpaceIconPicker({ value, onChange }: { value: string; onChange: (key: string) => void }) {
   return (
-    <div className="grid grid-cols-4 gap-2">
+    <div className="grid min-w-0 w-full grid-cols-4 gap-2">
       {SPACE_ICON_KEYS.map((k) => {
         const Icon = SPACE_ICON_MAP[k] ?? Layers;
         const active = value === k;
@@ -237,7 +251,7 @@ function SpaceIconPicker({ value, onChange }: { value: string; onChange: (key: s
             key={k}
             type="button"
             onClick={() => onChange(k)}
-            className="flex flex-col items-center gap-1 rounded-xl border p-2 transition-all hover:border-[var(--primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+            className="flex flex-col items-center gap-1 rounded-xl border p-2 transition-all hover:border-[var(--primary)] focus:outline-none"
             style={{
               borderColor: active ? "var(--primary)" : "var(--border)",
               background: active ? "color-mix(in srgb, var(--primary) 16%, var(--surface))" : "var(--surface)",
@@ -519,17 +533,15 @@ export default function SpacesPage() {
     const profile = await getCurrentProfile();
     const nextOrder =
       spaces.length > 0 ? Math.max(...spaces.map((s) => s.sort_order)) + 1 : 0;
-    const { data, error } = await supabase
-      .from("workspace_spaces")
-      .insert({
-        name: newSpaceName.trim(),
-        color: newSpaceColor,
-        icon: newSpaceIcon,
-        sort_order: nextOrder,
-        created_by: profile?.id ?? null,
-      })
-      .select("id")
-      .single();
+    const row: Record<string, unknown> = {
+      name: newSpaceName.trim(),
+      color: newSpaceColor.trim() || FALLBACK_SPACE_HEX,
+      icon: newSpaceIcon.trim() || "layers",
+      sort_order: nextOrder,
+    };
+    if (profile?.id) row.created_by = profile.id;
+
+    const { data, error } = await supabase.from("workspace_spaces").insert(row).select("id").single();
 
     if (error) {
       if (schemaLikelyMissing(error)) {
@@ -537,6 +549,7 @@ export default function SpacesPage() {
           "Execute lib/sql/workspaces-spaces.sql no Supabase para habilitar Espaços."
         );
       } else {
+        logSupabaseUnlessJwt("[spaces] create space", error);
         showErrorToast("Não foi possível criar o espaço", getSupabaseErrorMessage(error));
       }
       setCreatingSpace(false);
@@ -751,7 +764,7 @@ export default function SpacesPage() {
                 description={
                   podeGerirEspacos
                     ? "Crie um espaço de topo (ex.: cliente ou área) e depois adicione pastas e listas."
-                    : "Peça a um coordenador para criar o primeiro espaço."
+                    : "Peça a um líder, coordenador ou à gerência para criar o primeiro espaço."
                 }
               />
             )}

@@ -675,14 +675,16 @@ export default function ChatPage() {
 
   async function addMember(userId: string) {
     if (!selectedGroupId || !canManageSelectedGroup) return;
-    const profile = await getCurrentProfile();
-    const { error } = await supabase.from("chat_group_members").insert({
-      chat_group_id: selectedGroupId,
-      user_id: userId,
-      added_by: profile?.id || currentProfileId,
+    const { error } = await supabase.rpc("add_chat_group_member", {
+      p_chat_group_id: selectedGroupId,
+      p_user_id: userId,
     });
     if (error) {
-      showErrorToast("Erro ao adicionar pessoa", getSupabaseErrorMessage(error));
+      console.error("Erro ao adicionar pessoa ao grupo:", error);
+      const message = error.message?.includes("Could not find the function")
+        ? "Atualize o banco com lib/sql/chat-groups.sql e tente novamente."
+        : getSupabaseErrorMessage(error);
+      showErrorToast("Erro ao adicionar pessoa", message);
       return;
     }
     await loadGroupMembers(selectedGroupId);
@@ -696,13 +698,16 @@ export default function ChatPage() {
       showErrorToast("Ação bloqueada", "Você não pode remover a si mesmo do grupo.");
       return;
     }
-    const { error } = await supabase
-      .from("chat_group_members")
-      .delete()
-      .eq("chat_group_id", selectedGroupId)
-      .eq("user_id", userId);
+    const { error } = await supabase.rpc("remove_chat_group_member", {
+      p_chat_group_id: selectedGroupId,
+      p_user_id: userId,
+    });
     if (error) {
-      showErrorToast("Erro ao remover pessoa", getSupabaseErrorMessage(error));
+      console.error("Erro ao remover pessoa do grupo:", error);
+      const message = error.message?.includes("Could not find the function")
+        ? "Atualize o banco com lib/sql/chat-groups.sql e tente novamente."
+        : getSupabaseErrorMessage(error);
+      showErrorToast("Erro ao remover pessoa", message);
       return;
     }
     await loadGroupMembers(selectedGroupId);

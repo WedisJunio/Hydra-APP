@@ -131,6 +131,76 @@ AS $$
     );
 $$;
 
+CREATE OR REPLACE FUNCTION public.can_manage_chat_group_members(p_chat_group_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    public.is_admin()
+    OR EXISTS (
+      SELECT 1
+      FROM public.chat_groups cg
+      WHERE cg.id = p_chat_group_id
+        AND cg.project_id IS NULL
+        AND (
+          cg.created_by = public.current_app_user_id()
+          OR public.current_app_user_role() IN (
+            'admin', 'manager', 'coordinator', 'leader', 'projetista_lider'
+          )
+        )
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.add_chat_group_member(
+  p_chat_group_id UUID,
+  p_user_id UUID
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT public.can_manage_chat_group_members(p_chat_group_id) THEN
+    RAISE EXCEPTION 'not allowed to manage chat group members'
+      USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.chat_group_members (chat_group_id, user_id, added_by)
+  VALUES (p_chat_group_id, p_user_id, public.current_app_user_id())
+  ON CONFLICT (chat_group_id, user_id) DO NOTHING;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.remove_chat_group_member(
+  p_chat_group_id UUID,
+  p_user_id UUID
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT public.can_manage_chat_group_members(p_chat_group_id) THEN
+    RAISE EXCEPTION 'not allowed to manage chat group members'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF p_user_id = public.current_app_user_id() THEN
+    RAISE EXCEPTION 'cannot remove yourself from the chat group'
+      USING ERRCODE = '42501';
+  END IF;
+
+  DELETE FROM public.chat_group_members
+  WHERE chat_group_id = p_chat_group_id
+    AND user_id = p_user_id;
+END;
+$$;
+
 -- ─── 6. RLS: chat_groups ─────────────────────────────────────────────────────
 
 ALTER TABLE public.chat_groups ENABLE ROW LEVEL SECURITY;
@@ -202,37 +272,13 @@ CREATE POLICY chat_group_members_select ON public.chat_group_members
 CREATE POLICY chat_group_members_insert ON public.chat_group_members
   FOR INSERT TO authenticated
   WITH CHECK (
-    public.is_admin()
-    OR EXISTS (
-      SELECT 1
-      FROM public.chat_groups cg
-      WHERE cg.id = chat_group_id
-        AND cg.project_id IS NULL
-        AND (
-          cg.created_by = public.current_app_user_id()
-          OR public.current_app_user_role() IN (
-            'admin', 'manager', 'coordinator', 'leader', 'projetista_lider'
-          )
-        )
-    )
+    public.can_manage_chat_group_members(chat_group_id)
   );
 
 CREATE POLICY chat_group_members_delete ON public.chat_group_members
   FOR DELETE TO authenticated
   USING (
-    public.is_admin()
-    OR EXISTS (
-      SELECT 1
-      FROM public.chat_groups cg
-      WHERE cg.id = chat_group_id
-        AND cg.project_id IS NULL
-        AND (
-          cg.created_by = public.current_app_user_id()
-          OR public.current_app_user_role() IN (
-            'admin', 'manager', 'coordinator', 'leader', 'projetista_lider'
-          )
-        )
-    )
+    public.can_manage_chat_group_members(chat_group_id)
   );
 
 -- ─── 6c. Storage: chat attachments ───────────────────────────────────────────

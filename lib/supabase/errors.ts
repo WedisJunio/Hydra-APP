@@ -40,7 +40,12 @@ function normalizeErrorMessage(rawMessage: string) {
   if (lower.includes("jwt") || lower.includes("token")) {
     return "Sua sessão expirou. Entre novamente.";
   }
-  if (lower.includes("permission denied") || lower.includes("row-level security")) {
+  if (
+    lower.includes("permission denied") ||
+    lower.includes("row-level security") ||
+    lower.includes("row level security") ||
+    (lower.includes("violates") && lower.includes("policy"))
+  ) {
     return "Você não tem permissão para esta ação.";
   }
   if (lower.includes("duplicate key") || lower.includes("unique constraint")) {
@@ -73,10 +78,18 @@ export function getSupabaseErrorMessage(error: unknown) {
     return "Ocorreu um erro inesperado.";
   }
 
-  const maybeMessage = "message" in error ? String(error.message || "") : "";
-  if (!maybeMessage) {
+  const e = error as { message?: string; code?: string; details?: string };
+  const code = String(e.code ?? "");
+  if (code === "42501" || code === "PGRST301") {
+    return "Você não tem permissão para esta ação. Se precisar criar espaços, peça ajuste do seu papel ao administrador.";
+  }
+
+  const maybeMessage = String(e.message ?? "");
+  const details = String(e.details ?? "");
+  const combined = `${maybeMessage} ${details}`.trim();
+  if (!combined) {
     return "Ocorreu um erro inesperado.";
   }
 
-  return normalizeErrorMessage(maybeMessage);
+  return normalizeErrorMessage(combined);
 }
