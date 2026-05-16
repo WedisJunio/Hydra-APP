@@ -30,6 +30,9 @@ import {
   Eye,
   MapPin,
   ListTodo,
+  SlidersHorizontal,
+  ArrowUpDown,
+  Layers,
 } from "lucide-react";
 
 import { useRouter } from "next/navigation";
@@ -107,6 +110,81 @@ function projectMatchesDisciplineTab(project: Project, tab: string): boolean {
   }
   return project.discipline === tab;
 }
+
+/** Ordem sugerida no hub — novos segmentos entram aqui sem refatorar a página. */
+const PROJECT_SEGMENT_ORDER: string[] = [
+  "saneamento",
+  "estrutural",
+  "arquitetura",
+  "eletrico",
+  "hidraulico",
+  "civil",
+  "ampliacao",
+  "urbanismo",
+  "infraestrutura",
+  "processos_internos",
+  "outro",
+];
+
+function getSegmentLabel(key: string): string {
+  const map: Record<string, string> = {
+    saneamento: "Saneamento",
+    estrutural: "Estrutural",
+    arquitetura: "Arquitetura",
+    eletrico: "Elétrico",
+    hidraulico: "Hidráulico",
+    civil: "Civil",
+    ampliacao: "Ampliação",
+    urbanismo: "Urbanismo",
+    infraestrutura: "Infraestrutura",
+    processos_internos: "Processos internos",
+    outro: "Outros",
+  };
+  return map[key] || getDisciplineLabel(key);
+}
+
+function buildNavSegmentKeys(projectList: Project[]): string[] {
+  const fromData = new Set<string>();
+  for (const p of projectList) {
+    if (projectQualifiesForSaneamentoModule(p.discipline, p.sanitation_type)) {
+      fromData.add("saneamento");
+    }
+    const k = disciplineTabKey(p.discipline);
+    if (k) fromData.add(k);
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const k of PROJECT_SEGMENT_ORDER) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push(k);
+    }
+  }
+  for (const k of [...fromData].sort((a, b) => a.localeCompare(b, "pt-BR"))) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push(k);
+    }
+  }
+  return out;
+}
+
+function projectBelongsToSegment(project: Project, segmentKey: string): boolean {
+  if (segmentKey === "saneamento") {
+    return projectMatchesDisciplineTab(project, "saneamento");
+  }
+  const k = disciplineTabKey(project.discipline);
+  return k === segmentKey;
+}
+
+type ProjectLifecycleFilter = "all" | "active" | "done";
+
+type ProjectSortKey =
+  | "risk_desc"
+  | "progress_desc"
+  | "progress_asc"
+  | "name"
+  | "planned_end";
 
 type User = {
   id: string;
@@ -551,6 +629,13 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  /** Filtro de segmento só na visão geral (lista/cartões), sem mudar o módulo ativo. */
+  const [listSegmentFilter, setListSegmentFilter] = useState<string | "all">("all");
+  const [projectLifecycleFilter, setProjectLifecycleFilter] =
+    useState<ProjectLifecycleFilter>("all");
+  const [filterResponsibleUserId, setFilterResponsibleUserId] = useState("");
+  const [filterMunicipalityId, setFilterMunicipalityId] = useState("");
+  const [sortProjectsBy, setSortProjectsBy] = useState<ProjectSortKey>("risk_desc");
   /** `${projectId}:active` | `${projectId}:done` → recolher grupos de tarefas (default expandido). */
   const [taskStatusGroupOpen, setTaskStatusGroupOpen] = useState<Record<string, boolean>>({});
 
@@ -1008,19 +1093,42 @@ export default function ProjectsPage() {
     [tasks]
   );
 
-  const disciplines = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of projects) {
-      const key = disciplineTabKey(p.discipline);
-      if (key) set.add(key);
+  const navSegmentKeys = useMemo(() => buildNavSegmentKeys(projects), [projects]);
+
+  const segmentCountsMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const seg of navSegmentKeys) {
+      m.set(seg, projects.filter((p) => projectBelongsToSegment(p, seg)).length);
     }
-    set.add("saneamento");
-    return Array.from(set).sort((a, b) => {
-      if (a === "saneamento") return -1;
-      if (b === "saneamento") return 1;
-      return a.localeCompare(b, "pt-BR", { sensitivity: "base" });
-    });
+    return m;
+  }, [projects, navSegmentKeys]);
+
+  const municipalityOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of projects) {
+      if (p.municipality?.trim()) s.add(p.municipality.trim());
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
   }, [projects]);
+
+  const responsibleOptions = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of projects) {
+      if (p.manager_id) ids.add(p.manager_id);
+      if (p.coordinator_id) ids.add(p.coordinator_id);
+      if (p.leader_id) ids.add(p.leader_id);
+    }
+    for (const m of members) {
+      ids.add(m.user_id);
+    }
+    return [...ids]
+      .map((id) => ({
+        id,
+        name: users.find((u) => u.id === id)?.name || "Usuário",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }));
+  }, [projects, members, users]);
+
   const isSaneamentoTab = useMemo(
     () =>
       activeProjectsTab !== "todos" &&
@@ -1056,6 +1164,9 @@ export default function ProjectsPage() {
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
+      if (activeProjectsTab === "todos" && listSegmentFilter !== "all") {
+        if (!projectBelongsToSegment(project, listSegmentFilter)) return false;
+      }
       if (search.trim()) {
         const term = search.trim().toLowerCase();
         const display = formatProjectDisplayName(project).toLowerCase();
@@ -1070,10 +1181,93 @@ export default function ProjectsPage() {
         const risk = getProjectStats(project).risk;
         if (risk !== riskFilter) return false;
       }
+      if (projectLifecycleFilter !== "all") {
+        const st = getProjectStats(project);
+        const done =
+          !!project.actual_end_date?.trim() ||
+          st.progress >= 100 ||
+          (st.totalTasks > 0 && st.completedTasks === st.totalTasks);
+        if (projectLifecycleFilter === "done" && !done) return false;
+        if (projectLifecycleFilter === "active" && done) return false;
+      }
+      if (filterResponsibleUserId) {
+        const lead =
+          project.manager_id === filterResponsibleUserId ||
+          project.coordinator_id === filterResponsibleUserId ||
+          project.leader_id === filterResponsibleUserId;
+        const memberHit = members.some(
+          (m) => m.project_id === project.id && m.user_id === filterResponsibleUserId
+        );
+        if (!lead && !memberHit) return false;
+      }
+      if (filterMunicipalityId) {
+        if ((project.municipality || "").trim() !== filterMunicipalityId) return false;
+      }
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, tasks, search, riskFilter]);
+  }, [
+    projects,
+    tasks,
+    search,
+    riskFilter,
+    activeProjectsTab,
+    listSegmentFilter,
+    projectLifecycleFilter,
+    filterResponsibleUserId,
+    filterMunicipalityId,
+    members,
+  ]);
+
+  const orderedFilteredProjects = useMemo(() => {
+    const list = [...filteredProjects];
+    const riskOrder: Record<RiskKey, number> = { red: 0, yellow: 1, green: 2 };
+    list.sort((a, b) => {
+      const sa = getProjectStats(a);
+      const sb = getProjectStats(b);
+      switch (sortProjectsBy) {
+        case "name":
+          return formatProjectDisplayName(a).localeCompare(
+            formatProjectDisplayName(b),
+            "pt-BR",
+            { sensitivity: "base" }
+          );
+        case "progress_desc":
+          return sb.progress - sa.progress;
+        case "progress_asc":
+          return sa.progress - sb.progress;
+        case "planned_end": {
+          const da = getProjectDates(a).plannedEnd || "9999-12-31";
+          const db = getProjectDates(b).plannedEnd || "9999-12-31";
+          return da.localeCompare(db);
+        }
+        case "risk_desc":
+        default:
+          return riskOrder[sa.risk] - riskOrder[sb.risk];
+      }
+    });
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredProjects, sortProjectsBy, tasks, projects]);
+
+  const listFiltersActive =
+    listSegmentFilter !== "all" ||
+    projectLifecycleFilter !== "all" ||
+    !!filterResponsibleUserId ||
+    !!filterMunicipalityId ||
+    riskFilter !== "all" ||
+    !!search.trim() ||
+    sortProjectsBy !== "risk_desc";
+
+  function clearOverviewFilters() {
+    setSearch("");
+    setRiskFilter("all");
+    setListSegmentFilter("all");
+    setProjectLifecycleFilter("all");
+    setFilterResponsibleUserId("");
+    setFilterMunicipalityId("");
+    setSortProjectsBy("risk_desc");
+  }
 
   // ─── PDF ──────────────────────────────────────────────────────────────────
 
@@ -2296,102 +2490,343 @@ export default function ProjectsPage() {
     if (!podeCriarProjeto) setShowNewForm(false);
   }, [podeCriarProjeto]);
 
+  const pageHeaderDescription = useMemo(() => {
+    const contextual =
+      activeProjectsTab === "todos"
+        ? projetistaSomenteTarefas
+          ? "Projetos em que você participa — use busca, filtros e segmentos para achar rapidamente o que precisa."
+          : "Visão geral do portfólio com equipe, carga, risco e prazos. Escale para dezenas de segmentos sem perder clareza."
+        : isSaneamentoTab
+          ? activeSaneamentoView === "dashboard"
+            ? "Painel analítico do segmento de saneamento: ritmo, entregas e saúde das frentes."
+            : activeSaneamentoView === "gantt"
+              ? "Linha do tempo das tarefas, prazos e marcos visíveis num só lugar."
+              : "Cartões operacionais por obra — o mesmo fluxo da área Saneamento."
+          : activeDisciplineView === "gantt"
+            ? "Gantt com tarefas e prazos consolidados para esta disciplina."
+            : "Dashboard executivo do desempenho da disciplina selecionada.";
+    return (
+      <div style={{ maxWidth: 900 }}>
+        <p className="page-subtitle" style={{ marginBottom: 8 }}>
+          {contextual}
+        </p>
+        <p
+          style={{
+            fontSize: 13,
+            color: "var(--muted-fg)",
+            lineHeight: 1.55,
+            margin: 0,
+            fontWeight: 500,
+          }}
+        >
+          Organize o crescimento por <strong>segmentos</strong> (obras, disciplinas e processos internos),
+          refine a <strong>visão geral</strong> com filtros combinados e abra cada módulo para dashboards e Gantt
+          específicos — sem depender de poucas abas fixas.
+        </p>
+      </div>
+    );
+  }, [
+    activeProjectsTab,
+    isSaneamentoTab,
+    activeSaneamentoView,
+    activeDisciplineView,
+    projetistaSomenteTarefas,
+  ]);
+
   return (
     <div>
       <PageHeader
         title="Projetos"
-        description={
-          isSaneamentoTab
-            ? activeSaneamentoView === "dashboard"
-              ? "Painel de saneamento com gráficos, desempenho e acompanhamento por projeto."
-              : activeSaneamentoView === "gantt"
-              ? "Cronograma das tarefas dos projetos de saneamento em formato Gantt."
-              : "Visão operacional dos projetos de saneamento, igual ao fluxo atual da área."
-            : activeProjectsTab !== "todos"
-            ? activeDisciplineView === "gantt"
-              ? "Cronograma das tarefas em formato Gantt, com prazos e progresso por projeto."
-              : "Painel da disciplina selecionada, com indicadores e desempenho."
-            : projetistaSomenteTarefas
-            ? "Projetos onde você participa. Você pode criar e acompanhar tarefas; edição do projeto é feita por coordenação ou projetista líder."
-            : "Visão completa por projeto, com equipe, carga e indicadores de risco."
-        }
+        description={pageHeaderDescription}
         actions={
-          activeProjectsTab !== "todos" &&
-          (isSaneamentoTab
-            ? activeSaneamentoView === "dashboard"
-            : activeDisciplineView === "dashboard") ? (
-            <PeriodFilter value={period} onChange={setPeriod} />
-          ) : podeCriarProjeto ? (
-            <Button
-              leftIcon={<Plus size={16} />}
-              onClick={() => setShowNewForm((v) => !v)}
-            >
-              {showNewForm ? "Fechar" : "Novo projeto"}
-            </Button>
-          ) : undefined
+          <div className="flex flex-wrap items-center gap-2 justify-end">
+            {activeProjectsTab !== "todos" &&
+              (isSaneamentoTab
+                ? activeSaneamentoView === "dashboard"
+                : activeDisciplineView === "dashboard") && (
+                <PeriodFilter value={period} onChange={setPeriod} />
+              )}
+            {podeCriarProjeto && activeProjectsTab === "todos" ? (
+              <Button
+                leftIcon={<Plus size={16} />}
+                onClick={() => setShowNewForm((v) => !v)}
+              >
+                {showNewForm ? "Fechar" : "Novo projeto"}
+              </Button>
+            ) : null}
+          </div>
         }
       />
 
-      {/* ─── Discipline tabs ──────────────────────────────────── */}
+      {/* ─── Hub de segmentos (escalável) + sub-rotas do módulo ───────── */}
       {!loading && (
-        <div className="mb-6">
-          <div className="tabs" style={{ maxWidth: "100%", overflowX: "auto" }}>
-            <button
-              className="tab"
-              data-active={activeProjectsTab === "todos" ? "true" : "false"}
-              onClick={() => setActiveProjectsTab("todos")}
-            >
-              <FolderKanban size={14} />
-              Todos os projetos
-            </button>
-            {disciplines.map((disc) => (
-              <button
-                key={disc}
-                className="tab"
-                data-active={activeProjectsTab === disc ? "true" : "false"}
-                onClick={() => {
-                  setActiveProjectsTab(disc);
-                  if (disc.toLowerCase().includes("saneamento")) {
-                    setActiveSaneamentoView("dashboard");
-                  }
+        <div
+          className="mb-6"
+          style={{
+            border: "1px solid color-mix(in srgb, var(--border) 90%, var(--primary))",
+            borderRadius: 18,
+            background:
+              "linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, var(--primary)) 0%, var(--surface) 100%)",
+            padding: "16px 18px",
+            boxShadow: "var(--shadow-sm)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 14,
+              flexWrap: "wrap",
+              marginBottom: 14,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
+              <div
+                aria-hidden
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  background: "color-mix(in srgb, var(--primary) 14%, transparent)",
+                  color: "var(--primary)",
+                  border: "1px solid color-mix(in srgb, var(--primary) 28%, transparent)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
                 }}
               >
-                {disc.toLowerCase().includes("saneamento") ? (
-                  <Droplets size={14} />
-                ) : (
-                  getDisciplineIcon(disc)
-                )}
-                {disc.toLowerCase().includes("saneamento")
-                  ? "Saneamento"
-                  : getDisciplineLabel(disc)}
-              </button>
-            ))}
+                <Layers size={22} strokeWidth={1.75} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    letterSpacing: "0.08em",
+                    color: "var(--muted-fg)",
+                    textTransform: "uppercase",
+                    marginBottom: 4,
+                  }}
+                >
+                  Portfólio e segmentos
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "var(--muted-fg)",
+                    fontWeight: 500,
+                    lineHeight: 1.45,
+                    maxWidth: 640,
+                  }}
+                >
+                  Role horizontalmente para ver todos os tipos. Novos segmentos surgem na lista conforme o cadastro —
+                  sem limite rígido de abas na barra principal.
+                </div>
+              </div>
+            </div>
           </div>
+
+          <div
+            className="projects-hub-rail"
+            style={{
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              paddingBottom: 6,
+              marginInline: -4,
+              paddingInline: 4,
+              scrollbarWidth: "thin",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setActiveProjectsTab("todos");
+                setListSegmentFilter("all");
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                flexShrink: 0,
+                padding: "10px 14px",
+                borderRadius: 12,
+                border:
+                  activeProjectsTab === "todos"
+                    ? "1px solid color-mix(in srgb, var(--primary) 45%, var(--border))"
+                    : "1px solid var(--border)",
+                background:
+                  activeProjectsTab === "todos"
+                    ? "color-mix(in srgb, var(--primary) 11%, var(--surface))"
+                    : "var(--surface-2)",
+                color:
+                  activeProjectsTab === "todos" ? "var(--primary)" : "var(--muted-fg)",
+                fontSize: 13,
+                fontWeight: activeProjectsTab === "todos" ? 700 : 600,
+                cursor: "pointer",
+                transition: "background 0.15s ease, border-color 0.15s ease, color 0.15s ease",
+              }}
+            >
+              <FolderKanban size={16} strokeWidth={1.75} />
+              <span>Visão geral</span>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: "2px 9px",
+                  borderRadius: 999,
+                  background:
+                    activeProjectsTab === "todos"
+                      ? "color-mix(in srgb, var(--primary) 22%, transparent)"
+                      : "var(--surface)",
+                  border: "1px solid var(--border)",
+                  color: activeProjectsTab === "todos" ? "var(--primary)" : "var(--foreground)",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {projects.length}
+              </span>
+            </button>
+
+            {navSegmentKeys.map((seg) => {
+              const count = segmentCountsMap.get(seg) ?? 0;
+              const active = activeProjectsTab === seg;
+              const isSan = seg.toLowerCase().includes("saneamento");
+              return (
+                <button
+                  key={seg}
+                  type="button"
+                  onClick={() => {
+                    setActiveProjectsTab(seg);
+                    if (isSan) setActiveSaneamentoView("dashboard");
+                  }}
+                  title={getSegmentLabel(seg)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    flexShrink: 0,
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    border: active
+                      ? "1px solid color-mix(in srgb, var(--primary) 45%, var(--border))"
+                      : "1px solid var(--border)",
+                    background: active
+                      ? "color-mix(in srgb, var(--primary) 11%, var(--surface))"
+                      : "var(--surface-2)",
+                    color: active ? "var(--primary)" : "var(--muted-fg)",
+                    fontSize: 13,
+                    fontWeight: active ? 700 : 600,
+                    cursor: "pointer",
+                    transition: "background 0.15s ease, border-color 0.15s ease, color 0.15s ease",
+                    opacity: count > 0 || active ? 1 : 0.72,
+                  }}
+                >
+                  {isSan ? (
+                    <Droplets size={16} strokeWidth={1.75} />
+                  ) : (
+                    getDisciplineIcon(seg)
+                  )}
+                  <span>{getSegmentLabel(seg)}</span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: "2px 9px",
+                      borderRadius: 999,
+                      background: active
+                        ? "color-mix(in srgb, var(--primary) 22%, transparent)"
+                        : "var(--surface)",
+                      border: "1px solid var(--border)",
+                      color: active ? "var(--primary)" : "var(--foreground)",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {activeProjectsTab !== "todos" && (
+            <div
+              style={{
+                marginTop: 14,
+                paddingTop: 14,
+                borderTop: "1px solid color-mix(in srgb, var(--border) 85%, transparent)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.07em",
+                  color: "var(--muted-fg)",
+                  marginBottom: 10,
+                }}
+              >
+                Módulo: {getSegmentLabel(activeProjectsTab)} · visualização
+              </div>
+              {isSaneamentoTab ? (
+                <div className="tabs" style={{ maxWidth: "100%", overflowX: "auto" }}>
+                  <button
+                    className="tab"
+                    data-active={activeSaneamentoView === "dashboard" ? "true" : "false"}
+                    onClick={() => setActiveSaneamentoView("dashboard")}
+                  >
+                    <BarChart3 size={14} />
+                    Dashboard
+                  </button>
+                  <button
+                    className="tab"
+                    data-active={activeSaneamentoView === "gantt" ? "true" : "false"}
+                    onClick={() => setActiveSaneamentoView("gantt")}
+                  >
+                    <GanttChartSquare size={14} />
+                    Gantt
+                  </button>
+                  <button
+                    className="tab"
+                    data-active={activeSaneamentoView === "portfolio" ? "true" : "false"}
+                    onClick={() => setActiveSaneamentoView("portfolio")}
+                  >
+                    <Droplets size={14} />
+                    Visão do projeto
+                  </button>
+                </div>
+              ) : (
+                <div className="tabs" style={{ maxWidth: "100%", overflowX: "auto" }}>
+                  <button
+                    className="tab"
+                    data-active={activeDisciplineView === "dashboard" ? "true" : "false"}
+                    onClick={() => setActiveDisciplineView("dashboard")}
+                  >
+                    <BarChart3 size={14} />
+                    Dashboard
+                  </button>
+                  <button
+                    className="tab"
+                    data-active={activeDisciplineView === "gantt" ? "true" : "false"}
+                    onClick={() => setActiveDisciplineView("gantt")}
+                  >
+                    <GanttChartSquare size={14} />
+                    Gantt
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* ─── Discipline tab content ────────────────────────────── */}
       {activeProjectsTab !== "todos" && !isSaneamentoTab && (
         <div className="flex flex-col gap-5">
-          <div className="tabs" style={{ alignSelf: "flex-start" }}>
-            <button
-              className="tab"
-              data-active={activeDisciplineView === "dashboard" ? "true" : "false"}
-              onClick={() => setActiveDisciplineView("dashboard")}
-            >
-              <BarChart3 size={14} />
-              Dashboard
-            </button>
-            <button
-              className="tab"
-              data-active={activeDisciplineView === "gantt" ? "true" : "false"}
-              onClick={() => setActiveDisciplineView("gantt")}
-            >
-              <GanttChartSquare size={14} />
-              Gantt
-            </button>
-          </div>
-
           {activeDisciplineView === "dashboard" ? (
             <DashboardDisciplina
               discipline={activeProjectsTab}
@@ -2417,33 +2852,6 @@ export default function ProjectsPage() {
 
       {activeProjectsTab !== "todos" && isSaneamentoTab && (
         <div className="flex flex-col gap-5">
-          <div className="tabs" style={{ alignSelf: "flex-start" }}>
-            <button
-              className="tab"
-              data-active={activeSaneamentoView === "dashboard" ? "true" : "false"}
-              onClick={() => setActiveSaneamentoView("dashboard")}
-            >
-              <BarChart3 size={14} />
-              Dashboard
-            </button>
-            <button
-              className="tab"
-              data-active={activeSaneamentoView === "gantt" ? "true" : "false"}
-              onClick={() => setActiveSaneamentoView("gantt")}
-            >
-              <GanttChartSquare size={14} />
-              Gantt
-            </button>
-            <button
-              className="tab"
-              data-active={activeSaneamentoView === "portfolio" ? "true" : "false"}
-              onClick={() => setActiveSaneamentoView("portfolio")}
-            >
-              <Droplets size={14} />
-              Visão do projeto
-            </button>
-          </div>
-
           {activeSaneamentoView === "dashboard" ? (
             <DashboardDisciplina
               discipline={activeProjectsTab}
@@ -2823,128 +3231,271 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* ─── Toolbar ──────────────────────────────────────────── */}
-      {activeProjectsTab === "todos" && <div
-        className="flex flex-wrap items-center gap-3 mb-4"
-        style={{
-          padding: 12,
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 14,
-        }}
-      >
+      {/* ─── Toolbar / filtros (visão geral) ─────────────────── */}
+      {activeProjectsTab === "todos" && (
         <div
+          className="mb-5"
           style={{
-            position: "relative",
-            flex: "1 1 240px",
-            minWidth: 180,
-          }}
-        >
-          <Search
-            size={15}
-            style={{
-              position: "absolute",
-              left: 12,
-              top: "50%",
-              transform: "translateY(-50%)",
-              color: "var(--muted-fg)",
-              pointerEvents: "none",
-            }}
-          />
-          <Input
-            placeholder="Buscar projeto pelo nome…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ paddingLeft: 36 }}
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <FilterChip
-            active={riskFilter === "all"}
-            label="Todos"
-            count={riskCounts.all}
-            onClick={() => setRiskFilter("all")}
-          />
-          <FilterChip
-            active={riskFilter === "green"}
-            label="Saudáveis"
-            count={riskCounts.green}
-            onClick={() => setRiskFilter("green")}
-            color={RISK_CONFIG.green.color}
-          />
-          <FilterChip
-            active={riskFilter === "yellow"}
-            label="Atenção"
-            count={riskCounts.yellow}
-            onClick={() => setRiskFilter("yellow")}
-            color={RISK_CONFIG.yellow.color}
-          />
-          <FilterChip
-            active={riskFilter === "red"}
-            label="Risco"
-            count={riskCounts.red}
-            onClick={() => setRiskFilter("red")}
-            color={RISK_CONFIG.red.color}
-          />
-        </div>
-
-        <div
-          className="flex items-center gap-1 p-1 rounded-md"
-          style={{
-            background: "var(--surface-2)",
             border: "1px solid var(--border)",
+            borderRadius: 16,
+            background: "var(--surface)",
+            overflow: "hidden",
+            boxShadow: "var(--shadow-sm)",
           }}
-          title="Alternar visualização"
         >
-          <button
-            type="button"
-            onClick={() => setViewMode("grid")}
+          <div
             style={{
-              padding: "6px 10px",
-              borderRadius: 6,
-              border: "none",
-              cursor: "pointer",
-              background: viewMode === "grid" ? "var(--surface)" : "transparent",
-              color:
-                viewMode === "grid" ? "var(--primary)" : "var(--muted-fg)",
-              boxShadow:
-                viewMode === "grid" ? "var(--shadow-sm)" : "none",
-              display: "inline-flex",
+              padding: "12px 16px",
+              borderBottom: "1px solid var(--border)",
+              display: "flex",
+              flexWrap: "wrap",
               alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              fontWeight: 600,
+              gap: 10,
+              justifyContent: "space-between",
+              background: "var(--surface-2)",
             }}
           >
-            <LayoutGrid size={13} />
-            Grade
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("list")}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 6,
-              border: "none",
-              cursor: "pointer",
-              background: viewMode === "list" ? "var(--surface)" : "transparent",
-              color:
-                viewMode === "list" ? "var(--primary)" : "var(--muted-fg)",
-              boxShadow:
-                viewMode === "list" ? "var(--shadow-sm)" : "none",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            <List size={13} />
-            Lista
-          </button>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                color: "var(--foreground)",
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
+              <SlidersHorizontal size={17} strokeWidth={1.75} style={{ color: "var(--primary)" }} />
+              <span>Filtros e leitura do portfólio</span>
+            </div>
+            {listFiltersActive ? (
+              <Button variant="ghost" size="sm" onClick={clearOverviewFilters}>
+                Limpar filtros
+              </Button>
+            ) : null}
+          </div>
+
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
+                gap: 14,
+                alignItems: "end",
+              }}
+            >
+              <Field label="Busca" className="mb-0">
+                <div style={{ position: "relative" }}>
+                  <Search
+                    size={15}
+                    style={{
+                      position: "absolute",
+                      left: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--muted-fg)",
+                      pointerEvents: "none",
+                    }}
+                  />
+                  <Input
+                    placeholder="Nome, município ou UF…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    style={{ paddingLeft: 36 }}
+                  />
+                </div>
+              </Field>
+              <Field label="Segmento na lista" className="mb-0">
+                <Select
+                  value={listSegmentFilter}
+                  onChange={(e) =>
+                    setListSegmentFilter(
+                      e.target.value === "all" ? "all" : e.target.value
+                    )
+                  }
+                >
+                  <option value="all">Todos os segmentos</option>
+                  {navSegmentKeys.map((seg) => (
+                    <option key={seg} value={seg}>
+                      {getSegmentLabel(seg)} ({segmentCountsMap.get(seg) ?? 0})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Situação do projeto" className="mb-0">
+                <Select
+                  value={projectLifecycleFilter}
+                  onChange={(e) =>
+                    setProjectLifecycleFilter(e.target.value as ProjectLifecycleFilter)
+                  }
+                >
+                  <option value="all">Todas</option>
+                  <option value="active">Em andamento</option>
+                  <option value="done">Concluídos / encerrados</option>
+                </Select>
+              </Field>
+              <Field label="Pessoa (equipe)" className="mb-0">
+                <Select
+                  value={filterResponsibleUserId}
+                  onChange={(e) => setFilterResponsibleUserId(e.target.value)}
+                >
+                  <option value="">Qualquer responsável</option>
+                  {responsibleOptions.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Município" className="mb-0">
+                <Select
+                  value={filterMunicipalityId}
+                  onChange={(e) => setFilterMunicipalityId(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {municipalityOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Ordenação" className="mb-0">
+                <Select
+                  value={sortProjectsBy}
+                  onChange={(e) =>
+                    setSortProjectsBy(e.target.value as ProjectSortKey)
+                  }
+                >
+                  <option value="risk_desc">Risco (urgência)</option>
+                  <option value="progress_desc">Progresso (maior primeiro)</option>
+                  <option value="progress_asc">Progresso (menor primeiro)</option>
+                  <option value="planned_end">Previsão de entrega</option>
+                  <option value="name">Nome A–Z</option>
+                </Select>
+              </Field>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 12,
+                justifyContent: "space-between",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: "0.08em",
+                    color: "var(--muted-fg)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginRight: 4,
+                  }}
+                >
+                  <ArrowUpDown size={13} strokeWidth={1.75} />
+                  RISCO
+                </span>
+                <FilterChip
+                  active={riskFilter === "all"}
+                  label="Todos"
+                  count={riskCounts.all}
+                  onClick={() => setRiskFilter("all")}
+                />
+                <FilterChip
+                  active={riskFilter === "green"}
+                  label="Saudáveis"
+                  count={riskCounts.green}
+                  onClick={() => setRiskFilter("green")}
+                  color={RISK_CONFIG.green.color}
+                />
+                <FilterChip
+                  active={riskFilter === "yellow"}
+                  label="Atenção"
+                  count={riskCounts.yellow}
+                  onClick={() => setRiskFilter("yellow")}
+                  color={RISK_CONFIG.yellow.color}
+                />
+                <FilterChip
+                  active={riskFilter === "red"}
+                  label="Risco"
+                  count={riskCounts.red}
+                  onClick={() => setRiskFilter("red")}
+                  color={RISK_CONFIG.red.color}
+                />
+              </div>
+              <div
+                className="flex items-center gap-1 p-1 rounded-md"
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                }}
+                title="Alternar visualização"
+              >
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: "none",
+                    cursor: "pointer",
+                    background: viewMode === "grid" ? "var(--surface)" : "transparent",
+                    color:
+                      viewMode === "grid" ? "var(--primary)" : "var(--muted-fg)",
+                    boxShadow:
+                      viewMode === "grid" ? "var(--shadow-sm)" : "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  <LayoutGrid size={13} />
+                  Grade
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: "none",
+                    cursor: "pointer",
+                    background: viewMode === "list" ? "var(--surface)" : "transparent",
+                    color:
+                      viewMode === "list" ? "var(--primary)" : "var(--muted-fg)",
+                    boxShadow:
+                      viewMode === "list" ? "var(--shadow-sm)" : "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  <List size={13} />
+                  Lista
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>}
+      )}
 
       {/* ─── Grid/List de projetos ─────────────────────────── */}
       {activeProjectsTab === "todos" && <div>
@@ -2985,22 +3536,16 @@ export default function ProjectsPage() {
           <EmptyState
             icon={<Search size={22} />}
             title="Nenhum projeto encontrado"
-            description="Tente outro termo de busca ou limpe os filtros."
+            description="Tente outro termo de busca ou ajuste os filtros da visão geral."
             action={
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setSearch("");
-                  setRiskFilter("all");
-                }}
-              >
+              <Button variant="ghost" onClick={clearOverviewFilters}>
                 Limpar filtros
               </Button>
             }
           />
         )}
 
-        {!loading && filteredProjects.length > 0 && (
+        {!loading && orderedFilteredProjects.length > 0 && (
           <div
             style={{
               display: "grid",
@@ -3011,7 +3556,7 @@ export default function ProjectsPage() {
               gap: 14,
             }}
           >
-            {filteredProjects.map((project) =>
+            {orderedFilteredProjects.map((project) =>
               renderProjectCard(project, viewMode === "list")
             )}
           </div>
@@ -3019,14 +3564,14 @@ export default function ProjectsPage() {
       </div>}
 
       {/* ─── Footer summary (só quando filtra) ───────────────── */}
-      {activeProjectsTab === "todos" && !loading && filteredProjects.length > 0 && (
+      {activeProjectsTab === "todos" && !loading && orderedFilteredProjects.length > 0 && (
         <div
           className="flex items-center justify-between gap-2 flex-wrap mt-4 text-xs text-muted"
           style={{ paddingInline: 4 }}
         >
           <span className="inline-flex items-center gap-1">
             <Activity size={12} />
-            Mostrando <strong>{filteredProjects.length}</strong> de{" "}
+            Mostrando <strong>{orderedFilteredProjects.length}</strong> de{" "}
             <strong>{projects.length}</strong> projetos
           </span>
           {globalStats.completionRate > 0 && (

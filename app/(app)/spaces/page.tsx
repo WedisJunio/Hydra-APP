@@ -1616,27 +1616,24 @@ export default function SpacesPage() {
               {/* Content body */}
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                 {!selectedNode ? (
-                  /* Space overview */
+                  /* Space overview — grid unificado de todos os nós raiz */
                   <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
                     {(() => {
                       const rootNodes = nodesInSpace
                         .filter((n) => n.parent_id === null)
                         .sort((a, b) => a.sort_order - b.sort_order);
-                      const projectNodes = rootNodes.filter((n) => n.kind === "list" && n.project_id);
-                      const otherNodes = rootNodes.filter((n) => !(n.kind === "list" && n.project_id));
 
                       if (rootNodes.length === 0) {
                         return (
                           <div>
                             <EmptyState
                               title="Espaço vazio"
-                              description={podeEditarNos ? "Adicione pastas, listas ou vincule projetos cadastrados." : "Nenhum item criado ainda."}
+                              description={podeEditarNos ? "Adicione pastas ou listas usando os botões abaixo." : "Nenhum item criado ainda."}
                             />
                             {podeEditarNos && (
                               <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 16 }}>
                                 <Button size="sm" variant="secondary" leftIcon={<Folder size={13} />} onClick={() => setAddingNode({ kind: "folder", parentId: null })}>Nova pasta</Button>
                                 <Button size="sm" variant="secondary" leftIcon={<ListTodo size={13} />} onClick={() => setAddingNode({ kind: "list", parentId: null })}>Nova lista</Button>
-                                <Button size="sm" leftIcon={<Briefcase size={13} />} onClick={() => setProjectPickerOpen(true)}>Adicionar projeto</Button>
                               </div>
                             )}
                           </div>
@@ -1644,157 +1641,44 @@ export default function SpacesPage() {
                       }
 
                       return (
-                        <div className="space-y-6">
-                          {/* Projetos vinculados */}
-                          {projectNodes.length > 0 && (
-                            <div>
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <Briefcase size={14} style={{ color: "var(--primary)" }} />
-                                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted-fg)" }}>
-                                    Projetos vinculados
-                                  </span>
-                                  <Badge variant="neutral" style={{ fontSize: 10 }}>{projectNodes.length}</Badge>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+                          {rootNodes.map((node) => {
+                            const isFolder = node.kind === "folder";
+                            const nodeColor = node.color || (isFolder ? "var(--warning)" : "var(--primary)");
+                            const subtitle = isFolder ? "Pasta" : "Lista";
+
+                            return (
+                              <button
+                                key={node.id}
+                                type="button"
+                                onClick={() => setSelectedNodeId(node.id)}
+                                style={{
+                                  background: "var(--surface-2)",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: "var(--radius-md)",
+                                  padding: "14px 16px",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 10,
+                                  textAlign: "left",
+                                  transition: "all 0.15s",
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
+                              >
+                                {isFolder ? (
+                                  <Folder size={20} style={{ color: nodeColor, flexShrink: 0 }} />
+                                ) : (
+                                  <ListTodo size={20} style={{ color: nodeColor, flexShrink: 0 }} />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-semibold truncate">{node.name}</div>
+                                  <div className="text-xs text-muted">{subtitle}</div>
                                 </div>
-                                {podeEditarNos && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setProjectPickerOpen(true)}
-                                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: "var(--primary)", display: "flex", alignItems: "center", gap: 3 }}
-                                  >
-                                    <Plus size={12} /> Adicionar
-                                  </button>
-                                )}
-                              </div>
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-                                {projectNodes.map((node) => {
-                                  const proj = node.projects ? normalizeProjectEmbed(node.projects) : null;
-                                  const subtitle = proj
-                                    ? [proj.municipality, proj.state, proj.discipline].filter(Boolean).join(" · ")
-                                    : null;
-                                  return (
-                                    <button
-                                      key={node.id}
-                                      type="button"
-                                      onClick={() => setSelectedNodeId(node.id)}
-                                      style={{
-                                        background: "var(--surface-2)",
-                                        border: "1px solid var(--border)",
-                                        borderRadius: "var(--radius-md)",
-                                        padding: "12px 14px",
-                                        cursor: "pointer",
-                                        display: "flex",
-                                        alignItems: "flex-start",
-                                        gap: 10,
-                                        textAlign: "left",
-                                        transition: "all 0.15s",
-                                      }}
-                                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "color-mix(in srgb, var(--primary) 6%, var(--surface))"; }}
-                                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
-                                    >
-                                      <div style={{ width: 32, height: 32, borderRadius: 8, background: "color-mix(in srgb, var(--primary) 14%, var(--surface))", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid color-mix(in srgb, var(--primary) 22%, transparent)" }}>
-                                        <Briefcase size={15} style={{ color: "var(--primary)" }} />
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <div className="text-sm font-semibold truncate">{node.name}</div>
-                                        {subtitle && <div className="text-xs text-muted truncate mt-0.5">{subtitle}</div>}
-                                        <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                          <Badge variant="neutral" style={{ fontSize: 9 }}>Projeto</Badge>
-                                          {proj?.discipline && <Badge variant="info" style={{ fontSize: 9 }}>{proj.discipline}</Badge>}
-                                        </div>
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                                {/* Add project card */}
-                                {podeEditarNos && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setProjectPickerOpen(true)}
-                                    style={{
-                                      background: "transparent",
-                                      border: "2px dashed var(--border)",
-                                      borderRadius: "var(--radius-md)",
-                                      padding: "12px 14px",
-                                      cursor: "pointer",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      gap: 6,
-                                      color: "var(--muted-fg)",
-                                      fontSize: 12,
-                                      fontWeight: 600,
-                                      transition: "all 0.15s",
-                                      minHeight: 68,
-                                    }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}
-                                  >
-                                    <Plus size={14} /> Vincular projeto
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Pastas e listas */}
-                          {otherNodes.length > 0 && (
-                            <div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                                <Folder size={14} style={{ color: "var(--warning)" }} />
-                                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted-fg)" }}>
-                                  Pastas e listas
-                                </span>
-                                <Badge variant="neutral" style={{ fontSize: 10 }}>{otherNodes.length}</Badge>
-                              </div>
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
-                                {otherNodes.map((node) => (
-                                  <button
-                                    key={node.id}
-                                    type="button"
-                                    onClick={() => setSelectedNodeId(node.id)}
-                                    style={{
-                                      background: "var(--surface-2)",
-                                      border: "1px solid var(--border)",
-                                      borderRadius: "var(--radius-md)",
-                                      padding: "14px 16px",
-                                      cursor: "pointer",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 10,
-                                      textAlign: "left",
-                                      transition: "all 0.15s",
-                                    }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
-                                  >
-                                    {node.kind === "folder" ? (
-                                      <Folder size={18} style={{ color: node.color || "var(--warning)", flexShrink: 0 }} />
-                                    ) : (
-                                      <ListTodo size={18} style={{ color: node.color || "var(--primary)", flexShrink: 0 }} />
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                      <div className="text-sm font-semibold truncate">{node.name}</div>
-                                      <div className="text-xs text-muted">{node.kind === "folder" ? "Pasta" : "Lista"}</div>
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Se tem só projetos e não tem outros itens, ainda mostra botões no topo */}
-                          {projectNodes.length === 0 && podeEditarNos && (
-                            <button
-                              type="button"
-                              onClick={() => setProjectPickerOpen(true)}
-                              style={{ background: "transparent", border: "2px dashed var(--border)", borderRadius: "var(--radius-md)", padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "var(--muted-fg)", fontSize: 12, fontWeight: 600, width: "100%", transition: "all 0.15s" }}
-                              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}
-                            >
-                              <Briefcase size={14} /> Vincular projeto cadastrado
-                            </button>
-                          )}
+                              </button>
+                            );
+                          })}
                         </div>
                       );
                     })()}
