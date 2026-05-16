@@ -950,13 +950,13 @@ export default function ChatPage() {
                     onClick={() => selectGroup(group.id)}
                     className={`chat-group-item ${isActive ? "chat-group-item-active" : ""}`}
                   >
-                    <ChatChannelGlyph isProject={isProjectGroup} active={isActive} size={15} />
+                    <ChatChannelGlyph isProject={isProjectGroup} size={15} />
                     <span className="chat-group-label-col min-w-0 flex-1">
                       <span className="chat-group-label truncate">{label}</span>
                       {locationLine ? (
                         <span className="chat-group-sublabel truncate">
-                          <MapPin size={10} style={{ marginRight: 4, flexShrink: 0 }} />
-                          {locationLine}
+                          <MapPin size={10} className="flex-shrink-0" aria-hidden />
+                          <span className="truncate">{locationLine}</span>
                         </span>
                       ) : null}
                     </span>
@@ -1163,9 +1163,15 @@ export default function ChatPage() {
                         </div>
                       </Field>
                       <p className="chat-members-hint text-xs text-muted m-0">
-                        {availableUsersToAdd.length} sugestão
-                        {availableUsersToAdd.length === 1 ? "" : "ões"} · toque para
-                        adicionar
+                        {availableUsersToAdd.length > 0
+                          ? `${availableUsersToAdd.length} ${
+                              availableUsersToAdd.length === 1
+                                ? "pessoa disponível"
+                                : "pessoas disponíveis"
+                            } — toque para adicionar ao grupo.`
+                          : memberSearch.trim()
+                            ? "Nenhum resultado para esta busca."
+                            : "Todos os usuários listados já participam deste grupo."}
                       </p>
                       <div className="chat-user-pick-list">
                         {availableUsersToAdd.map((user) => (
@@ -1192,13 +1198,6 @@ export default function ChatPage() {
                             </span>
                           </button>
                         ))}
-                        {availableUsersToAdd.length === 0 && (
-                          <p className="text-xs text-muted m-0">
-                            {memberSearch.trim()
-                              ? "Nenhum resultado. Ajuste a busca."
-                              : "Todos os usuários visíveis já estão no grupo."}
-                          </p>
-                        )}
                       </div>
                     </div>
                   )}
@@ -1664,10 +1663,16 @@ export default function ChatPage() {
         .chat-group-sublabel {
           display: inline-flex;
           align-items: center;
+          gap: 4px;
+          min-width: 0;
           font-size: 10px;
           font-weight: 600;
           color: var(--muted-fg);
           line-height: 1.2;
+        }
+
+        .chat-group-sublabel .flex-shrink-0 {
+          flex-shrink: 0;
         }
 
         .chat-group-label {
@@ -1747,9 +1752,41 @@ export default function ChatPage() {
 
         .chat-members-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
-          gap: 14px;
+          grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+          gap: 18px;
           align-items: start;
+        }
+
+        .chat-members-column {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          min-width: 0;
+        }
+
+        .chat-members-section-label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--muted-fg);
+        }
+
+        .chat-members-count {
+          margin-left: auto;
+          font-variant-numeric: tabular-nums;
+          padding: 2px 8px;
+          border-radius: 999px;
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          font-size: 10px;
+        }
+
+        .chat-members-hint {
+          line-height: 1.35;
         }
 
         .chat-members-list,
@@ -1757,7 +1794,7 @@ export default function ChatPage() {
           display: flex;
           flex-direction: column;
           gap: 6px;
-          max-height: 210px;
+          max-height: min(52vh, 320px);
           overflow-y: auto;
         }
 
@@ -1785,6 +1822,18 @@ export default function ChatPage() {
           background: var(--primary-soft);
         }
 
+        .chat-user-pick-action {
+          flex-shrink: 0;
+          width: 32px;
+          height: 32px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 10px;
+          background: color-mix(in srgb, var(--primary) 12%, transparent);
+          color: var(--primary);
+        }
+
         .chat-member-name {
           display: block;
           font-size: 13px;
@@ -1800,19 +1849,18 @@ export default function ChatPage() {
           margin-top: 2px;
         }
 
+        .chat-member-role {
+          display: block;
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--subtle-fg);
+          margin-top: 2px;
+        }
+
         .chat-members-add {
           display: flex;
           flex-direction: column;
           gap: 8px;
-        }
-
-        .chat-members-add-title {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-          font-weight: 800;
-          color: var(--primary);
         }
 
         .chat-thread-empty {

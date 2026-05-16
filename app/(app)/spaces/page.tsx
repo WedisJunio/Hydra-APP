@@ -225,6 +225,7 @@ function SidebarTree({
   podeEditar,
   onMoveUpDown,
   onAddChild,
+  onDeleteNode,
 }: {
   nodes: WorkspaceNode[];
   spaceId: string;
