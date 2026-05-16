@@ -26,6 +26,8 @@ import {
   Droplets,
   BarChart3,
   GanttChartSquare,
+  Info,
+  Eye,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -503,6 +505,7 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
 
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  const [detailProjectId, setDetailProjectId] = useState<string | null>(null);
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -1342,6 +1345,14 @@ export default function ProjectsPage() {
               className="flex items-center gap-1"
               onClick={(e) => e.stopPropagation()}
             >
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => setDetailProjectId(project.id)}
+                title="Ver detalhes do projeto"
+              >
+                <Eye size={14} />
+              </Button>
               {podeEditarProjeto && (
               <>
               <Button
@@ -2478,6 +2489,371 @@ export default function ProjectsPage() {
           )}
         </div>
       )}
+
+      {/* ─── Slide-over de detalhe de projeto ────────────────── */}
+      {(() => {
+        const proj = detailProjectId ? projects.find((p) => p.id === detailProjectId) : null;
+        if (!proj) return null;
+        const stats = getProjectStats(proj);
+        const dates = getProjectDates(proj);
+        const projectMembers = getProjectMembers(proj.id);
+        const projectTasks = getProjectTasks(proj.id);
+        const risk = RISK_CONFIG[stats.risk];
+        return (
+          <>
+            <div
+              onClick={() => setDetailProjectId(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(2, 6, 23, 0.45)",
+                backdropFilter: "blur(2px)",
+                zIndex: 50,
+                animation: "fadeIn 150ms ease-out",
+              }}
+            />
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                right: 0,
+                height: "100dvh",
+                width: "min(520px, 100vw)",
+                background: "var(--background)",
+                borderLeft: "1px solid var(--border)",
+                boxShadow: "-8px 0 40px rgba(0,0,0,0.18)",
+                zIndex: 51,
+                display: "flex",
+                flexDirection: "column",
+                animation: "slideInRight 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                overflow: "hidden",
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  borderBottom: "1px solid var(--border)",
+                  background: `linear-gradient(135deg, ${risk.soft} 0%, var(--surface) 60%)`,
+                  padding: "16px 18px",
+                  flexShrink: 0,
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 11,
+                      background: risk.soft,
+                      color: risk.fg,
+                      border: `1.5px solid ${risk.color}40`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      marginTop: 2,
+                    }}
+                  >
+                    <FolderKanban size={18} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span
+                        style={{
+                          padding: "2px 10px",
+                          borderRadius: 999,
+                          background: `color-mix(in srgb, ${risk.color} 15%, transparent)`,
+                          color: risk.fg,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          border: `1px solid ${risk.color}30`,
+                          letterSpacing: "0.04em",
+                          textTransform: "uppercase",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: risk.color, display: "inline-block" }} />
+                        {risk.label}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: "var(--muted-fg)",
+                          fontWeight: 500,
+                          padding: "2px 8px",
+                          borderRadius: 999,
+                          background: "var(--surface-2)",
+                          border: "1px solid var(--border)",
+                        }}
+                      >
+                        {stats.progress}% concluído
+                      </span>
+                    </div>
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 16,
+                        fontWeight: 700,
+                        color: "var(--foreground)",
+                        lineHeight: 1.35,
+                        letterSpacing: "-0.01em",
+                      }}
+                    >
+                      {formatProjectDisplayName(proj)}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDetailProjectId(null)}
+                    aria-label="Fechar"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--muted-fg)",
+                      cursor: "pointer",
+                      padding: 4,
+                      borderRadius: 6,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: "auto",
+                  padding: "18px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                }}
+              >
+                {/* Progress */}
+                <div
+                  style={{
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-fg)" }}>
+                      Progresso geral
+                    </span>
+                    <strong style={{ fontSize: 20, fontWeight: 700, color: risk.color }}>
+                      {stats.progress}%
+                    </strong>
+                  </div>
+                  <Progress value={stats.progress} />
+                  <div
+                    className="flex items-center gap-4 mt-2"
+                    style={{ fontSize: 12, color: "var(--muted-fg)" }}
+                  >
+                    <span><strong style={{ color: "var(--foreground)" }}>{stats.completedTasks}</strong> concluídas</span>
+                    <span><strong style={{ color: "var(--foreground)" }}>{stats.inProgressTasks}</strong> em andamento</span>
+                    <span><strong style={{ color: "var(--foreground)" }}>{stats.totalTasks}</strong> total</span>
+                    {stats.delayedTasks > 0 && (
+                      <span style={{ color: "var(--danger)", fontWeight: 600 }}>
+                        ⚠ {stats.delayedTasks} atrasada{stats.delayedTasks > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Datas */}
+                <div
+                  style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    overflow: "hidden",
+                  }}
+                >
+                  {[
+                    { label: "Criado em", value: formatBRDate(proj.created_at?.slice(0, 10)), icon: <Sparkles size={13} /> },
+                    { label: "Previsão efetiva", value: dates.plannedEnd ? formatBRDate(dates.plannedEnd) : "—", icon: <CalendarDays size={13} /> },
+                    { label: "Meta (cliente)", value: proj.planned_end_target ? formatBRDate(proj.planned_end_target) : "—", icon: <CalendarDays size={13} /> },
+                    { label: "Término real", value: proj.actual_end_date ? formatBRDate(proj.actual_end_date) : "—", icon: <CheckCircle2 size={13} /> },
+                    { label: "Tempo produzido", value: formatSeconds(stats.totalSeconds), icon: <Clock size={13} /> },
+                  ].map((row, i, arr) => (
+                    <div
+                      key={row.label}
+                      style={{
+                        padding: "10px 14px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none",
+                      }}
+                    >
+                      <span style={{ color: "var(--muted-fg)", flexShrink: 0 }}>{row.icon}</span>
+                      <span style={{ fontSize: 12, color: "var(--muted-fg)", fontWeight: 500, width: 130, flexShrink: 0 }}>{row.label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", flex: 1 }}>{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Equipe */}
+                {projectMembers.length > 0 && (
+                  <div>
+                    <div
+                      style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <UsersIcon size={12} /> Equipe ({projectMembers.length})
+                    </div>
+                    <div
+                      style={{
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 12,
+                        overflow: "hidden",
+                      }}
+                    >
+                      {projectMembers.map((m, i) => (
+                        <div
+                          key={m.user_id}
+                          style={{
+                            padding: "9px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            borderBottom: i < projectMembers.length - 1 ? "1px solid var(--border)" : "none",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 28, height: 28, borderRadius: 999,
+                              background: "var(--primary-soft)",
+                              color: "var(--primary)",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 11, fontWeight: 700, flexShrink: 0,
+                            }}
+                          >
+                            {(m.users?.name || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", flex: 1 }}>
+                            {m.users?.name || m.user_id}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 11, fontWeight: 600, color: "var(--muted-fg)",
+                              padding: "2px 8px", borderRadius: 999,
+                              background: "var(--surface-2)", border: "1px solid var(--border)",
+                            }}
+                          >
+                            {getRoleLabel(m.role)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tarefas */}
+                {projectTasks.length > 0 && (
+                  <div>
+                    <div
+                      style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <CheckCircle2 size={12} /> Tarefas ({projectTasks.length})
+                    </div>
+                    <div
+                      style={{
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 12,
+                        overflow: "hidden",
+                        maxHeight: 300,
+                        overflowY: "auto",
+                      }}
+                    >
+                      {projectTasks.map((t, i) => {
+                        const tStatus = t.status === "completed" ? "success" : t.status === "in_progress" ? "info" : "warning";
+                        const tColor = tStatus === "success" ? "var(--success)" : tStatus === "info" ? "var(--info)" : "var(--warning)";
+                        const tLabel = t.status === "completed" ? "Concluída" : t.status === "in_progress" ? "Em andamento" : "Pendente";
+                        return (
+                          <div
+                            key={t.id}
+                            style={{
+                              padding: "9px 14px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              borderBottom: i < projectTasks.length - 1 ? "1px solid var(--border)" : "none",
+                            }}
+                          >
+                            <div style={{ width: 6, height: 6, borderRadius: 999, background: tColor, flexShrink: 0, marginTop: 1 }} />
+                            <span style={{ fontSize: 13, color: "var(--foreground)", flex: 1, fontWeight: 500, lineHeight: 1.3 }}>
+                              {t.title}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 10, fontWeight: 700, color: tColor,
+                                padding: "2px 7px", borderRadius: 999,
+                                background: `color-mix(in srgb, ${tColor} 15%, transparent)`,
+                                border: `1px solid ${tColor}30`,
+                                letterSpacing: "0.03em",
+                                textTransform: "uppercase",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {tLabel}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  padding: "14px 18px",
+                  flexShrink: 0,
+                  background: "var(--surface)",
+                  display: "flex",
+                  gap: 8,
+                }}
+              >
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={<FileDown size={13} />}
+                  onClick={() => handleGenerateProjectPdf(proj)}
+                >
+                  Exportar PDF
+                </Button>
+                {podeEditarProjeto && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    leftIcon={<Pencil size={13} />}
+                    onClick={() => {
+                      setDetailProjectId(null);
+                      handleStartEdit(proj);
+                    }}
+                  >
+                    Editar
+                  </Button>
+                )}
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }

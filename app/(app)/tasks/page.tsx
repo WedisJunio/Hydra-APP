@@ -37,6 +37,12 @@ import {
   Heart,
   Home,
   Timer,
+  Eye,
+  Ban,
+  History,
+  Copy,
+  ExternalLink,
+  Info,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -92,7 +98,7 @@ type Task = {
 type Project = { id: string; name: string; municipality?: string | null; state?: string | null };
 type User = { id: string; name: string };
 
-type StatusKey = "pending" | "in_progress" | "completed";
+type StatusKey = "pending" | "in_progress" | "in_review" | "blocked" | "completed";
 type ViewMode = "kanban" | "list";
 type StatusFilter = "all" | StatusKey;
 
@@ -103,7 +109,7 @@ const STATUS_CONFIG: Record<
   { title: string; color: string; soft: string; fg: string; icon: React.ReactNode }
 > = {
   pending: {
-    title: "Pendente",
+    title: "A fazer",
     color: "var(--warning)",
     soft: "var(--warning-soft)",
     fg: "var(--warning-fg)",
@@ -116,6 +122,20 @@ const STATUS_CONFIG: Record<
     fg: "var(--info-fg)",
     icon: <Activity size={14} />,
   },
+  in_review: {
+    title: "Em revisão",
+    color: "#7C3AED",
+    soft: "color-mix(in srgb, #7C3AED 12%, transparent)",
+    fg: "#6D28D9",
+    icon: <Eye size={14} />,
+  },
+  blocked: {
+    title: "Paralisada",
+    color: "var(--danger)",
+    soft: "var(--danger-soft)",
+    fg: "var(--danger-fg)",
+    icon: <Ban size={14} />,
+  },
   completed: {
     title: "Concluída",
     color: "var(--success)",
@@ -125,7 +145,7 @@ const STATUS_CONFIG: Record<
   },
 };
 
-const KANBAN_ORDER: StatusKey[] = ["pending", "in_progress", "completed"];
+const KANBAN_ORDER: StatusKey[] = ["pending", "in_progress", "in_review", "blocked", "completed"];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -361,6 +381,9 @@ export default function TasksPage() {
   const [pauseDialogTask, setPauseDialogTask] = useState<Task | null>(null);
   const [pauseReason, setPauseReason] = useState("");
   const [pauseSubmitting, setPauseSubmitting] = useState(false);
+
+  // Slide-over de detalhe de tarefa
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
 
   const [, setClock] = useState(0);
 
@@ -1022,14 +1045,14 @@ export default function TasksPage() {
   }
 
   function getNextStatus(currentStatus: string) {
-    if (currentStatus === "pending") return "in_progress";
-    if (currentStatus === "in_progress") return "completed";
-    return "pending";
+    const order: StatusKey[] = ["pending", "in_progress", "in_review", "blocked", "completed"];
+    const idx = order.indexOf(currentStatus as StatusKey);
+    return idx >= 0 && idx < order.length - 1 ? order[idx + 1] : order[order.length - 1];
   }
   function getPreviousStatus(currentStatus: string) {
-    if (currentStatus === "completed") return "in_progress";
-    if (currentStatus === "in_progress") return "pending";
-    return "completed";
+    const order: StatusKey[] = ["pending", "in_progress", "in_review", "blocked", "completed"];
+    const idx = order.indexOf(currentStatus as StatusKey);
+    return idx > 0 ? order[idx - 1] : order[0];
   }
 
   function handleDragStart(taskId: string) {
@@ -1055,6 +1078,8 @@ export default function TasksPage() {
       all: tasks.length,
       pending: tasks.filter((t) => t.status === "pending").length,
       in_progress: tasks.filter((t) => t.status === "in_progress").length,
+      in_review: tasks.filter((t) => t.status === "in_review").length,
+      blocked: tasks.filter((t) => t.status === "blocked").length,
       completed: tasks.filter((t) => t.status === "completed").length,
     };
   }, [tasks]);
@@ -1265,6 +1290,7 @@ export default function TasksPage() {
           {/* Header */}
           <div className="flex items-start justify-between gap-2 mb-2">
             <h3
+              onClick={() => setDetailTask(task)}
               style={{
                 fontSize: 14,
                 fontWeight: 700,
@@ -1273,7 +1299,13 @@ export default function TasksPage() {
                 flex: 1,
                 margin: 0,
                 letterSpacing: "-0.005em",
+                cursor: "pointer",
+                textDecoration: "none",
+                transition: "color 0.12s ease",
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground)"; }}
+              title="Clique para ver detalhes"
             >
               {task.title}
             </h3>
@@ -1558,6 +1590,10 @@ export default function TasksPage() {
               <Inbox size={28} />
             ) : statusKey === "in_progress" ? (
               <PlayCircle size={28} />
+            ) : statusKey === "in_review" ? (
+              <Eye size={28} />
+            ) : statusKey === "blocked" ? (
+              <Ban size={28} />
             ) : (
               <Trophy size={28} />
             );
@@ -1567,6 +1603,10 @@ export default function TasksPage() {
               ? "Nada na fila"
               : statusKey === "in_progress"
               ? "Nada rolando agora"
+              : statusKey === "in_review"
+              ? "Nada em revisão"
+              : statusKey === "blocked"
+              ? "Nada paralisado"
               : "Nenhuma conclusão ainda";
 
           const isQuickAddOpen = quickAddColumn === statusKey;
@@ -2126,7 +2166,7 @@ export default function TasksPage() {
           />
           <FilterChip
             active={statusFilter === "pending"}
-            label="Pendentes"
+            label="A fazer"
             count={statusCounts.pending}
             onClick={() => setStatusFilter("pending")}
             color={STATUS_CONFIG.pending.color}
@@ -2137,6 +2177,20 @@ export default function TasksPage() {
             count={statusCounts.in_progress}
             onClick={() => setStatusFilter("in_progress")}
             color={STATUS_CONFIG.in_progress.color}
+          />
+          <FilterChip
+            active={statusFilter === "in_review"}
+            label="Em revisão"
+            count={statusCounts.in_review}
+            onClick={() => setStatusFilter("in_review")}
+            color={STATUS_CONFIG.in_review.color}
+          />
+          <FilterChip
+            active={statusFilter === "blocked"}
+            label="Paralisadas"
+            count={statusCounts.blocked}
+            onClick={() => setStatusFilter("blocked")}
+            color={STATUS_CONFIG.blocked.color}
           />
           <FilterChip
             active={statusFilter === "completed"}
@@ -2325,7 +2379,568 @@ export default function TasksPage() {
           pauseDialogTask ? getLiveSeconds(pauseDialogTask) : 0
         }
       />
+
+      {/* ─── Slide-over de detalhe ──────────────────────────── */}
+      <TaskDetailSlider
+        task={detailTask}
+        users={users}
+        currentProfileId={currentProfileId}
+        currentUserRole={currentUserRole}
+        onClose={() => setDetailTask(null)}
+        onStartTimer={(task) => {
+          setDetailTask(null);
+          handleStartTimer(task);
+        }}
+        onPauseTimer={(task) => {
+          setDetailTask(null);
+          setPauseDialogTask(task);
+          setPauseReason("");
+        }}
+        onFinishTask={(task) => {
+          setDetailTask(null);
+          handleFinishTask(task);
+        }}
+        onEditTask={(task) => {
+          setDetailTask(null);
+          handleStartEdit(task);
+        }}
+        onDeleteTask={(task) => {
+          setDetailTask(null);
+          handleDeleteTask(task.id);
+        }}
+        getLiveSeconds={getLiveSeconds}
+        tasks={tasks}
+      />
     </div>
+  );
+}
+
+// ─── Slide-over: detalhe da tarefa ──────────────────────────────────────────
+
+function parsePauseHistory(description: string | null): { stamp: string; reason: string }[] {
+  if (!description) return [];
+  const lines = description.split("\n");
+  const pauses: { stamp: string; reason: string }[] = [];
+  const re = /^\[Pausa ([^\]]+)\]\s+(.+)$/;
+  for (const line of lines) {
+    const m = re.exec(line.trim());
+    if (m) pauses.push({ stamp: m[1], reason: m[2] });
+  }
+  return pauses;
+}
+
+function cleanDescription(description: string | null): string {
+  if (!description) return "";
+  return description
+    .split("\n")
+    .filter((line) => !/^\[Pausa /.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
+function TaskDetailSlider({
+  task,
+  users,
+  currentProfileId,
+  currentUserRole,
+  onClose,
+  onStartTimer,
+  onPauseTimer,
+  onFinishTask,
+  onEditTask,
+  onDeleteTask,
+  getLiveSeconds,
+  tasks,
+}: {
+  task: Task | null;
+  users: { id: string; name: string }[];
+  currentProfileId: string | null;
+  currentUserRole: string | null;
+  onClose: () => void;
+  onStartTimer: (task: Task) => void;
+  onPauseTimer: (task: Task) => void;
+  onFinishTask: (task: Task) => void;
+  onEditTask: (task: Task) => void;
+  onDeleteTask: (task: Task) => void;
+  getLiveSeconds: (task: Task) => number;
+  tasks: Task[];
+}) {
+  useEffect(() => {
+    if (!task) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [task, onClose]);
+
+  const [, setClock] = useState(0);
+  useEffect(() => {
+    if (!task?.is_timer_running) return;
+    const i = setInterval(() => setClock((v) => v + 1), 1000);
+    return () => clearInterval(i);
+  }, [task?.is_timer_running]);
+
+  function canManage(t: Task) {
+    if (t.assigned_to && currentProfileId && t.assigned_to === currentProfileId) return true;
+    return currentUserRole === "admin" || currentUserRole === "coordinator" || currentUserRole === "employee";
+  }
+
+  function copyText(text: string) {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }
+
+  if (!task) return null;
+
+  const cfg = STATUS_CONFIG[task.status as StatusKey] || STATUS_CONFIG.pending;
+  const liveSeconds = getLiveSeconds(task);
+  const pauses = parsePauseHistory(task.description);
+  const cleanDesc = cleanDescription(task.description);
+  const isDelayed = isTaskDelayed(task);
+  const ownerId = task.assigned_to ?? currentProfileId;
+  const blockingTask = ownerId
+    ? tasks.find((t) => t.id !== task.id && t.is_timer_running && (t.assigned_to ?? null) === ownerId)
+    : null;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(2, 6, 23, 0.45)",
+          backdropFilter: "blur(2px)",
+          zIndex: 50,
+          animation: "fadeIn 150ms ease-out",
+        }}
+      />
+
+      {/* Painel */}
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          right: 0,
+          height: "100dvh",
+          width: "min(500px, 100vw)",
+          background: "var(--background)",
+          borderLeft: "1px solid var(--border)",
+          boxShadow: "-8px 0 40px rgba(0,0,0,0.18)",
+          zIndex: 51,
+          display: "flex",
+          flexDirection: "column",
+          animation: "slideInRight 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+          overflow: "hidden",
+        }}
+      >
+        {/* ── Header ── */}
+        <div
+          style={{
+            borderBottom: "1px solid var(--border)",
+            background: `linear-gradient(135deg, ${cfg.soft} 0%, var(--surface) 60%)`,
+            padding: "16px 18px",
+            flexShrink: 0,
+          }}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: `color-mix(in srgb, ${cfg.color} 18%, var(--surface))`,
+                color: cfg.color,
+                border: `1.5px solid ${cfg.color}40`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                marginTop: 2,
+              }}
+            >
+              {cfg.icon}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span
+                  style={{
+                    padding: "2px 10px",
+                    borderRadius: 999,
+                    background: `color-mix(in srgb, ${cfg.color} 15%, transparent)`,
+                    color: cfg.color,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    border: `1px solid ${cfg.color}30`,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {cfg.title}
+                </span>
+                {isDelayed && task.status !== "completed" && (
+                  <span
+                    style={{
+                      padding: "2px 10px",
+                      borderRadius: 999,
+                      background: "var(--danger-soft)",
+                      color: "var(--danger-fg)",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      border: "1px solid color-mix(in srgb, var(--danger) 25%, transparent)",
+                    }}
+                  >
+                    ⚠ Atrasada
+                  </span>
+                )}
+              </div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 16,
+                  fontWeight: 700,
+                  color: "var(--foreground)",
+                  lineHeight: 1.35,
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {task.title}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Fechar"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--muted-fg)",
+                cursor: "pointer",
+                padding: 4,
+                borderRadius: 6,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Body scrollável ── */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            overflowX: "hidden",
+            padding: "18px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          {/* Timer */}
+          <div
+            style={{
+              padding: "14px 16px",
+              borderRadius: 12,
+              background: task.is_timer_running
+                ? "linear-gradient(90deg, var(--success-soft), color-mix(in srgb, var(--success) 6%, transparent))"
+                : "var(--surface-2)",
+              border: task.is_timer_running
+                ? "1px solid color-mix(in srgb, var(--success) 30%, transparent)"
+                : "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div className="flex items-center gap-2">
+              {task.is_timer_running ? (
+                <span
+                  style={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: 999,
+                    background: "var(--success)",
+                    animation: "pulse 1.4s ease-in-out infinite",
+                  }}
+                />
+              ) : (
+                <Clock size={14} style={{ color: "var(--muted-fg)" }} />
+              )}
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: task.is_timer_running ? "var(--success-fg)" : "var(--muted-fg)",
+                }}
+              >
+                {task.is_timer_running ? "Produzindo" : "Tempo total"}
+              </span>
+            </div>
+            <strong
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                fontVariantNumeric: "tabular-nums",
+                color: task.is_timer_running ? "var(--success-fg)" : "var(--foreground)",
+              }}
+            >
+              {formatDuration(liveSeconds)}
+            </strong>
+          </div>
+
+          {/* Infos */}
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+              overflow: "hidden",
+            }}
+          >
+            {[
+              {
+                icon: <Folder size={13} />,
+                label: "Projeto",
+                value: task.projects
+                  ? formatProjectDisplayName(task.projects)
+                  : "—",
+              },
+              {
+                icon: <UserIcon size={13} />,
+                label: "Responsável",
+                value: task.users?.name || "Sem responsável",
+              },
+              {
+                icon: <CalendarDays size={13} />,
+                label: "Prazo previsto",
+                value: task.planned_due_date ? formatDate(task.planned_due_date) : "—",
+                danger: isDelayed && task.status !== "completed",
+              },
+              {
+                icon: <CheckCircle2 size={13} />,
+                label: "Concluída em",
+                value: task.actual_completed_date
+                  ? formatDate(task.actual_completed_date)
+                  : "—",
+              },
+            ].map((row, i, arr) => (
+              <div
+                key={row.label}
+                style={{
+                  padding: "10px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none",
+                  background: "transparent",
+                }}
+              >
+                <span
+                  style={{
+                    color: (row as { danger?: boolean }).danger ? "var(--danger)" : "var(--muted-fg)",
+                    flexShrink: 0,
+                  }}
+                >
+                  {row.icon}
+                </span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "var(--muted-fg)",
+                    fontWeight: 500,
+                    width: 110,
+                    flexShrink: 0,
+                  }}
+                >
+                  {row.label}
+                </span>
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: (row as { danger?: boolean }).danger ? "var(--danger-fg)" : "var(--foreground)",
+                    flex: 1,
+                  }}
+                >
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Descrição */}
+          {cleanDesc && (
+            <div>
+              <div
+                className="flex items-center gap-2 mb-2"
+                style={{ color: "var(--muted-fg)", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}
+              >
+                <Info size={12} />
+                Descrição
+              </div>
+              <div
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  fontSize: 13,
+                  color: "var(--foreground)",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}
+              >
+                {cleanDesc}
+              </div>
+            </div>
+          )}
+
+          {/* Histórico de pausas */}
+          {pauses.length > 0 && (
+            <div>
+              <div
+                className="flex items-center gap-2 mb-2"
+                style={{ color: "var(--muted-fg)", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}
+              >
+                <History size={12} />
+                Histórico de pausas ({pauses.length})
+              </div>
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                  overflow: "hidden",
+                }}
+              >
+                {pauses.map((p, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "9px 14px",
+                      borderBottom: i < pauses.length - 1 ? "1px solid var(--border)" : "none",
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 999,
+                        background: "var(--warning)",
+                        marginTop: 5,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>
+                        {p.reason}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--muted-fg)", marginTop: 1 }}>
+                        {p.stamp}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyText(p.reason)}
+                      title="Copiar motivo"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--muted-fg)",
+                        padding: 2,
+                        display: "inline-flex",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Copy size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Footer: ações ── */}
+        <div
+          style={{
+            borderTop: "1px solid var(--border)",
+            padding: "14px 18px",
+            flexShrink: 0,
+            background: "var(--surface)",
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          {canManage(task) && !task.is_timer_running && task.status !== "completed" && (
+            <Button
+              size="sm"
+              leftIcon={<Play size={13} />}
+              disabled={!!blockingTask}
+              title={blockingTask ? `Pause "${blockingTask.title}" antes de iniciar.` : undefined}
+              onClick={() => onStartTimer(task)}
+            >
+              Iniciar
+            </Button>
+          )}
+          {canManage(task) && task.is_timer_running && (
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<Pause size={13} />}
+              onClick={() => onPauseTimer(task)}
+            >
+              Pausar
+            </Button>
+          )}
+          {canManage(task) && task.status !== "completed" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<Check size={13} />}
+              onClick={() => onFinishTask(task)}
+            >
+              Concluir
+            </Button>
+          )}
+          <div style={{ flex: 1 }} />
+          {canManage(task) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              leftIcon={<Pencil size={13} />}
+              onClick={() => onEditTask(task)}
+            >
+              Editar
+            </Button>
+          )}
+          {(currentUserRole === "admin" || currentUserRole === "coordinator") && (
+            <Button
+              size="sm"
+              variant="danger-ghost"
+              leftIcon={<Trash2 size={13} />}
+              onClick={() => onDeleteTask(task)}
+            >
+              Excluir
+            </Button>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 
