@@ -1,5 +1,5 @@
 -- ============================================================================
--- HYDRACODE — Espaços de trabalho (estrutura estilo ClickUp: Space → pastas → listas)
+-- HYDRACODE — Espaços de trabalho (espaço → pastas → listas)
 -- ============================================================================
 -- Hierarquia:
 --   workspace_spaces     = espaço de topo (ex.: COPASA, Processos internos)

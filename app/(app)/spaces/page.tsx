@@ -153,12 +153,16 @@ function SpaceGlyph({ icon, color, size = 16 }: { icon: string; color: string; s
   return <Icon size={size} style={{ color }} />;
 }
 
-function normalizePickerHex(v: string): string {
-  const s = v.trim();
-  if (/^#[0-9A-Fa-f]{6}$/.test(s)) return s.toLowerCase();
-  if (!/^#[0-9A-Fa-f]{3}$/i.test(s)) return "#6366f1";
-  const x = s.slice(1);
-  return `#${x[0]}${x[0]}${x[1]}${x[1]}${x[2]}${x[2]}`.toLowerCase();
+const FALLBACK_SPACE_HEX = "#6366f1" as const;
+
+function normalizePickerHex(v: string | null | undefined): string {
+  const s = String(v ?? "").trim();
+  if (/^#[0-9A-Fa-f]{6}$/i.test(s)) return s.toLowerCase();
+  if (/^#[0-9A-Fa-f]{3}$/i.test(s)) {
+    const x = s.slice(1);
+    return `#${x[0]}${x[0]}${x[1]}${x[1]}${x[2]}${x[2]}`.toLowerCase();
+  }
+  return FALLBACK_SPACE_HEX;
 }
 
 function SpaceColorPicker({
@@ -312,7 +316,7 @@ export default function SpacesPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const [newSpaceName, setNewSpaceName] = useState("");
-  const [newSpaceColor, setNewSpaceColor] = useState<string>(COLOR_PRESETS[0]);
+  const [newSpaceColor, setNewSpaceColor] = useState<string>(FALLBACK_SPACE_HEX);
   const [newSpaceIcon, setNewSpaceIcon] = useState<string>("layers");
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [extensionsOk, setExtensionsOk] = useState(false);
@@ -694,7 +698,7 @@ export default function SpacesPage() {
     <div>
       <PageHeader
         title="Espaços"
-        description="Organize o portfólio em espaços, pastas e listas — semelhante ao ClickUp. Listas podem apontar para um projeto existente."
+        description="Estruture o trabalho em espaços, pastas e listas. Associe listas a projetos quando quiser acompanhar entregas no mesmo lugar."
         actions={
           podeGerirEspacos ? (
             <Button leftIcon={<Plus size={16} />} onClick={() => void loadAll()} variant="secondary">
@@ -931,13 +935,13 @@ function SpaceEditor({
   onSave: (id: string, patch: Partial<Pick<WorkspaceSpace, "name" | "color" | "icon">>) => void;
 }) {
   const [name, setName] = useState(space.name);
-  const [color, setColor] = useState(space.color);
-  const [icon, setIcon] = useState(space.icon);
+  const [color, setColor] = useState(() => normalizePickerHex(space.color));
+  const [icon, setIcon] = useState(() => (space.icon?.trim() ? space.icon.trim() : "layers"));
 
   useEffect(() => {
     setName(space.name);
-    setColor(space.color);
-    setIcon(space.icon);
+    setColor(normalizePickerHex(space.color));
+    setIcon(space.icon?.trim() ? space.icon.trim() : "layers");
   }, [space.id, space.name, space.color, space.icon]);
 
   return (
