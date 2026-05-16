@@ -28,6 +28,8 @@ import {
   GanttChartSquare,
   Info,
   Eye,
+  MapPin,
+  ListTodo,
 } from "lucide-react";
 
 import { useRouter } from "next/navigation";
@@ -169,6 +171,17 @@ function getRoleLabel(role: string | null | undefined) {
   if (role === "projetista" || role === "employee") return "Projetista";
   if (role === "member") return "Membro";
   return role || "Membro";
+}
+
+function getTaskStatusLabelShort(status: string) {
+  const map: Record<string, string> = {
+    pending: "Pendente",
+    in_progress: "Em andamento",
+    in_review: "Em revisão",
+    blocked: "Bloqueada",
+    completed: "Concluída",
+  };
+  return map[status] ?? status.replace(/_/g, " ");
 }
 
 function formatBRDate(iso: string | null) {
@@ -538,6 +551,8 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  /** `${projectId}:active` | `${projectId}:done` → recolher grupos de tarefas (default expandido). */
+  const [taskStatusGroupOpen, setTaskStatusGroupOpen] = useState<Record<string, boolean>>({});
 
   const [, setClock] = useState(0);
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -1128,6 +1143,225 @@ export default function ProjectsPage() {
     });
   }
 
+  function toggleTaskStatusGroup(projectId: string, group: "active" | "done") {
+    const key = `${projectId}:${group}`;
+    setTaskStatusGroupOpen((prev) => {
+      const current = prev[key] ?? true;
+      return { ...prev, [key]: !current };
+    });
+  }
+
+  function isTaskStatusGroupExpanded(projectId: string, group: "active" | "done") {
+    const key = `${projectId}:${group}`;
+    return taskStatusGroupOpen[key] !== false;
+  }
+
+  function renderProjectTaskGroups(projectId: string, projectTasks: Task[], getResponsibleName: (id: string | null) => string) {
+    const active = projectTasks
+      .filter((t) => t.status !== "completed")
+      .sort((a, b) => {
+        const ad = a.planned_due_date || "";
+        const bd = b.planned_due_date || "";
+        if (ad !== bd) return ad.localeCompare(bd);
+        return (a.title || "").localeCompare(b.title || "", "pt-BR");
+      });
+    const done = projectTasks
+      .filter((t) => t.status === "completed")
+      .sort((a, b) => {
+        const ad = a.actual_completed_date || a.completed_at || "";
+        const bd = b.actual_completed_date || b.completed_at || "";
+        if (ad !== bd) return bd.localeCompare(ad);
+        return (a.title || "").localeCompare(b.title || "", "pt-BR");
+      });
+
+    const groups: {
+      id: "active" | "done";
+      title: string;
+      accent: string;
+      tasks: Task[];
+    }[] = [
+      {
+        id: "active",
+        title: "EM ANDAMENTO",
+        accent: "var(--primary)",
+        tasks: active,
+      },
+      {
+        id: "done",
+        title: "CONCLUÍDO",
+        accent: "var(--success)",
+        tasks: done,
+      },
+    ];
+
+    return (
+      <div style={{ marginTop: 20 }}>
+        <h4
+          className="flex items-center gap-2"
+          style={{ fontSize: 13, fontWeight: 700, margin: "0 0 12px" }}
+        >
+          <ListTodo size={14} className="text-muted" />
+          Tarefas por status
+        </h4>
+        {projectTasks.length === 0 ? (
+          <EmptyState
+            title="Nenhuma tarefa neste projeto"
+            description="Crie tarefas na área de Tarefas ou no módulo da disciplina."
+          />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {groups.map((g) => {
+              const open = isTaskStatusGroupExpanded(projectId, g.id);
+              return (
+                <div
+                  key={g.id}
+                  style={{
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    border: "1px solid var(--border)",
+                    background: "var(--surface)",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleTaskStatusGroup(projectId, g.id)}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 12px",
+                      border: "none",
+                      cursor: "pointer",
+                      background: `linear-gradient(90deg, color-mix(in srgb, ${g.accent} 14%, var(--surface)) 0%, var(--surface) 65%)`,
+                      borderLeft: `4px solid ${g.accent}`,
+                      textAlign: "left",
+                    }}
+                  >
+                    {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        letterSpacing: "0.06em",
+                        color: "var(--foreground)",
+                        flex: 1,
+                      }}
+                    >
+                      {g.title}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: "2px 10px",
+                        borderRadius: 999,
+                        background: `color-mix(in srgb, ${g.accent} 20%, var(--surface-2))`,
+                        color: g.accent,
+                        border: `1px solid color-mix(in srgb, ${g.accent} 35%, transparent)`,
+                      }}
+                    >
+                      {g.tasks.length}
+                    </span>
+                  </button>
+                  {open && g.tasks.length > 0 && (
+                    <div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(0, 1fr) auto auto",
+                          gap: 8,
+                          padding: "8px 12px",
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: "0.05em",
+                          textTransform: "uppercase",
+                          color: "var(--muted-fg)",
+                          borderBottom: "1px solid var(--border)",
+                          background: "var(--surface-2)",
+                        }}
+                      >
+                        <span>Nome</span>
+                        <span style={{ textAlign: "right" }}>Status</span>
+                        <span style={{ textAlign: "right" }}>Prazo</span>
+                      </div>
+                      {g.tasks.map((t, idx) => (
+                        <div
+                          key={t.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 1fr) auto auto",
+                            gap: 8,
+                            alignItems: "center",
+                            padding: "10px 12px",
+                            fontSize: 13,
+                            borderBottom:
+                              idx < g.tasks.length - 1 ? "1px solid var(--border)" : "none",
+                          }}
+                        >
+                          <div className="min-w-0">
+                            <div
+                              style={{
+                                fontWeight: 600,
+                                color: "var(--foreground)",
+                                lineHeight: 1.35,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                              title={t.title}
+                            >
+                              {t.title}
+                            </div>
+                            <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                              {getResponsibleName(t.assigned_to)}
+                            </div>
+                          </div>
+                          <div style={{ justifySelf: "end" }}>
+                            <Badge
+                              variant={t.status === "completed" ? "success" : "info"}
+                              style={{ fontSize: 10, fontWeight: 700 }}
+                            >
+                              {getTaskStatusLabelShort(t.status)}
+                            </Badge>
+                          </div>
+                          <span
+                            className="text-xs tabular-nums"
+                            style={{
+                              color: "var(--muted-fg)",
+                              fontWeight: 600,
+                              textAlign: "right",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {t.status === "completed"
+                              ? t.actual_completed_date
+                                ? formatBRDate(t.actual_completed_date.slice(0, 10))
+                                : "—"
+                              : t.planned_due_date
+                              ? formatBRDate(t.planned_due_date.slice(0, 10))
+                              : "—"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {open && g.tasks.length === 0 && (
+                    <div
+                      className="text-xs text-muted"
+                      style={{ padding: "12px 14px", fontWeight: 500 }}
+                    >
+                      Nenhuma tarefa neste grupo.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ─── Renderizadores de Card ────────────────────────────────────────────────
 
   function renderProjectCard(project: Project, isList: boolean) {
@@ -1351,6 +1585,50 @@ export default function ProjectsPage() {
                     />
                     {risk.label}
                   </span>
+                </div>
+                <div
+                  className="flex items-center gap-2 flex-wrap"
+                  style={{ marginTop: 8 }}
+                >
+                  <span
+                    className="inline-flex items-center gap-1 min-w-0"
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "var(--muted-fg)",
+                    }}
+                  >
+                    <MapPin size={13} style={{ flexShrink: 0, opacity: 0.9 }} />
+                    {project.municipality || project.state ? (
+                      <span className="truncate">
+                        {[project.municipality, project.state].filter(Boolean).join(" / ")}
+                      </span>
+                    ) : (
+                      <span style={{ fontStyle: "italic", fontWeight: 500 }}>
+                        Município não informado
+                      </span>
+                    )}
+                  </span>
+                  {(project.municipality || project.state) && project.name?.trim() ? (
+                    <span
+                      title={project.name}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        background: "var(--surface-2)",
+                        border: "1px solid var(--border)",
+                        color: "var(--foreground)",
+                        maxWidth: "min(280px, 100%)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Lote / ref.: {project.name}
+                    </span>
+                  ) : null}
                 </div>
                 <div
                   style={{
@@ -1934,6 +2212,8 @@ export default function ProjectsPage() {
                 })}
               </div>
             )}
+
+            {renderProjectTaskGroups(project.id, projectTasks, getUserName)}
 
             {projectTasks.filter((t) => !t.assigned_to).length > 0 && (
               <div className="mt-4">
@@ -2835,6 +3115,50 @@ export default function ProjectsPage() {
                     >
                       {formatProjectDisplayName(proj)}
                     </h2>
+                    <div
+                      className="flex items-center gap-2 flex-wrap"
+                      style={{ marginTop: 8 }}
+                    >
+                      <span
+                        className="inline-flex items-center gap-1 min-w-0"
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: "var(--muted-fg)",
+                        }}
+                      >
+                        <MapPin size={12} style={{ flexShrink: 0, opacity: 0.9 }} />
+                        {proj.municipality || proj.state ? (
+                          <span className="truncate">
+                            {[proj.municipality, proj.state].filter(Boolean).join(" / ")}
+                          </span>
+                        ) : (
+                          <span style={{ fontStyle: "italic", fontWeight: 500 }}>
+                            Município não informado
+                          </span>
+                        )}
+                      </span>
+                      {(proj.municipality || proj.state) && proj.name?.trim() ? (
+                        <span
+                          title={proj.name}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "2px 8px",
+                            borderRadius: 999,
+                            background: "var(--surface-2)",
+                            border: "1px solid var(--border)",
+                            color: "var(--foreground)",
+                            maxWidth: "min(260px, 100%)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Lote / ref.: {proj.name}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -3191,6 +3515,8 @@ export default function ProjectsPage() {
                     </div>
                   );
                 })()}
+
+                {renderProjectTaskGroups(proj.id, projectTasks, getUserName)}
 
                 {/* ── 4. PROGRESSO (secundário) ── */}
                 <div
