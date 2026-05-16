@@ -220,6 +220,7 @@ function SidebarTree({
   onSelectNode,
   podeEditar,
   onMoveUpDown,
+  onAddChild,
 }: {
   nodes: WorkspaceNode[];
   spaceId: string;
@@ -229,7 +230,10 @@ function SidebarTree({
   onSelectNode: (id: string) => void;
   podeEditar: boolean;
   onMoveUpDown: (node: WorkspaceNode, dir: -1 | 1) => void;
+  onAddChild?: (kind: "folder" | "list", parentId: string) => void;
 }) {
+  const [hoverId, setHoverId] = useState<string | null>(null);
+
   function renderBranch(parentId: string | null, depth: number) {
     const list = nodes
       .filter((n) => n.space_id === spaceId && n.parent_id === parentId)
@@ -239,17 +243,24 @@ function SidebarTree({
       const isFolder = node.kind === "folder";
       const open = expandedFolders[node.id] ?? true;
       const isSelected = selectedNodeId === node.id;
+      const isHovered = hoverId === node.id;
       const nodeColor = node.color || (isFolder ? "var(--warning)" : "var(--primary)");
 
       return (
         <div key={node.id} style={{ marginLeft: depth > 0 ? 12 : 0 }}>
           <div
+            onMouseEnter={() => setHoverId(node.id)}
+            onMouseLeave={() => setHoverId(null)}
             style={{
               display: "flex",
               alignItems: "center",
               gap: 0,
               borderRadius: 6,
-              background: isSelected ? "color-mix(in srgb, var(--primary) 12%, var(--surface))" : "transparent",
+              background: isSelected
+                ? "color-mix(in srgb, var(--primary) 12%, var(--surface))"
+                : isHovered
+                  ? "color-mix(in srgb, var(--foreground) 5%, transparent)"
+                  : "transparent",
               border: `1px solid ${isSelected ? "color-mix(in srgb, var(--primary) 30%, transparent)" : "transparent"}`,
               marginBottom: 1,
             }}
@@ -316,6 +327,61 @@ function SidebarTree({
                 />
               )}
             </button>
+
+            {/* Folder hover actions: add subfolder / add list */}
+            {isFolder && podeEditar && onAddChild && (isHovered || isSelected) && (
+              <div
+                style={{ display: "flex", alignItems: "center", gap: 1, paddingRight: 4, flexShrink: 0 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  title="Nova subpasta"
+                  onClick={(e) => { e.stopPropagation(); onAddChild("folder", node.id); }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "2px 3px",
+                    borderRadius: 4,
+                    color: "var(--muted-fg)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    fontSize: 9,
+                    fontWeight: 700,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--warning)"; e.currentTarget.style.background = "color-mix(in srgb, var(--warning) 12%, transparent)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
+                >
+                  <Folder size={10} />
+                  <Plus size={8} />
+                </button>
+                <button
+                  type="button"
+                  title="Nova lista"
+                  onClick={(e) => { e.stopPropagation(); onAddChild("list", node.id); }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "2px 3px",
+                    borderRadius: 4,
+                    color: "var(--muted-fg)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    fontSize: 9,
+                    fontWeight: 700,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.background = "color-mix(in srgb, var(--primary) 12%, transparent)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
+                >
+                  <ListTodo size={10} />
+                  <Plus size={8} />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Children */}
@@ -709,26 +775,11 @@ function AddSpaceModal({
               placeholder="Ex.: COPASA"
             />
           </Field>
-          <Field label="Ícone">
-            <div className="grid grid-cols-3 gap-2">
-              {SPACE_ICON_KEYS.map((k) => {
-                const Icon = SPACE_ICON_MAP[k];
-                const active = icon === k;
-                return (
-                  <button key={k} type="button" onClick={() => setIcon(k)}
-                    style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "7px 4px", borderRadius: 7, border: `2px solid ${active ? "var(--primary)" : "var(--border)"}`, background: active ? "var(--primary-soft)" : "var(--surface)", cursor: "pointer" }}>
-                    <Icon size={16} style={{ color: active ? "var(--primary)" : "var(--muted-fg)" }} />
-                    <span style={{ fontSize: 9, fontWeight: 600, color: active ? "var(--primary)" : "var(--muted-fg)" }}>{SPACE_ICON_LABELS[k]}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
           <Field label="Cor">
             <div className="flex flex-wrap gap-2">
               {COLOR_PRESETS.map((c) => (
                 <button key={c} type="button" onClick={() => setColor(c)}
-                  style={{ width: 24, height: 24, borderRadius: "50%", background: c, border: color === c ? "3px solid var(--foreground)" : "2px solid var(--border)", cursor: "pointer" }}
+                  style={{ width: 26, height: 26, borderRadius: "50%", background: c, border: color === c ? "3px solid var(--foreground)" : "2px solid var(--border)", cursor: "pointer" }}
                 />
               ))}
             </div>
@@ -740,6 +791,117 @@ function AddSpaceModal({
             Criar espaço
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Componente: botão compacto para adicionar pasta/lista ───────────────────
+
+function AddNodeBtn({ kind, label, onClick }: { kind: "folder" | "list"; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: "transparent",
+        border: "1px dashed var(--border)",
+        borderRadius: 5,
+        cursor: "pointer",
+        color: "var(--muted-fg)",
+        fontSize: 10,
+        fontWeight: 600,
+        padding: "3px 8px",
+        display: "flex",
+        alignItems: "center",
+        gap: 3,
+        transition: "all 0.12s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}
+    >
+      {kind === "folder" ? <Folder size={10} /> : <ListTodo size={10} />}
+      {label}
+    </button>
+  );
+}
+
+// ─── Componente: input inline para criar pasta/lista ─────────────────────────
+
+function InlineNodeInput({
+  kind,
+  parentId,
+  nodes,
+  onConfirm,
+  onCancel,
+}: {
+  kind: "folder" | "list";
+  parentId: string | null;
+  nodes: WorkspaceNode[];
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const parentName = parentId ? nodes.find((n) => n.id === parentId)?.name : null;
+
+  function commit() {
+    if (value.trim()) onConfirm(value.trim());
+    else onCancel();
+  }
+
+  return (
+    <div
+      style={{
+        margin: "4px 6px 6px",
+        padding: "8px 10px",
+        borderRadius: 8,
+        background: "var(--surface)",
+        border: "1px solid var(--primary)",
+        boxShadow: "0 0 0 2px color-mix(in srgb, var(--primary) 15%, transparent)",
+      }}
+    >
+      {parentName && (
+        <div className="text-xs text-muted mb-1" style={{ fontWeight: 500 }}>
+          {kind === "folder" ? "Subpasta" : "Lista"} em: <strong>{parentName}</strong>
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        {kind === "folder" ? <Folder size={12} style={{ color: "var(--warning)", flexShrink: 0 }} /> : <ListTodo size={12} style={{ color: "var(--primary)", flexShrink: 0 }} />}
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder={kind === "folder" ? "Nome da pasta…" : "Nome da lista…"}
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            fontSize: 12,
+            fontWeight: 500,
+            color: "var(--foreground)",
+            minWidth: 0,
+          }}
+        />
+        <button
+          type="button"
+          onClick={commit}
+          disabled={!value.trim()}
+          style={{ background: "var(--primary)", border: "none", borderRadius: 4, color: "#fff", cursor: value.trim() ? "pointer" : "not-allowed", padding: "2px 8px", fontSize: 11, fontWeight: 600, opacity: value.trim() ? 1 : 0.5 }}
+        >
+          OK
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted-fg)", padding: 2 }}
+        >
+          <X size={12} />
+        </button>
       </div>
     </div>
   );
@@ -763,6 +925,7 @@ export default function SpacesPage() {
   const [userPrefs, setUserPrefs] = useState<UserPrefsPayload>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addSpaceOpen, setAddSpaceOpen] = useState(false);
+  const [addingNode, setAddingNode] = useState<{ kind: "folder" | "list"; parentId: string | null } | null>(null);
   const prefsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userIdRef = useRef<string | null>(null);
   userIdRef.current = userId;
@@ -904,10 +1067,8 @@ export default function SpacesPage() {
     await loadAll();
   }
 
-  async function addNode(kind: "folder" | "list", parentId: string | null) {
-    if (!selectedSpaceId || !podeEditarNos) return;
-    const name = kind === "folder" ? window.prompt("Nome da pasta:", "Nova pasta") : window.prompt("Nome da lista:", "Nova lista");
-    if (!name?.trim()) return;
+  async function createNode(name: string, kind: "folder" | "list", parentId: string | null) {
+    if (!selectedSpaceId || !podeEditarNos || !name.trim()) return;
     const sibs = siblingsOf(nodes, selectedSpaceId, parentId);
     const nextOrder = sibs.length > 0 ? Math.max(...sibs.map((x) => x.sort_order)) + 1 : 0;
     const insert: Record<string, unknown> = { space_id: selectedSpaceId, parent_id: parentId, kind, name: name.trim(), sort_order: nextOrder, color: null, project_id: null };
@@ -915,7 +1076,13 @@ export default function SpacesPage() {
     const { error } = await supabase.from("workspace_space_nodes").insert(insert);
     if (error) { showErrorToast("Não foi possível criar", getSupabaseErrorMessage(error)); return; }
     showSuccessToast(kind === "folder" ? "Pasta criada" : "Lista criada");
+    setAddingNode(null);
     await loadAll();
+  }
+
+  // Legacy wrapper mantida para compatibilidade com SettingsPanel (onAddChild)
+  function addNode(kind: "folder" | "list", parentId: string | null) {
+    setAddingNode({ kind, parentId });
   }
 
   async function updateNodePatch(id: string, patch: Record<string, unknown>) {
@@ -1136,33 +1303,35 @@ export default function SpacesPage() {
                         onSelectNode={setSelectedNodeId}
                         podeEditar={podeEditarNos}
                         onMoveUpDown={(node, dir) => void moveNode(node as WorkspaceNode, dir)}
+                        onAddChild={(kind, parentId) => setAddingNode({ kind, parentId })}
                       />
                     </div>
                   )}
 
-                  {/* Add folder/list when space selected */}
-                  {isSelected && podeEditarNos && (
+                  {/* Inline add node form */}
+                  {isSelected && addingNode && (
+                    <InlineNodeInput
+                      kind={addingNode.kind}
+                      parentId={addingNode.parentId}
+                      nodes={spaceNodes}
+                      onConfirm={(name) => void createNode(name, addingNode.kind, addingNode.parentId)}
+                      onCancel={() => setAddingNode(null)}
+                    />
+                  )}
+
+                  {/* Add folder/list buttons */}
+                  {isSelected && podeEditarNos && !addingNode && (
                     <div className="flex gap-1 px-2 pb-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => void addNode("folder", null)}
-                        title="Nova pasta"
-                        style={{ background: "transparent", border: "1px dashed var(--border)", borderRadius: 5, cursor: "pointer", color: "var(--muted-fg)", fontSize: 10, fontWeight: 600, padding: "3px 6px", display: "flex", alignItems: "center", gap: 3 }}
-                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}
-                      >
-                        <Folder size={10} /> Pasta
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void addNode("list", null)}
-                        title="Nova lista"
-                        style={{ background: "transparent", border: "1px dashed var(--border)", borderRadius: 5, cursor: "pointer", color: "var(--muted-fg)", fontSize: 10, fontWeight: 600, padding: "3px 6px", display: "flex", alignItems: "center", gap: 3 }}
-                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}
-                      >
-                        <ListTodo size={10} /> Lista
-                      </button>
+                      <AddNodeBtn
+                        kind="folder"
+                        label="Pasta"
+                        onClick={() => setAddingNode({ kind: "folder", parentId: null })}
+                      />
+                      <AddNodeBtn
+                        kind="list"
+                        label="Lista"
+                        onClick={() => setAddingNode({ kind: "list", parentId: null })}
+                      />
                     </div>
                   )}
                 </div>
