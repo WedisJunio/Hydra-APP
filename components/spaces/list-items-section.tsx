@@ -1083,39 +1083,46 @@ export function ListItemsSection({
           flexShrink: 0,
         }}
       >
-        {/* View mode tabs */}
-        <div
-          className="flex rounded-lg p-0.5 gap-0.5"
-          style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-        >
-          <button
-            type="button"
-            onClick={() => onUserViewModeChange("list")}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all"
-            style={{
-              background: effectiveView === "list" ? "var(--surface)" : "transparent",
-              color: effectiveView === "list" ? "var(--primary)" : "var(--muted-fg)",
-              boxShadow: effectiveView === "list" ? "var(--shadow-sm)" : "none",
-            }}
+        {/* View mode tabs — apenas para listas sem projeto vinculado */}
+        {!projectId ? (
+          <div
+            className="flex rounded-lg p-0.5 gap-0.5"
+            style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
           >
-            <LayoutList size={13} /> Lista
-          </button>
-          <button
-            type="button"
-            onClick={() => onUserViewModeChange("kanban")}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all"
-            style={{
-              background: effectiveView === "kanban" ? "var(--surface)" : "transparent",
-              color: effectiveView === "kanban" ? "var(--primary)" : "var(--muted-fg)",
-              boxShadow: effectiveView === "kanban" ? "var(--shadow-sm)" : "none",
-            }}
-          >
-            <LayoutGrid size={13} /> Quadro
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => onUserViewModeChange("list")}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all"
+              style={{
+                background: effectiveView === "list" ? "var(--surface)" : "transparent",
+                color: effectiveView === "list" ? "var(--primary)" : "var(--muted-fg)",
+                boxShadow: effectiveView === "list" ? "var(--shadow-sm)" : "none",
+              }}
+            >
+              <LayoutList size={13} /> Lista
+            </button>
+            <button
+              type="button"
+              onClick={() => onUserViewModeChange("kanban")}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-all"
+              style={{
+                background: effectiveView === "kanban" ? "var(--surface)" : "transparent",
+                color: effectiveView === "kanban" ? "var(--primary)" : "var(--muted-fg)",
+                boxShadow: effectiveView === "kanban" ? "var(--shadow-sm)" : "none",
+              }}
+            >
+              <LayoutGrid size={13} /> Quadro
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <LayoutList size={13} style={{ color: "var(--primary)" }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--primary)" }}>Lista</span>
+          </div>
+        )}
 
-        {/* Add button */}
-        {podeEditarItens && (
+        {/* Add button — só para listas sem projeto vinculado */}
+        {podeEditarItens && !projectId && (
           <Button size="sm" leftIcon={<Plus size={13} />} onClick={() => void addItem()}>
             Add Tarefa
           </Button>
@@ -1142,33 +1149,9 @@ export function ListItemsSection({
             />
           )}
 
-          {/* ── Itens da lista (workspace) ── */}
-          {enabled && (
+          {/* ── Itens da lista (workspace) — só aparece quando NÃO há projeto vinculado ── */}
+          {enabled && !projectId && (
             <>
-              {/* Section divider / header when project tasks are shown */}
-              {projectId && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "6px 12px 6px 8px",
-                    background: "color-mix(in srgb, var(--warning) 5%, var(--surface-2))",
-                    borderBottom: "1px solid var(--border)",
-                    position: "sticky",
-                    top: 0,
-                    zIndex: 2,
-                  }}
-                >
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--warning)" }}>
-                    Itens personalizados
-                  </span>
-                  <span style={{ fontSize: 11, color: "var(--muted-fg)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 999, padding: "0 6px" }}>
-                    {items.length}
-                  </span>
-                </div>
-              )}
-
               {/* Column header row */}
               <div
                 style={{
@@ -1179,7 +1162,7 @@ export function ListItemsSection({
                   background: "var(--surface-2)",
                   borderBottom: "1px solid var(--border)",
                   position: "sticky",
-                  top: projectId ? 33 : 0,
+                  top: 0,
                   zIndex: 1,
                 }}
               >
@@ -1209,7 +1192,7 @@ export function ListItemsSection({
           )}
 
           {/* Workspace item groups */}
-          {enabled && (
+          {enabled && !projectId && (
             <>
               {cols.length === 0 && items.length === 0 && !projectId && (
                 <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--muted-fg)", fontSize: 13 }}>
