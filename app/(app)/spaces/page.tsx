@@ -648,9 +648,11 @@ function SettingsPanel({
 // ─── Modal: Criar espaço ──────────────────────────────────────────────────────
 
 function AddSpaceModal({
+  nextSortOrder,
   onClose,
   onCreated,
 }: {
+  nextSortOrder: number;
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
@@ -663,10 +665,23 @@ function AddSpaceModal({
     if (!name.trim()) return;
     setLoading(true);
     const profile = await getCurrentProfile();
-    const row: Record<string, unknown> = { name: name.trim(), color, icon, sort_order: Date.now() };
+    const row: Record<string, unknown> = {
+      name: name.trim(),
+      color,
+      icon,
+      sort_order: nextSortOrder,
+    };
     if (profile?.id) row.created_by = profile.id;
     const { data, error } = await supabase.from("workspace_spaces").insert(row).select("id").single();
-    if (error) { showErrorToast("Não foi possível criar", getSupabaseErrorMessage(error)); setLoading(false); return; }
+    if (error) {
+      if (schemaLikelyMissing(error)) {
+        showErrorToast("Tabelas de Espaços não encontradas", "Execute lib/sql/workspaces-spaces.sql no Supabase.");
+      } else {
+        showErrorToast("Não foi possível criar o espaço", getSupabaseErrorMessage(error));
+      }
+      setLoading(false);
+      return;
+    }
     showSuccessToast("Espaço criado");
     onCreated(data.id);
   }
@@ -1363,6 +1378,7 @@ export default function SpacesPage() {
       {/* Add space modal */}
       {addSpaceOpen && (
         <AddSpaceModal
+          nextSortOrder={spaces.length > 0 ? Math.max(...spaces.map((s) => s.sort_order)) + 1 : 0}
           onClose={() => setAddSpaceOpen(false)}
           onCreated={(id) => {
             setAddSpaceOpen(false);
