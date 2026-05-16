@@ -22,7 +22,8 @@
       "Bash(echo \"Exit code: $?\")",
       "Bash(git commit *)",
       "Bash(xargs grep *)",
-      "Bash(xargs wc *)"
+      "Bash(xargs wc *)",
+      "Bash(findstr \"scripts\" /A:10)"
     ]
   },
   "hooks": {
