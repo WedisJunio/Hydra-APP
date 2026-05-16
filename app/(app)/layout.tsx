@@ -15,6 +15,7 @@ import {
   Moon,
   Sun,
   Droplets,
+  Layers,
 } from "lucide-react";
 
 import AuthGuard from "@/components/auth-guard";
@@ -34,6 +35,7 @@ const menuItems: SidebarMenuItem[] = [
   // Opcional: defina `minRole` para esconder itens (ex.: { ..., minRole: "leader" }).
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Projetos", href: "/projects", icon: FolderKanban },
+  { label: "Espaços", href: "/spaces", icon: Layers },
   { label: "Tarefas", href: "/tasks", icon: CheckSquare },
   { label: "Ponto", href: "/ponto", icon: Clock },
   {

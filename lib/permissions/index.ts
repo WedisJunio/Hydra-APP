@@ -35,3 +35,8 @@ export {
   type SidebarMenuItem,
   filterSidebarMenuByRole,
 } from "./menu";
+
+export {
+  canEditWorkspaceNodes,
+  canManageWorkspaceSpaces,
+} from "./workspaces";
