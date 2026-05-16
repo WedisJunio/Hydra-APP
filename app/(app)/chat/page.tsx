@@ -8,8 +8,6 @@ import {
   Search,
   MessageCircle,
   ChevronLeft,
-  Radio,
-  FileDown,
   Bell,
   BellOff,
   Paperclip,
@@ -23,6 +21,8 @@ import {
   FolderKanban,
   MessagesSquare,
   MapPin,
+  SquarePen,
+  Download,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -32,7 +32,6 @@ import { showErrorToast, showInfoToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -123,12 +122,13 @@ function formatDateRuleLabel(iso: string): string {
   const yKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
   if (key === getTodayLocalISO()) return "Hoje";
   if (key === yKey) return "Ontem";
-  return d.toLocaleDateString("pt-BR", {
+  const raw = d.toLocaleDateString("pt-BR", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
   });
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 function formatFileSize(size: number): string {
@@ -162,9 +162,9 @@ function isMissingAttachmentsColumn(error: unknown) {
 
 function AttachmentIcon({ type }: { type: string }) {
   const kind = getAttachmentKind(type);
-  if (kind === "image") return <ImageIcon size={15} />;
-  if (kind === "video") return <Video size={15} />;
-  return <FileText size={15} />;
+  if (kind === "image") return <ImageIcon size={16} strokeWidth={1.75} />;
+  if (kind === "video") return <Video size={16} strokeWidth={1.75} />;
+  return <FileText size={16} strokeWidth={1.75} />;
 }
 
 function ChatChannelGlyph({
@@ -189,7 +189,7 @@ function ChatChannelGlyph({
       )}
       aria-hidden
     >
-      <Icon size={size} strokeWidth={2} />
+      <Icon size={size} strokeWidth={1.75} />
     </span>
   );
 }
@@ -744,6 +744,15 @@ export default function ChatPage() {
     : selectedGroup?.name || "Conversa";
   const selectedGroupMuted = !!selectedGroupId && mutedGroupIds.includes(selectedGroupId);
 
+  const channelSubtitle = useMemo(() => {
+    if (!selectedGroupId || !selectedGroup) return "";
+    const n = groupMembers.length;
+    const kind = selectedGroup.project_id ? "Canal do projeto" : "Grupo interno";
+    const parts = [`${n} ${n === 1 ? "participante" : "participantes"}`, kind];
+    if (selectedGroupMuted) parts.push("Silenciado");
+    return parts.join(" · ");
+  }, [selectedGroupId, selectedGroup, groupMembers.length, selectedGroupMuted]);
+
   const filteredGroups = useMemo(() => {
     const q = groupSearch.trim().toLowerCase();
     if (!q) return chatGroups;
@@ -859,74 +868,80 @@ export default function ChatPage() {
     <div>
       <PageHeader
         title="Chat"
-        description="Canais por projeto e grupos livres. Convide a equipe, silencie canais e acompanhe em tempo real."
+        description="Comunicação por projeto e grupos internos — organizado, em tempo real e pronto para a operação."
         className="mb-4"
       />
 
       <Card padded={false} className="chat-shell-premium">
-        <div
-          className="chat-grid-premium"
-        >
-          {/* Sidebar — conversas */}
+        <div className="chat-grid-premium">
           <aside
             className="chat-sidebar-premium"
             style={{ display: showList ? "flex" : "none" }}
+            aria-label="Lista de conversas"
           >
-            <div className="chat-sidebar-head">
-              <div className="chat-sidebar-brand">
-                <div className="chat-sidebar-icon-wrap">
-                  <MessageCircle size={18} strokeWidth={2} />
+            <header className="chat-sidebar-header">
+              <div className="chat-sidebar-brand-row">
+                <div className="chat-sidebar-icon-wrap" aria-hidden>
+                  <MessagesSquare size={20} strokeWidth={1.75} />
                 </div>
-                <div className="min-w-0">
-                  <div className="chat-sidebar-title">Conversas</div>
-                  <div className="chat-sidebar-sub">
-                    {chatGroups.length} grupo{chatGroups.length === 1 ? "" : "s"}
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="chat-sidebar-title">Conversas</h2>
+                  <p className="chat-sidebar-sub">
+                    <span className="chat-sidebar-stat-dot" aria-hidden />
+                    {chatGroups.length === 0
+                      ? "Nenhum canal ainda"
+                      : chatGroups.length === 1
+                        ? "1 canal ativo"
+                        : `${chatGroups.length} canais ativos`}
+                  </p>
                 </div>
+                {canCreateGroup && (
+                  <button
+                    type="button"
+                    className="chat-sidebar-new-btn"
+                    onClick={openNewGroupModal}
+                    title="Criar novo grupo de conversa"
+                  >
+                    <SquarePen size={18} strokeWidth={1.75} />
+                    <span className="chat-sidebar-new-btn-label">Novo</span>
+                  </button>
+                )}
               </div>
-              {canCreateGroup && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  leftIcon={<Plus size={14} />}
-                  onClick={openNewGroupModal}
-                  title="Criar grupo e convidar pessoas"
-                >
-                  Novo grupo
-                </Button>
-              )}
+            </header>
+
+            <div className="chat-sidebar-search-block">
+              <label className="chat-sidebar-field-label" htmlFor="chat-group-search">
+                Buscar canais
+              </label>
+              <div className="chat-sidebar-search-shell">
+                <Search
+                  className="chat-sidebar-search-glyph"
+                  size={17}
+                  strokeWidth={1.75}
+                  aria-hidden
+                />
+                <Input
+                  id="chat-group-search"
+                  className="chat-sidebar-search-input"
+                  placeholder="Nome, projeto ou localidade…"
+                  value={groupSearch}
+                  onChange={(e) => setGroupSearch(e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
             </div>
 
-            <div style={{ padding: "0 14px 12px" }}>
-              <Field className="mb-0">
-                <div style={{ position: "relative" }}>
-                  <Search
-                    size={15}
-                    style={{
-                      position: "absolute",
-                      left: 10,
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      color: "var(--muted)",
-                      pointerEvents: "none",
-                    }}
-                  />
-                  <Input
-                    placeholder="Buscar por nome, projeto ou cidade…"
-                    value={groupSearch}
-                    onChange={(e) => setGroupSearch(e.target.value)}
-                    style={{ paddingLeft: 34 }}
-                  />
-                </div>
-              </Field>
+            <div className="chat-sidebar-list-header">
+              <span className="chat-sidebar-list-title">Seus canais</span>
+              <span className="chat-sidebar-list-badge">{filteredGroups.length}</span>
             </div>
 
             <div className="chat-group-list">
               {filteredGroups.length === 0 && (
-                <p className="text-sm text-muted" style={{ padding: "0 14px" }}>
+                <p className="chat-sidebar-empty text-sm text-muted">
                   {chatGroups.length === 0
-                    ? "Nenhum grupo disponível."
-                    : "Nenhum resultado."}
+                    ? "Quando houver grupos ou projetos, eles aparecem aqui."
+                    : "Nada encontrado para esta busca."}
                 </p>
               )}
               {filteredGroups.map((group) => {
@@ -948,22 +963,34 @@ export default function ChatPage() {
                     key={group.id}
                     type="button"
                     onClick={() => selectGroup(group.id)}
-                    className={`chat-group-item ${isActive ? "chat-group-item-active" : ""}`}
+                    className={cn(
+                      "chat-group-item",
+                      isActive && "chat-group-item-active"
+                    )}
                   >
-                    <ChatChannelGlyph isProject={isProjectGroup} size={15} />
-                    <span className="chat-group-label-col min-w-0 flex-1">
-                      <span className="chat-group-label truncate">{label}</span>
-                      {locationLine ? (
-                        <span className="chat-group-sublabel truncate">
-                          <MapPin size={10} className="flex-shrink-0" aria-hidden />
-                          <span className="truncate">{locationLine}</span>
+                    <ChatChannelGlyph isProject={isProjectGroup} size={18} />
+                    <div className="chat-group-item-body">
+                      <span className="chat-group-item-title truncate">{label}</span>
+                      <div className="chat-group-item-foot">
+                        <span
+                          className={cn(
+                            "chat-type-pill",
+                            isProjectGroup ? "chat-type-pill-project" : "chat-type-pill-group"
+                          )}
+                        >
+                          {isProjectGroup ? "Projeto" : "Grupo"}
                         </span>
-                      ) : null}
-                    </span>
-                    <Badge variant={isProjectGroup ? "info" : "neutral"}>
-                      {isProjectGroup ? "Projeto" : "Grupo"}
-                    </Badge>
-                    {isMuted && <Badge variant="warning">Silenciado</Badge>}
+                        {locationLine ? (
+                          <span className="chat-group-location truncate">
+                            <MapPin size={11} strokeWidth={1.75} aria-hidden />
+                            {locationLine}
+                          </span>
+                        ) : null}
+                        {isMuted ? (
+                          <span className="chat-type-pill chat-type-pill-muted">Silenciado</span>
+                        ) : null}
+                      </div>
+                    </div>
                   </button>
                 );
               })}
@@ -976,92 +1003,105 @@ export default function ChatPage() {
             style={{ display: showChat ? "flex" : "none" }}
           >
             <header className="chat-thread-header">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                {isNarrow && (
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    onClick={() => setMobilePanel("list")}
-                    title="Voltar às conversas"
-                    className="shrink-0"
-                  >
-                    <ChevronLeft size={18} />
-                  </Button>
-                )}
-                <div className="chat-thread-channel-icon">
-                  <ChatChannelGlyph
-                    isProject={!!selectedGroup?.project_id}
-                    size={21}
-                    className="chat-thread-glyph-lg"
-                  />
+              <div className="chat-thread-header-main">
+                <div className="chat-thread-lead">
+                  {isNarrow && (
+                    <button
+                      type="button"
+                      className="chat-toolbar-btn chat-toolbar-btn-back"
+                      onClick={() => setMobilePanel("list")}
+                      title="Voltar às conversas"
+                    >
+                      <ChevronLeft size={20} strokeWidth={1.75} />
+                    </button>
+                  )}
+                  <div className="chat-thread-channel-icon">
+                    <ChatChannelGlyph
+                      isProject={!!selectedGroup?.project_id}
+                      size={22}
+                      className="chat-thread-glyph-lg"
+                    />
+                  </div>
+                  <div className="chat-thread-titles min-w-0">
+                    <h2 className="chat-thread-title m-0 truncate">{channelTitle}</h2>
+                    <p className="chat-thread-subtitle m-0 truncate">
+                      {channelSubtitle || "Selecione um canal na lista ao lado."}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="chat-thread-meta m-0">
-                    {selectedGroup?.project_id ? "Canal do projeto" : "Grupo de conversa"}
-                  </p>
-                  <h2 className="chat-thread-title m-0 truncate">{channelTitle}</h2>
+
+                <div className="chat-header-toolbar">
+                  <div className="chat-toolbar-cluster">
+                    <button
+                      type="button"
+                      className={cn(
+                        "chat-toolbar-btn",
+                        showMembersPanel && "chat-toolbar-btn-active"
+                      )}
+                      disabled={!selectedGroupId}
+                      onClick={() => setShowMembersPanel((p) => !p)}
+                      title={
+                        showMembersPanel
+                          ? "Fechar painel de participantes"
+                          : "Participantes e convites"
+                      }
+                    >
+                      <Users size={18} strokeWidth={1.75} />
+                      <span className="chat-toolbar-btn-caption">
+                        {selectedGroupId ? groupMembers.length : "—"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "chat-toolbar-btn",
+                        selectedGroupMuted && "chat-toolbar-btn-muted"
+                      )}
+                      disabled={!selectedGroupId}
+                      onClick={() => selectedGroupId && toggleMuteGroup(selectedGroupId)}
+                      title={
+                        selectedGroupMuted
+                          ? "Reativar notificações deste canal"
+                          : "Silenciar notificações deste canal"
+                      }
+                    >
+                      {selectedGroupMuted ? (
+                        <BellOff size={18} strokeWidth={1.75} />
+                      ) : (
+                        <Bell size={18} strokeWidth={1.75} />
+                      )}
+                    </button>
+                    {notificationPermission !== "granted" && (
+                      <button
+                        type="button"
+                        className="chat-toolbar-btn"
+                        onClick={() => void requestBrowserNotificationPermission()}
+                        title="Permitir alertas do navegador para novas mensagens"
+                      >
+                        <Bell size={18} strokeWidth={1.75} />
+                        <span className="chat-toolbar-btn-caption chat-toolbar-btn-caption-wide">
+                          Alertas
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="chat-toolbar-btn"
+                      disabled={!selectedGroupId}
+                      onClick={() => void handleExportChatPdf()}
+                      title="Exportar histórico em PDF"
+                    >
+                      <Download size={18} strokeWidth={1.75} />
+                      <span className="chat-toolbar-btn-caption chat-toolbar-btn-caption-wide">
+                        PDF
+                      </span>
+                    </button>
+                  </div>
+                  <div className="chat-live-status" title="Mensagens sincronizadas em tempo real">
+                    <span className="chat-live-pulse" aria-hidden />
+                    <span>Ao vivo</span>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  leftIcon={<Users size={14} />}
-                  onClick={() => setShowMembersPanel((prev) => !prev)}
-                  disabled={!selectedGroupId}
-                  title={
-                    showMembersPanel
-                      ? "Ocultar participantes"
-                      : "Ver e convidar participantes"
-                  }
-                >
-                  {selectedGroupId
-                    ? `${groupMembers.length} ${
-                        groupMembers.length === 1 ? "pessoa" : "pessoas"
-                      }`
-                    : "—"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  leftIcon={selectedGroupMuted ? <BellOff size={14} /> : <Bell size={14} />}
-                  onClick={() => selectedGroupId && toggleMuteGroup(selectedGroupId)}
-                  disabled={!selectedGroupId}
-                  title={
-                    selectedGroupMuted
-                      ? "Reativar notificações deste grupo"
-                      : "Silenciar notificações deste grupo"
-                  }
-                >
-                  {selectedGroupMuted ? "Silenciado" : "Silenciar"}
-                </Button>
-                {notificationPermission !== "granted" && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    leftIcon={<Bell size={14} />}
-                    onClick={() => {
-                      requestBrowserNotificationPermission();
-                    }}
-                    title="Permitir notificações no navegador"
-                  >
-                    Ativar pop-up
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  leftIcon={<FileDown size={14} />}
-                  onClick={handleExportChatPdf}
-                  disabled={!selectedGroupId}
-                  title="Baixar histórico em PDF (A4, páginas numeradas)"
-                >
-                  Exportar PDF
-                </Button>
-                <Badge variant="success" dot className="shrink-0">
-                  <Radio size={11} style={{ marginRight: 4 }} />
-                  Ao vivo
-                </Badge>
               </div>
             </header>
 
@@ -1300,7 +1340,7 @@ export default function ChatPage() {
                                         </span>
                                         <span className="chat-attachment-size">
                                           {formatFileSize(attachment.size)}
-                                          <ExternalLink size={11} />
+                                          <ExternalLink size={11} strokeWidth={1.75} />
                                         </span>
                                       </span>
                                     </a>
@@ -1345,13 +1385,13 @@ export default function ChatPage() {
                         className="chat-selected-file-remove"
                         title="Remover anexo"
                       >
-                        <X size={13} />
+                        <X size={13} strokeWidth={1.75} />
                       </button>
                     </div>
                   ))}
                 </div>
               )}
-              <div className="chat-composer-inner">
+              <div className="chat-composer-panel">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1360,44 +1400,56 @@ export default function ChatPage() {
                   className="hidden"
                   onChange={handlePickFiles}
                 />
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!selectedGroupId || sending}
-                  title="Anexar fotos, vídeos, prints e arquivos"
-                  className="chat-attach-button"
-                >
-                  <Paperclip size={17} />
-                </Button>
-                <Textarea
-                  placeholder={
-                    selectedGroupId
-                      ? "Mensagem, print, foto, vídeo ou arquivo..."
-                      : "Selecione um canal para conversar"
-                  }
-                  value={content}
-                  disabled={!selectedGroupId}
-                  onChange={(e) => setContent(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
+                <div className="chat-composer-inner">
+                  <button
+                    type="button"
+                    className="chat-composer-attach"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={!selectedGroupId || sending}
+                    title="Anexar arquivos, imagens ou vídeos"
+                  >
+                    <Paperclip size={20} strokeWidth={1.75} />
+                  </button>
+                  <Textarea
+                    placeholder={
+                      selectedGroupId
+                        ? "Escreva uma mensagem… (Enter envia, Shift+Enter nova linha)"
+                        : "Selecione um canal para começar"
                     }
-                  }}
-                  className="chat-composer-input"
-                  style={{ minHeight: 48, maxHeight: 140 }}
-                />
-                <Button
-                  onClick={handleSendMessage}
-                  loading={sending}
-                  disabled={!selectedGroupId || (!content.trim() && selectedFiles.length === 0)}
-                  className="chat-composer-send"
-                  leftIcon={!sending ? <Send size={16} /> : undefined}
-                >
-                  Enviar
-                </Button>
+                    value={content}
+                    disabled={!selectedGroupId}
+                    onChange={(e) => setContent(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    className="chat-composer-input"
+                    rows={1}
+                    style={{ minHeight: 52, maxHeight: 160 }}
+                  />
+                  <button
+                    type="button"
+                    className="chat-composer-send-fab"
+                    onClick={() => void handleSendMessage()}
+                    disabled={
+                      !selectedGroupId ||
+                      sending ||
+                      (!content.trim() && selectedFiles.length === 0)
+                    }
+                    title="Enviar mensagem"
+                  >
+                    {sending ? (
+                      <span className="chat-send-loading" aria-hidden />
+                    ) : (
+                      <Send size={18} strokeWidth={1.75} />
+                    )}
+                  </button>
+                </div>
+                <p className="chat-composer-hint">
+                  Mensagens em tempo real · até 8 anexos · máx. 50 MB por arquivo
+                </p>
               </div>
             </footer>
           </main>
@@ -1461,108 +1513,313 @@ export default function ChatPage() {
       <style>{`
         .chat-shell-premium {
           overflow: hidden;
-          border-radius: 18px;
-          border: 1px solid var(--border);
-          box-shadow: var(--shadow-sm);
+          border-radius: 20px;
+          border: 1px solid color-mix(in srgb, var(--border) 92%, var(--foreground));
+          box-shadow:
+            0 1px 0 color-mix(in srgb, var(--border) 55%, transparent),
+            0 18px 48px color-mix(in srgb, var(--foreground) 6%, transparent);
           height: calc(100vh - 200px);
           min-height: 520px;
-          max-height: calc(100vh - 140px);
+          max-height: calc(100vh - 132px);
+          background: var(--surface);
         }
 
         .chat-grid-premium {
           display: grid;
-          grid-template-columns: minmax(260px, 300px) 1fr;
+          grid-template-columns: minmax(272px, 312px) 1fr;
           height: 100%;
           min-height: 0;
         }
 
         .chat-sidebar-premium {
+          display: flex;
           flex-direction: column;
           min-height: 0;
           min-width: 0;
-          background: var(--surface-2);
-          border-right: 1px solid var(--border);
+          background: color-mix(in srgb, var(--surface-2) 88%, var(--surface));
+          border-right: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
         }
 
-        .chat-sidebar-head {
+        .chat-sidebar-header {
+          padding: 18px 16px 14px;
+        }
+
+        .chat-sidebar-brand-row {
           display: flex;
           align-items: flex-start;
-          justify-content: space-between;
-          gap: 10px;
-          padding: 16px 14px 12px;
-          border-bottom: 1px solid var(--border);
-        }
-
-        .chat-sidebar-brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          min-width: 0;
+          gap: 12px;
         }
 
         .chat-sidebar-icon-wrap {
-          width: 40px;
-          height: 40px;
-          border-radius: 12px;
+          width: 44px;
+          height: 44px;
+          border-radius: 14px;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: color-mix(in srgb, var(--primary) 12%, transparent);
+          background: linear-gradient(
+            145deg,
+            color-mix(in srgb, var(--primary) 16%, var(--surface)),
+            color-mix(in srgb, var(--primary) 8%, var(--surface-2))
+          );
           color: var(--primary);
+          border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
           flex-shrink: 0;
+          box-shadow: 0 1px 0 color-mix(in srgb, var(--primary) 12%, transparent);
         }
 
         .chat-sidebar-title {
-          font-size: 15px;
+          margin: 0;
+          font-size: 17px;
           font-weight: 800;
-          letter-spacing: -0.02em;
-          line-height: 1.2;
+          letter-spacing: -0.03em;
+          line-height: 1.15;
+          color: var(--foreground);
         }
 
         .chat-sidebar-sub {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 5px 0 0;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--muted-fg);
+          line-height: 1.3;
+        }
+
+        .chat-sidebar-stat-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 999px;
+          background: #22c55e;
+          box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 28%, transparent);
+          flex-shrink: 0;
+        }
+
+        .chat-sidebar-new-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 0 12px;
+          min-height: 38px;
+          border-radius: 11px;
+          border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
+          background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+          color: var(--primary);
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+          flex-shrink: 0;
+        }
+
+        .chat-sidebar-new-btn:hover {
+          background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+          border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+        }
+
+        .chat-sidebar-new-btn:active {
+          transform: scale(0.98);
+        }
+
+        .chat-sidebar-new-btn-label {
+          display: none;
+        }
+
+        @media (min-width: 340px) {
+          .chat-sidebar-new-btn-label {
+            display: inline;
+          }
+        }
+
+        .chat-sidebar-search-block {
+          padding: 0 14px 14px;
+          border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+        }
+
+        .chat-sidebar-field-label {
+          display: block;
+          font-size: 10px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.07em;
+          color: var(--subtle-fg);
+          margin: 0 0 8px 2px;
+        }
+
+        .chat-sidebar-search-shell {
+          position: relative;
+          display: flex;
+          align-items: center;
+          border-radius: 12px;
+          border: 1px solid var(--border);
+          background: var(--surface);
+          box-shadow: inset 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .chat-sidebar-search-shell:focus-within {
+          border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+          box-shadow:
+            inset 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
+            0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+        }
+
+        .chat-sidebar-search-glyph {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--subtle-fg);
+          pointer-events: none;
+        }
+
+        .chat-sidebar-search-input {
+          width: 100%;
+          border: none !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          padding: 10px 12px 10px 40px !important;
+          font-size: 13px;
+        }
+
+        .chat-sidebar-list-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 16px 8px;
+          gap: 10px;
+        }
+
+        .chat-sidebar-list-title {
           font-size: 11px;
-          color: var(--muted);
-          margin-top: 2px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: var(--muted-fg);
+        }
+
+        .chat-sidebar-list-badge {
+          font-size: 10px;
+          font-weight: 800;
+          font-variant-numeric: tabular-nums;
+          padding: 2px 9px;
+          border-radius: 999px;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          color: var(--muted-fg);
+        }
+
+        .chat-sidebar-empty {
+          padding: 8px 16px 16px;
+          margin: 0;
+          line-height: 1.45;
         }
 
         .chat-group-list {
           flex: 1;
           overflow-y: auto;
-          padding: 4px 10px 14px;
+          padding: 4px 10px 16px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 5px;
           min-height: 0;
         }
 
         .chat-group-item {
           display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 12px;
-          border-radius: 12px;
+          align-items: flex-start;
+          gap: 11px;
+          padding: 11px 12px;
+          border-radius: 14px;
           border: 1px solid transparent;
-          background: transparent;
+          background: color-mix(in srgb, var(--surface) 45%, transparent);
           cursor: pointer;
           text-align: left;
-          font-size: 13px;
-          font-weight: 600;
           color: var(--foreground);
-          transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+          transition:
+            background 0.16s ease,
+            border-color 0.16s ease,
+            box-shadow 0.16s ease,
+            transform 0.12s ease;
         }
 
         .chat-group-item:hover {
-          background: color-mix(in srgb, var(--primary) 6%, transparent);
-          border-color: color-mix(in srgb, var(--border) 80%, transparent);
+          background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+          border-color: color-mix(in srgb, var(--border) 90%, var(--primary));
         }
 
         .chat-group-item-active {
-          background: var(--primary-soft) !important;
-          border-color: color-mix(in srgb, var(--primary) 35%, transparent) !important;
-          color: var(--primary);
+          background: color-mix(in srgb, var(--primary) 11%, var(--surface)) !important;
+          border-color: color-mix(in srgb, var(--primary) 38%, var(--border)) !important;
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 15%, transparent);
         }
 
-        .chat-modal-backdrop {
+        .chat-group-item-body {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+
+        .chat-group-item-title {
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: -0.01em;
+          line-height: 1.25;
+        }
+
+        .chat-group-item-foot {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 6px 8px;
+        }
+
+        .chat-type-pill {
+          font-size: 10px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          padding: 2px 8px;
+          border-radius: 999px;
+          border: 1px solid var(--border);
+        }
+
+        .chat-type-pill-project {
+          color: #0d9488;
+          border-color: color-mix(in srgb, #0d9488 35%, var(--border));
+          background: color-mix(in srgb, #0d9488 10%, var(--surface));
+        }
+
+        .chat-type-pill-group {
+          color: #6366f1;
+          border-color: color-mix(in srgb, #6366f1 35%, var(--border));
+          background: color-mix(in srgb, #6366f1 10%, var(--surface));
+        }
+
+        .chat-type-pill-muted {
+          color: var(--warning-fg);
+          border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+          background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+        }
+
+        .chat-group-location {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--muted-fg);
+          max-width: 100%;
+        }
+
+        .chat-group-item-active .chat-group-item-title {
+          color: var(--foreground);
+        }
           position: fixed;
           inset: 0;
           z-index: 10050;
@@ -1681,6 +1938,7 @@ export default function ChatPage() {
         }
 
         .chat-main-premium {
+          display: flex;
           flex-direction: column;
           min-width: 0;
           min-height: 0;
@@ -1688,46 +1946,174 @@ export default function ChatPage() {
         }
 
         .chat-thread-header {
-          padding: 14px 18px;
-          border-bottom: 1px solid var(--border);
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
           flex-shrink: 0;
-          background: var(--surface);
+          padding: 0;
+          border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+          background: linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--surface) 98%, var(--primary)),
+            var(--surface)
+          );
         }
 
-        .chat-thread-meta {
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--muted);
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
+        .chat-thread-header-main {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 16px 20px 14px;
+          flex-wrap: wrap;
+        }
+
+        .chat-thread-lead {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+          flex: 1;
+        }
+
+        .chat-thread-titles {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
         }
 
         .chat-thread-title {
-          font-size: 17px;
+          font-size: 18px;
           font-weight: 800;
-          letter-spacing: -0.02em;
+          letter-spacing: -0.03em;
           line-height: 1.2;
+          color: var(--foreground);
+        }
+
+        .chat-thread-subtitle {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--muted-fg);
+          line-height: 1.35;
+        }
+
+        .chat-header-toolbar {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+
+        .chat-toolbar-cluster {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px;
+          border-radius: 14px;
+          background: color-mix(in srgb, var(--surface-2) 75%, var(--surface));
+          border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+        }
+
+        .chat-toolbar-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          min-height: 38px;
+          padding: 0 11px;
+          border: none;
+          border-radius: 11px;
+          background: transparent;
+          color: var(--muted-fg);
+          cursor: pointer;
+          transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .chat-toolbar-btn:hover:not(:disabled) {
+          background: color-mix(in srgb, var(--foreground) 6%, transparent);
+          color: var(--foreground);
+        }
+
+        .chat-toolbar-btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
+        .chat-toolbar-btn-active {
+          background: color-mix(in srgb, var(--primary) 12%, transparent) !important;
+          color: var(--primary) !important;
+          box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent);
+        }
+
+        .chat-toolbar-btn-muted {
+          color: var(--warning);
+        }
+
+        .chat-toolbar-btn-back {
+          min-width: 40px;
+          padding: 0;
+        }
+
+        .chat-toolbar-btn-caption {
+          font-variant-numeric: tabular-nums;
+          font-size: 11px;
+        }
+
+        .chat-toolbar-btn-caption-wide {
+          display: none;
+        }
+
+        @media (min-width: 900px) {
+          .chat-toolbar-btn-caption-wide {
+            display: inline;
+          }
+        }
+
+        .chat-live-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          border-radius: 999px;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #22c55e;
+          background: color-mix(in srgb, #22c55e 10%, var(--surface));
+          border: 1px solid color-mix(in srgb, #22c55e 28%, var(--border));
+        }
+
+        .chat-live-pulse {
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: #22c55e;
+          box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 35%, transparent);
+          animation: chat-live-blink 2.4s ease-in-out infinite;
+        }
+
+        @keyframes chat-live-blink {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.65; transform: scale(0.92); }
         }
 
         .chat-thread-body {
           flex: 1;
           min-height: 0;
           overflow-y: auto;
-          background:
-            linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 86%, var(--primary) 4%), var(--surface-2)),
-            var(--surface-2);
+          background: radial-gradient(
+              ellipse 120% 80% at 50% 0%,
+              color-mix(in srgb, var(--primary) 5%, var(--surface-2)),
+              var(--surface-2)
+            );
         }
 
         .chat-members-panel {
           flex-shrink: 0;
-          border-bottom: 1px solid var(--border);
-          background: color-mix(in srgb, var(--surface) 92%, var(--primary) 3%);
-          padding: 14px 18px;
-          box-shadow: var(--shadow-xs);
+          border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+          background: color-mix(in srgb, var(--surface) 97%, var(--primary));
+          padding: 16px 20px;
+          box-shadow: inset 0 1px 0 color-mix(in srgb, var(--border) 45%, transparent);
         }
 
         .chat-members-head {
@@ -1872,8 +2258,8 @@ export default function ChatPage() {
         }
 
         .chat-messages-stack {
-          padding: 20px 18px 28px;
-          max-width: 920px;
+          padding: 24px 22px 32px;
+          max-width: 780px;
           margin: 0 auto;
         }
 
@@ -1881,25 +2267,25 @@ export default function ChatPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          margin: 16px 0 12px;
+          margin: 22px 0 16px;
         }
 
         .chat-date-rule span {
           font-size: 11px;
           font-weight: 700;
-          text-transform: capitalize;
-          color: var(--muted);
-          padding: 4px 12px;
+          color: var(--subtle-fg);
+          padding: 6px 14px;
           border-radius: 999px;
-          background: color-mix(in srgb, var(--surface) 88%, var(--border));
-          border: 1px solid var(--border);
+          background: color-mix(in srgb, var(--surface) 55%, var(--surface-2));
+          border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+          box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 40%, transparent);
         }
 
         .chat-msg-row {
           display: flex;
           justify-content: flex-start;
-          gap: 10px;
-          margin-bottom: 6px;
+          gap: 12px;
+          margin-bottom: 10px;
         }
 
         .chat-msg-row-mine {
@@ -1914,7 +2300,7 @@ export default function ChatPage() {
         }
 
         .chat-bubble-wrap {
-          max-width: min(78%, 560px);
+          max-width: min(82%, 520px);
         }
 
         .chat-bubble-wrap-compact {
@@ -1926,35 +2312,41 @@ export default function ChatPage() {
         }
 
         .chat-bubble-author {
-          font-size: 12px;
-          font-weight: 700;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
           color: var(--primary);
-          margin: 0 4px 4px;
+          margin: 0 6px 6px;
         }
 
         .chat-bubble {
-          border-radius: 16px;
-          padding: 10px 14px 8px;
-          box-shadow: var(--shadow-xs);
+          border-radius: 18px;
+          padding: 11px 15px 9px;
+          box-shadow: 0 2px 10px color-mix(in srgb, var(--foreground) 5%, transparent);
           position: relative;
         }
 
         .chat-bubble-theirs {
           background: var(--surface);
-          border: 1px solid var(--border);
-          border-bottom-left-radius: 5px;
+          border: 1px solid color-mix(in srgb, var(--border) 92%, var(--foreground));
+          border-bottom-left-radius: 6px;
         }
 
         .chat-bubble-mine {
-          background: linear-gradient(145deg, var(--primary), color-mix(in srgb, var(--primary) 78%, #1e3a5f));
+          background: linear-gradient(
+            155deg,
+            var(--primary),
+            color-mix(in srgb, var(--primary) 72%, #0f172a)
+          );
           color: #fff;
-          border-bottom-right-radius: 5px;
-          border: none;
+          border-bottom-right-radius: 6px;
+          border: 1px solid color-mix(in srgb, var(--primary) 55%, #1e293b);
         }
 
         .chat-bubble-text {
           font-size: 14px;
-          line-height: 1.5;
+          line-height: 1.55;
           white-space: pre-wrap;
           word-break: break-word;
         }
@@ -1963,8 +2355,9 @@ export default function ChatPage() {
           display: block;
           text-align: right;
           font-size: 10px;
-          opacity: 0.75;
-          margin-top: 6px;
+          font-weight: 600;
+          opacity: 0.72;
+          margin-top: 8px;
           font-variant-numeric: tabular-nums;
         }
 
@@ -2044,27 +2437,119 @@ export default function ChatPage() {
 
         .chat-composer {
           flex-shrink: 0;
-          padding: 14px 16px 16px;
-          border-top: 1px solid var(--border);
-          background: var(--surface);
+          padding: 12px 18px 18px;
+          border-top: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+          background: color-mix(in srgb, var(--surface) 96%, var(--surface-2));
+        }
+
+        .chat-composer-panel {
+          max-width: 780px;
+          margin: 0 auto;
         }
 
         .chat-composer-inner {
           display: flex;
           align-items: flex-end;
           gap: 10px;
-          max-width: 920px;
-          margin: 0 auto;
-          padding: 4px;
-          border-radius: 16px;
-          border: 1px solid var(--border);
-          background: var(--surface-2);
-          box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 50%, transparent);
+          padding: 6px 8px 6px 10px;
+          border-radius: 18px;
+          border: 1px solid color-mix(in srgb, var(--border) 88%, var(--foreground));
+          background: var(--surface);
+          box-shadow:
+            0 1px 0 color-mix(in srgb, var(--border) 35%, transparent),
+            inset 0 1px 0 color-mix(in srgb, var(--foreground) 3%, transparent);
+        }
+
+        .chat-composer-inner:focus-within {
+          border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+          box-shadow:
+            0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent),
+            inset 0 1px 0 color-mix(in srgb, var(--foreground) 3%, transparent);
+        }
+
+        .chat-composer-attach {
+          flex-shrink: 0;
+          width: 42px;
+          height: 42px;
+          border: none;
+          border-radius: 13px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: color-mix(in srgb, var(--surface-2) 75%, var(--surface));
+          color: var(--muted-fg);
+          cursor: pointer;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .chat-composer-attach:hover:not(:disabled) {
+          background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+          color: var(--primary);
+        }
+
+        .chat-composer-attach:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+
+        .chat-composer-send-fab {
+          flex-shrink: 0;
+          width: 46px;
+          height: 46px;
+          border: none;
+          border-radius: 999px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: linear-gradient(
+            145deg,
+            var(--primary),
+            color-mix(in srgb, var(--primary) 75%, #0f172a)
+          );
+          color: #fff;
+          cursor: pointer;
+          box-shadow: 0 4px 14px color-mix(in srgb, var(--primary) 35%, transparent);
+          transition: transform 0.12s ease, filter 0.15s ease, opacity 0.15s ease;
+        }
+
+        .chat-composer-send-fab:hover:not(:disabled) {
+          filter: brightness(1.06);
+        }
+
+        .chat-composer-send-fab:active:not(:disabled) {
+          transform: scale(0.96);
+        }
+
+        .chat-composer-send-fab:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+          box-shadow: none;
+        }
+
+        .chat-send-loading {
+          width: 18px;
+          height: 18px;
+          border-radius: 999px;
+          border: 2px solid rgba(255, 255, 255, 0.35);
+          border-top-color: #fff;
+          animation: chat-spin 0.75s linear infinite;
+        }
+
+        @keyframes chat-spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .chat-composer-hint {
+          margin: 10px 6px 0;
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--subtle-fg);
+          line-height: 1.35;
         }
 
         .chat-selected-files {
-          max-width: 920px;
-          margin: 0 auto 8px;
+          max-width: 780px;
+          margin: 0 auto 10px;
           display: flex;
           flex-wrap: wrap;
           gap: 8px;
@@ -2120,22 +2605,23 @@ export default function ChatPage() {
           background: var(--danger-soft);
         }
 
-        .chat-attach-button {
-          margin: 8px 0 8px 4px;
-          flex-shrink: 0;
-        }
-
         .chat-composer-input {
           flex: 1;
           border: none !important;
           background: transparent !important;
           box-shadow: none !important;
           resize: none;
+          font-size: 14px;
+          line-height: 1.45;
+          padding: 11px 4px !important;
+        }
+
+        .chat-attach-button {
+          display: none;
         }
 
         .chat-composer-send {
-          margin: 4px 4px 4px 0;
-          flex-shrink: 0;
+          display: none;
         }
 
         @media (max-width: 768px) {
@@ -2145,21 +2631,34 @@ export default function ChatPage() {
           .chat-shell-premium {
             height: calc(100vh - 180px);
             min-height: 420px;
+            border-radius: 16px;
           }
           .chat-bubble-wrap {
-            max-width: 88%;
+            max-width: 90%;
           }
-          .chat-thread-header {
-            align-items: flex-start;
+          .chat-thread-header-main {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .chat-header-toolbar {
+            width: 100%;
+            justify-content: space-between;
+          }
+          .chat-toolbar-cluster {
+            flex: 1;
+            justify-content: flex-start;
+            flex-wrap: wrap;
           }
           .chat-members-grid {
             grid-template-columns: 1fr;
           }
           .chat-composer-inner {
             gap: 6px;
+            padding: 5px 6px;
           }
-          .chat-composer-send span:last-child {
-            display: none;
+          .chat-composer-send-fab {
+            width: 44px;
+            height: 44px;
           }
         }
       `}</style>
