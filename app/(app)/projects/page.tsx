@@ -45,7 +45,7 @@ import {
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/ui/page-header";
@@ -513,6 +513,11 @@ export default function ProjectsPage() {
   const [newManagerId, setNewManagerId] = useState("");
   const [newCoordinatorId, setNewCoordinatorId] = useState("");
   const [newLeaderId, setNewLeaderId] = useState("");
+  const [newMunicipality, setNewMunicipality] = useState("");
+  const [newState, setNewState] = useState("MG");
+  const [newDiscipline, setNewDiscipline] = useState("");
+  const [newContractNumber, setNewContractNumber] = useState("");
+  const [newNotes, setNewNotes] = useState("");
   const [creating, setCreating] = useState(false);
 
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
@@ -745,6 +750,19 @@ export default function ProjectsPage() {
 
   // ─── CRUD handlers ─────────────────────────────────────────────────────────
 
+  function resetNewProjectForm() {
+    setNewProjectName("");
+    setNewPlannedEndTarget("");
+    setNewManagerId("");
+    setNewCoordinatorId("");
+    setNewLeaderId("");
+    setNewMunicipality("");
+    setNewState("MG");
+    setNewDiscipline("");
+    setNewContractNumber("");
+    setNewNotes("");
+  }
+
   async function handleCreateProject() {
     if (!newProjectName.trim()) return;
     const profile = await getCurrentProfile();
@@ -755,10 +773,9 @@ export default function ProjectsPage() {
     setCreating(true);
 
     const managerId = newManagerId || profile.id;
-
     const target = newPlannedEndTarget.trim().slice(0, 10) || null;
 
-    const baseInsert = {
+    const baseInsert: Record<string, unknown> = {
       name: newProjectName,
       planned_end_date: mergeProjectPlannedEnd(target, null),
       actual_end_date: null,
@@ -766,21 +783,24 @@ export default function ProjectsPage() {
       coordinator_id: newCoordinatorId || null,
       leader_id: newLeaderId || null,
       created_by: profile.id,
+      municipality: newMunicipality.trim() || null,
+      state: newState || null,
+      discipline: newDiscipline || null,
     };
-    const withTarget = target
-      ? { ...baseInsert, planned_end_target: target }
-      : baseInsert;
+    if (target) baseInsert.planned_end_target = target;
 
     let { data: project, error } = await supabase
       .from("projects")
-      .insert(withTarget)
+      .insert(baseInsert)
       .select("id")
       .single();
 
     if (error && target && isMissingPlannedEndTargetColumn(error)) {
+      const fallback = { ...baseInsert };
+      delete fallback.planned_end_target;
       ({ data: project, error } = await supabase
         .from("projects")
-        .insert(baseInsert)
+        .insert(fallback)
         .select("id")
         .single());
     }
@@ -808,11 +828,7 @@ export default function ProjectsPage() {
       showErrorToast("Projeto criado com pendência", getSupabaseErrorMessage(membersError));
     }
 
-    setNewProjectName("");
-    setNewPlannedEndTarget("");
-    setNewManagerId("");
-    setNewCoordinatorId("");
-    setNewLeaderId("");
+    resetNewProjectForm();
     setShowNewForm(false);
 
     await reloadAll({ silent: true });
@@ -2149,129 +2165,307 @@ export default function ProjectsPage() {
       </div>}
 
       {/* ─── Form de novo projeto ───────────────────────────── */}
+      {/* ─── Modal: Novo projeto ──────────────────────────────── */}
       {activeProjectsTab === "todos" && podeCriarProjeto && showNewForm && (
-        <Card className="mb-4" padded={false}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(2, 6, 23, 0.55)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 60,
+            animation: "fadeIn 120ms ease-out",
+          }}
+          onClick={() => { if (!creating) { setShowNewForm(false); resetNewProjectForm(); } }}
+        >
           <div
+            onClick={(e) => e.stopPropagation()}
             style={{
-              padding: "14px 18px",
-              borderBottom: "1px solid var(--border)",
-              background:
-                "linear-gradient(90deg, var(--primary-soft), transparent)",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
+              width: "100%",
+              maxWidth: 660,
+              maxHeight: "92vh",
+              overflowY: "auto",
+              background: "var(--background)",
+              borderRadius: "var(--radius-xl)",
+              boxShadow: "var(--shadow-lg)",
+              border: "1px solid var(--border)",
+              animation: "popIn 160ms ease-out",
             }}
           >
+            {/* Header */}
             <div
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                background: "var(--primary-soft)",
-                color: "var(--primary)",
+                padding: "18px 22px",
+                borderBottom: "1px solid var(--border)",
+                background: "linear-gradient(135deg, var(--primary-soft) 0%, transparent 60%)",
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 14,
               }}
             >
-              <Sparkles size={16} />
+              <div className="flex items-center gap-3">
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 11,
+                    background: "var(--primary)",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    boxShadow: "0 4px 12px color-mix(in srgb, var(--primary) 35%, transparent)",
+                  }}
+                >
+                  <FolderKanban size={20} />
+                </div>
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: 17,
+                      fontWeight: 700,
+                      color: "var(--foreground)",
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    Novo projeto
+                  </h2>
+                  <p
+                    style={{
+                      margin: "3px 0 0",
+                      fontSize: 13,
+                      color: "var(--muted-fg)",
+                    }}
+                  >
+                    Preencha as informações básicas — detalhes técnicos podem ser adicionados depois.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => { setShowNewForm(false); resetNewProjectForm(); }}
+                disabled={creating}
+              >
+                <X size={16} />
+              </Button>
             </div>
-            <div>
-              <div className="card-title">Novo projeto</div>
-              <p className="text-xs text-muted mt-0.5">
-                Responsáveis, nome e meta de entrega para quem enxerga o projeto por fora.
-              </p>
-            </div>
-          </div>
-          <div className="card-padded">
-            <div className="flex flex-col gap-3">
+
+            {/* Body */}
+            <div style={{ padding: "20px 22px" }} className="flex flex-col gap-4">
+              {/* Nome */}
               <Field label="Nome do projeto">
                 <Input
-                  placeholder="Ex.: Edifício Aurora — fase 1"
+                  autoFocus
+                  placeholder="Ex.: Sistema de Ampliação — Leopoldina/MG"
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleCreateProject();
+                  }}
                 />
               </Field>
-              <Field label="Previsão de término (meta)">
+
+              {/* Disciplina + Localização */}
+              <div className="grid-2">
+                <Field label="Disciplina">
+                  <Select
+                    value={newDiscipline}
+                    onChange={(e) => setNewDiscipline(e.target.value)}
+                  >
+                    <option value="">Selecione</option>
+                    <option value="saneamento">Saneamento</option>
+                    <option value="ampliacao">Ampliação</option>
+                    <option value="estrutural">Estrutural</option>
+                    <option value="hidraulico">Hidráulico</option>
+                    <option value="eletrico">Elétrico</option>
+                    <option value="civil">Civil</option>
+                    <option value="outro">Outro</option>
+                  </Select>
+                </Field>
+                <Field
+                  label="Previsão de término"
+                  help="O cronograma usará o mais tardio entre esta data e os prazos das tarefas."
+                >
+                  <Input
+                    type="date"
+                    value={newPlannedEndTarget}
+                    onChange={(e) => setNewPlannedEndTarget(e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              {/* Município + UF */}
+              <div className="grid-2">
+                <Field label="Município">
+                  <Input
+                    value={newMunicipality}
+                    onChange={(e) => setNewMunicipality(e.target.value)}
+                    placeholder="Ex.: Belo Horizonte"
+                  />
+                </Field>
+                <Field label="UF">
+                  <Select value={newState} onChange={(e) => setNewState(e.target.value)}>
+                    <option value="AC">AC</option>
+                    <option value="AL">AL</option>
+                    <option value="AP">AP</option>
+                    <option value="AM">AM</option>
+                    <option value="BA">BA</option>
+                    <option value="CE">CE</option>
+                    <option value="DF">DF</option>
+                    <option value="ES">ES</option>
+                    <option value="GO">GO</option>
+                    <option value="MA">MA</option>
+                    <option value="MT">MT</option>
+                    <option value="MS">MS</option>
+                    <option value="MG">MG</option>
+                    <option value="PA">PA</option>
+                    <option value="PB">PB</option>
+                    <option value="PR">PR</option>
+                    <option value="PE">PE</option>
+                    <option value="PI">PI</option>
+                    <option value="RJ">RJ</option>
+                    <option value="RN">RN</option>
+                    <option value="RS">RS</option>
+                    <option value="RO">RO</option>
+                    <option value="RR">RR</option>
+                    <option value="SC">SC</option>
+                    <option value="SP">SP</option>
+                    <option value="SE">SE</option>
+                    <option value="TO">TO</option>
+                  </Select>
+                </Field>
+              </div>
+
+              {/* Nº Contrato */}
+              <Field label="Nº do contrato" help="Opcional — identifica o contrato associado a este projeto.">
                 <Input
-                  type="date"
-                  value={newPlannedEndTarget}
-                  onChange={(e) => setNewPlannedEndTarget(e.target.value)}
+                  value={newContractNumber}
+                  onChange={(e) => setNewContractNumber(e.target.value)}
+                  placeholder="Ex.: COPASA-2026-145"
                 />
               </Field>
-              <p className="text-xs text-muted" style={{ marginTop: -6, marginBottom: 0 }}>
-                Esta data conta para relatórios e calendário. O sistema registra também o{" "}
-                <strong>prazo efetivo</strong>: o mais tardio entre esta meta e os prazos das
-                tarefas quando existirem. A{" "}
-                <strong>data real de término</strong> é preenchida quando todas as tarefas
-                forem concluídas.
-              </p>
-              <div
-                className="text-xs text-muted rounded-md px-3 py-2"
+
+              {/* Equipe */}
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "var(--muted-fg)",
+                    marginBottom: 10,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <UsersIcon size={12} />
+                  Equipe responsável
+                </div>
+                <div className="grid-3">
+                  <Field label="Gerente">
+                    <Select
+                      value={newManagerId}
+                      onChange={(e) => setNewManagerId(e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Coordenador">
+                    <Select
+                      value={newCoordinatorId}
+                      onChange={(e) => setNewCoordinatorId(e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Líder">
+                    <Select
+                      value={newLeaderId}
+                      onChange={(e) => setNewLeaderId(e.target.value)}
+                    >
+                      <option value="">Selecione</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              </div>
+
+              {/* Observações */}
+              <Field label="Observações">
+                <Textarea
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  placeholder="Escopo, particularidades, contatos importantes..."
+                  style={{ minHeight: 80 }}
+                />
+              </Field>
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                padding: "16px 22px",
+                borderTop: "1px solid var(--border)",
+                background: "var(--surface)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <span
                 style={{
-                  background: "var(--surface-2)",
-                  border: "1px solid var(--border)",
-                  lineHeight: 1.45,
+                  fontSize: 12,
+                  color: "var(--muted-fg)",
                 }}
               >
-                <strong style={{ color: "var(--foreground)" }}>
-                  Sugestão
-                </strong>
-                · Mesmo antes de criar as tarefas, informe uma previsão quando houver compromisso
-                com cliente ou contrato — evita ficar sem data no cronograma.
-              </div>
-              <div className="grid-3">
-                <Field label="Gerente">
-                  <Select
-                    value={newManagerId}
-                    onChange={(e) => setNewManagerId(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Coordenador">
-                  <Select
-                    value={newCoordinatorId}
-                    onChange={(e) => setNewCoordinatorId(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Líder">
-                  <Select
-                    value={newLeaderId}
-                    onChange={(e) => setNewLeaderId(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
+                Detalhes técnicos (equipe, tarefas, etc.) podem ser adicionados depois.
+              </span>
               <div className="flex gap-2">
-                <Button onClick={handleCreateProject} loading={creating}>
-                  Criar projeto
-                </Button>
-                <Button variant="ghost" onClick={() => setShowNewForm(false)}>
+                <Button
+                  variant="ghost"
+                  onClick={() => { setShowNewForm(false); resetNewProjectForm(); }}
+                  disabled={creating}
+                >
                   Cancelar
+                </Button>
+                <Button
+                  onClick={handleCreateProject}
+                  loading={creating}
+                  disabled={!newProjectName.trim()}
+                >
+                  Criar projeto
                 </Button>
               </div>
             </div>
           </div>
-        </Card>
+        </div>
       )}
 
       {/* ─── Toolbar ──────────────────────────────────────────── */}
