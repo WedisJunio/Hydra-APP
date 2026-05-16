@@ -21,6 +21,13 @@ import {
   BadgeCheck,
   Hourglass,
   ExternalLink,
+  Settings,
+  ChevronRight,
+  ChevronDown,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
+  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,14 +48,15 @@ import {
   parseCustomFieldDefs,
 } from "@/lib/workspaces/spaces-shared";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
-import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
-import { WorkspaceTreeDnD } from "@/components/spaces/workspace-tree";
+import { Badge } from "@/components/ui/badge";
 import { ListItemsSection } from "@/components/spaces/list-items-section";
 import { KanbanColumnsEditor } from "@/components/spaces/kanban-columns-editor";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type UserPrefsPayload = {
   treeExpanded?: Record<string, boolean>;
@@ -63,10 +71,7 @@ const NODE_SELECT_BASIC =
 
 function isColumnMissingError(err: unknown): boolean {
   const m = getSupabaseErrorMessage(err).toLowerCase();
-  return (
-    (m.includes("column") && m.includes("does not exist")) ||
-    m.includes("could not find")
-  );
+  return (m.includes("column") && m.includes("does not exist")) || m.includes("could not find");
 }
 
 type WorkspaceSpace = {
@@ -113,32 +118,13 @@ type ProjectEmbed = NonNullable<WorkspaceNode["projects"]>;
 
 function normalizeProjectEmbed(raw: unknown): ProjectEmbed | null {
   if (!raw) return null;
-  if (Array.isArray(raw)) {
-    const row = raw[0] as ProjectEmbed | undefined;
-    return row ?? null;
-  }
+  if (Array.isArray(raw)) return (raw[0] as ProjectEmbed | undefined) ?? null;
   return raw as ProjectEmbed;
 }
 
-const COLOR_PRESETS = [
-  "#6366f1",
-  "#0d9488",
-  "#2563eb",
-  "#c026d3",
-  "#ea580c",
-  "#ca8a04",
-  "#4f46e5",
-  "#64748b",
-] as const;
+// ─── Space icons ─────────────────────────────────────────────────────────────
 
-/** Ícones sugeridos para o espaço — leitura de fluxo / status de obra ou processo. */
-const SPACE_ICON_KEYS = [
-  "concluido",
-  "em_andamento",
-  "paralisado",
-  "aprovado",
-  "aprovacao",
-] as const;
+const SPACE_ICON_KEYS = ["concluido", "em_andamento", "paralisado", "aprovado", "aprovacao"] as const;
 
 const SPACE_ICON_LABELS: Record<(typeof SPACE_ICON_KEYS)[number], string> = {
   concluido: "Concluído",
@@ -156,7 +142,6 @@ const SPACE_ICON_MAP: Record<string, LucideIcon> = {
   paralisado: PauseCircle,
   aprovado: BadgeCheck,
   aprovacao: Hourglass,
-  /* Legado: espaços criados antes da troca de ícones */
   layers: Layers,
   building2: Building2,
   briefcase: Briefcase,
@@ -167,12 +152,14 @@ const SPACE_ICON_MAP: Record<string, LucideIcon> = {
   sparkles: Sparkles,
 };
 
-function SpaceGlyph({ icon, color, size = 16 }: { icon: string; color: string; size?: number }) {
+function SpaceGlyph({ icon, color, size = 14 }: { icon: string; color: string; size?: number }) {
   const Icon = SPACE_ICON_MAP[icon] ?? PlayCircle;
   return <Icon size={size} style={{ color }} />;
 }
 
 const FALLBACK_SPACE_HEX = "#6366f1" as const;
+
+const COLOR_PRESETS = ["#6366f1", "#0d9488", "#2563eb", "#c026d3", "#ea580c", "#ca8a04", "#4f46e5", "#64748b"] as const;
 
 function normalizePickerHex(v: string | null | undefined): string {
   const s = String(v ?? "").trim();
@@ -184,116 +171,7 @@ function normalizePickerHex(v: string | null | undefined): string {
   return FALLBACK_SPACE_HEX;
 }
 
-function SpaceColorPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (hex: string) => void;
-}) {
-  const nativePickerRef = useRef<HTMLInputElement>(null);
-  const pickerHex = normalizePickerHex(value);
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-2">
-        {COLOR_PRESETS.map((c) => {
-          const active = value.toLowerCase() === c.toLowerCase();
-          return (
-            <button
-              key={c}
-              type="button"
-              title={c}
-              onClick={() => onChange(c)}
-              className="flex-shrink-0 rounded-full transition-transform hover:scale-110 focus:outline-none"
-              style={{
-                width: 30,
-                height: 30,
-                background: c,
-                border: active
-                  ? "3px solid var(--foreground)"
-                  : "2px solid color-mix(in srgb, var(--border) 80%, transparent)",
-                boxShadow: active ? "0 0 0 2px color-mix(in srgb, var(--primary) 45%, transparent)" : undefined,
-              }}
-              aria-label={`Cor ${c}`}
-              aria-pressed={active}
-            />
-          );
-        })}
-      </div>
-      <div className="relative flex min-w-0 items-center gap-2">
-        <input
-          ref={nativePickerRef}
-          type="color"
-          value={pickerHex}
-          onChange={(e) => onChange(e.target.value.toLowerCase())}
-          style={{
-            position: "absolute",
-            left: -10000,
-            width: 1,
-            height: 1,
-            opacity: 0,
-          }}
-          tabIndex={-1}
-          aria-hidden
-        />
-        <button
-          type="button"
-          className="h-10 w-11 flex-shrink-0 cursor-pointer rounded-lg border border-[var(--border)] p-0 focus:outline-none"
-          style={{
-            background: pickerHex,
-            boxShadow: "var(--shadow-xs)",
-          }}
-          title="Cor personalizada"
-          aria-label="Abrir seletor de cor"
-          onClick={() => nativePickerRef.current?.click()}
-        />
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="min-w-0 flex-1 font-mono text-xs"
-          placeholder="#6366f1"
-          spellCheck={false}
-        />
-      </div>
-    </div>
-  );
-}
-
-function SpaceIconPicker({ value, onChange }: { value: string; onChange: (key: string) => void }) {
-  return (
-    <div className="grid min-w-0 w-full grid-cols-3 gap-2">
-      {SPACE_ICON_KEYS.map((k) => {
-        const Icon = SPACE_ICON_MAP[k] ?? PlayCircle;
-        const active = value === k;
-        const label = SPACE_ICON_LABELS[k];
-        return (
-          <button
-            key={k}
-            type="button"
-            onClick={() => onChange(k)}
-            className="flex flex-col items-center gap-1 rounded-xl border p-2 transition-all hover:border-[var(--primary)] focus:outline-none"
-            style={{
-              borderColor: active ? "var(--primary)" : "var(--border)",
-              background: active ? "color-mix(in srgb, var(--primary) 16%, var(--surface))" : "var(--surface)",
-              boxShadow: active ? "inset 0 1px 0 rgba(255, 255, 255, 0.06)" : undefined,
-            }}
-            aria-label={`Ícone ${label}`}
-            title={label}
-            aria-pressed={active}
-          >
-            <Icon size={22} style={{ color: active ? "var(--primary)" : "var(--muted-fg)" }} />
-            <span
-              className="w-full text-center text-[9px] font-semibold leading-tight"
-              style={{ color: active ? "var(--foreground)" : "var(--muted-fg)" }}
-            >
-              {label}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+// ─── Schema detection ─────────────────────────────────────────────────────────
 
 function schemaLikelyMissing(err: unknown): boolean {
   const s = getSupabaseErrorMessage(err).toLowerCase();
@@ -319,24 +197,540 @@ function mapRowToWorkspaceNode(r: Record<string, unknown>, extensionsOk: boolean
     sort_order: Number(r.sort_order),
     project_id: (r.project_id as string | null) ?? null,
     projects: normalizeProjectEmbed(r.projects),
-    default_view:
-      extensionsOk && r.default_view === "kanban" ? "kanban" : extensionsOk ? "list" : undefined,
-    custom_field_definitions: extensionsOk
-      ? parseCustomFieldDefs(r.custom_field_definitions)
-      : undefined,
+    default_view: extensionsOk && r.default_view === "kanban" ? "kanban" : extensionsOk ? "list" : undefined,
+    custom_field_definitions: extensionsOk ? parseCustomFieldDefs(r.custom_field_definitions) : undefined,
     kanban_columns: extensionsOk ? r.kanban_columns : undefined,
   };
 }
 
-function siblingsOf(
-  nodes: WorkspaceNode[],
-  spaceId: string,
-  parentId: string | null
-): WorkspaceNode[] {
+function siblingsOf(nodes: WorkspaceNode[], spaceId: string, parentId: string | null): WorkspaceNode[] {
   return nodes
     .filter((n) => n.space_id === spaceId && n.parent_id === parentId)
     .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "pt-BR"));
 }
+
+// ─── Sidebar tree ─────────────────────────────────────────────────────────────
+
+function SidebarTree({
+  nodes,
+  spaceId,
+  selectedNodeId,
+  expandedFolders,
+  onToggleFolder,
+  onSelectNode,
+  podeEditar,
+  onMoveUpDown,
+}: {
+  nodes: WorkspaceNode[];
+  spaceId: string;
+  selectedNodeId: string | null;
+  expandedFolders: Record<string, boolean>;
+  onToggleFolder: (id: string) => void;
+  onSelectNode: (id: string) => void;
+  podeEditar: boolean;
+  onMoveUpDown: (node: WorkspaceNode, dir: -1 | 1) => void;
+}) {
+  function renderBranch(parentId: string | null, depth: number) {
+    const list = nodes
+      .filter((n) => n.space_id === spaceId && n.parent_id === parentId)
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "pt-BR"));
+
+    return list.map((node) => {
+      const isFolder = node.kind === "folder";
+      const open = expandedFolders[node.id] ?? true;
+      const isSelected = selectedNodeId === node.id;
+      const nodeColor = node.color || (isFolder ? "var(--warning)" : "var(--primary)");
+
+      return (
+        <div key={node.id} style={{ marginLeft: depth > 0 ? 12 : 0 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0,
+              borderRadius: 6,
+              background: isSelected ? "color-mix(in srgb, var(--primary) 12%, var(--surface))" : "transparent",
+              border: `1px solid ${isSelected ? "color-mix(in srgb, var(--primary) 30%, transparent)" : "transparent"}`,
+              marginBottom: 1,
+            }}
+          >
+            {/* Expand/collapse for folders */}
+            {isFolder ? (
+              <button
+                type="button"
+                onClick={() => onToggleFolder(node.id)}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 2px", color: "var(--muted-fg)", flexShrink: 0, display: "flex", alignItems: "center" }}
+              >
+                {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              </button>
+            ) : (
+              <span style={{ width: 16, flexShrink: 0 }} />
+            )}
+
+            {/* Icon + name */}
+            <button
+              type="button"
+              onClick={() => onSelectNode(node.id)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flex: 1,
+                minWidth: 0,
+                padding: "5px 4px",
+                textAlign: "left",
+              }}
+            >
+              {isFolder ? (
+                <Folder size={13} style={{ color: nodeColor, flexShrink: 0 }} />
+              ) : (
+                <ListTodo size={13} style={{ color: nodeColor, flexShrink: 0 }} />
+              )}
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: isSelected ? 600 : 500,
+                  color: isSelected ? "var(--foreground)" : "var(--muted-fg)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                {node.name}
+              </span>
+              {node.kind === "list" && node.project_id && (
+                <div
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "var(--primary)",
+                    flexShrink: 0,
+                  }}
+                  title="Vinculado a projeto"
+                />
+              )}
+            </button>
+          </div>
+
+          {/* Children */}
+          {isFolder && open && renderBranch(node.id, depth + 1)}
+        </div>
+      );
+    });
+  }
+
+  return <div>{renderBranch(null, 0)}</div>;
+}
+
+// ─── Painel de configurações (modal) ─────────────────────────────────────────
+
+function SettingsPanel({
+  space,
+  node,
+  projects,
+  extensionsOk,
+  podeGerirEspacos,
+  podeEditar,
+  onClose,
+  onSaveSpace,
+  onPatchNode,
+  onDeleteNode,
+  onAddChild,
+  saneHref,
+}: {
+  space: WorkspaceSpace | null;
+  node: WorkspaceNode | null;
+  projects: ProjectPick[];
+  extensionsOk: boolean;
+  podeGerirEspacos: boolean;
+  podeEditar: boolean;
+  onClose: () => void;
+  onSaveSpace: (id: string, patch: Partial<Pick<WorkspaceSpace, "name" | "color" | "icon">>) => void;
+  onPatchNode: (patch: Record<string, unknown>) => void;
+  onDeleteNode: () => void;
+  onAddChild: (kind: "folder" | "list", parentId: string) => void;
+  saneHref: string | null;
+}) {
+  const [spaceName, setSpaceName] = useState(space?.name ?? "");
+  const [spaceColor, setSpaceColor] = useState(() => normalizePickerHex(space?.color));
+  const [spaceIcon, setSpaceIcon] = useState(() => space?.icon?.trim() || DEFAULT_SPACE_ICON);
+  const [nodeName, setNodeName] = useState(node?.name ?? "");
+  const [nodeProjectId, setNodeProjectId] = useState(node?.project_id ?? "");
+  const nativePickerRef = useRef<HTMLInputElement>(null);
+  const pickerHex = normalizePickerHex(spaceColor);
+  const [customFields, setCustomFields] = useState<CustomFieldDef[]>(() => node?.custom_field_definitions ?? []);
+
+  useEffect(() => {
+    if (space) { setSpaceName(space.name); setSpaceColor(normalizePickerHex(space.color)); setSpaceIcon(space.icon?.trim() || DEFAULT_SPACE_ICON); }
+  }, [space?.id]);
+
+  useEffect(() => {
+    if (node) { setNodeName(node.name); setNodeProjectId(node.project_id ?? ""); setCustomFields(node.custom_field_definitions ?? []); }
+  }, [node?.id]);
+
+  function addCustomField() {
+    const id = `cf_${crypto.randomUUID().slice(0, 8)}`;
+    setCustomFields((prev) => [...prev, { id, name: "Novo campo", type: "text" }]);
+  }
+
+  function updateField(i: number, patch: Partial<CustomFieldDef>) {
+    setCustomFields((prev) => prev.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  }
+
+  function removeField(i: number) {
+    setCustomFields((prev) => prev.filter((_, j) => j !== i));
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.4)",
+        backdropFilter: "blur(4px)",
+        zIndex: 50,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "flex-end",
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          maxHeight: "calc(100vh - 32px)",
+          background: "var(--background)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-xl)",
+          boxShadow: "var(--shadow-lg)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "var(--surface-2)",
+          }}
+        >
+          <span className="text-sm font-bold">Configurações</span>
+          <Button size="icon-sm" variant="ghost" onClick={onClose}><X size={16} /></Button>
+        </div>
+
+        <div style={{ overflowY: "auto", flex: 1, padding: 20 }} className="space-y-6">
+          {/* Space settings */}
+          {space && podeGerirEspacos && (
+            <div>
+              <div className="text-xs font-bold uppercase text-muted mb-3">Espaço</div>
+              <div className="space-y-3">
+                <Field label="Nome do espaço">
+                  <Input value={spaceName} onChange={(e) => setSpaceName(e.target.value)} />
+                </Field>
+                <Field label="Ícone">
+                  <div className="grid grid-cols-3 gap-2">
+                    {SPACE_ICON_KEYS.map((k) => {
+                      const Icon = SPACE_ICON_MAP[k] ?? PlayCircle;
+                      const active = spaceIcon === k;
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => setSpaceIcon(k)}
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "8px 4px",
+                            borderRadius: 8,
+                            border: `2px solid ${active ? "var(--primary)" : "var(--border)"}`,
+                            background: active ? "var(--primary-soft)" : "var(--surface)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Icon size={18} style={{ color: active ? "var(--primary)" : "var(--muted-fg)" }} />
+                          <span style={{ fontSize: 10, fontWeight: 600, color: active ? "var(--primary)" : "var(--muted-fg)" }}>
+                            {SPACE_ICON_LABELS[k]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Field>
+                <Field label="Cor">
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {COLOR_PRESETS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setSpaceColor(c)}
+                        style={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: "50%",
+                          background: c,
+                          border: spaceColor.toLowerCase() === c.toLowerCase() ? "3px solid var(--foreground)" : "2px solid var(--border)",
+                          cursor: "pointer",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input ref={nativePickerRef} type="color" value={pickerHex} onChange={(e) => setSpaceColor(e.target.value)} style={{ position: "absolute", left: -9999, opacity: 0 }} />
+                    <button
+                      type="button"
+                      onClick={() => nativePickerRef.current?.click()}
+                      style={{ width: 32, height: 32, borderRadius: 6, background: pickerHex, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0 }}
+                    />
+                    <Input value={spaceColor} onChange={(e) => setSpaceColor(e.target.value)} className="font-mono text-xs" placeholder="#6366f1" />
+                  </div>
+                </Field>
+                <Button
+                  size="sm"
+                  onClick={() => space && onSaveSpace(space.id, { name: spaceName.trim() || space.name, color: spaceColor, icon: spaceIcon })}
+                >
+                  Salvar espaço
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Node settings */}
+          {node && (
+            <div>
+              <div className="text-xs font-bold uppercase text-muted mb-3 flex items-center gap-2">
+                {node.kind === "folder" ? <Folder size={12} /> : <ListTodo size={12} />}
+                {node.kind === "folder" ? "Pasta" : "Lista"}
+              </div>
+              <div className="space-y-3">
+                <Field label="Nome">
+                  <div className="flex gap-2">
+                    <Input value={nodeName} onChange={(e) => setNodeName(e.target.value)} disabled={!podeEditar} />
+                    {podeEditar && (
+                      <Button size="sm" onClick={() => onPatchNode({ name: nodeName.trim() || node.name })}>OK</Button>
+                    )}
+                  </div>
+                </Field>
+
+                {node.kind === "list" && extensionsOk && (
+                  <>
+                    <Field label="Vista padrão">
+                      <Select
+                        value={node.default_view || "list"}
+                        onChange={(e) => onPatchNode({ default_view: e.target.value === "kanban" ? "kanban" : "list" })}
+                        disabled={!podeEditar}
+                      >
+                        <option value="list">Lista</option>
+                        <option value="kanban">Quadro (Kanban)</option>
+                      </Select>
+                    </Field>
+
+                    <div>
+                      <div className="text-xs font-semibold text-muted mb-2">Colunas Kanban</div>
+                      <KanbanColumnsEditor
+                        valueRaw={node.kanban_columns}
+                        podeEditar={podeEditar}
+                        onSave={(cols) => onPatchNode({ kanban_columns: cols })}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-muted">Campos customizados</span>
+                        {podeEditar && (
+                          <Button size="sm" variant="secondary" leftIcon={<Plus size={12} />} onClick={addCustomField}>Campo</Button>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {customFields.map((f, i) => (
+                          <div key={f.id} className="flex gap-2 items-end p-2 rounded-lg" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+                            <Field label="Nome" className="flex-1 mb-0">
+                              <Input value={f.name} onChange={(e) => updateField(i, { name: e.target.value })} disabled={!podeEditar} />
+                            </Field>
+                            <Field label="Tipo" className="w-28 mb-0">
+                              <Select
+                                value={f.type}
+                                onChange={(e) => updateField(i, { type: e.target.value as CustomFieldDef["type"], options: e.target.value === "select" ? f.options ?? ["A", "B"] : undefined })}
+                                disabled={!podeEditar}
+                              >
+                                <option value="text">Texto</option>
+                                <option value="number">Número</option>
+                                <option value="date">Data</option>
+                                <option value="select">Lista</option>
+                              </Select>
+                            </Field>
+                            {podeEditar && (
+                              <Button size="icon-sm" variant="danger-ghost" onClick={() => removeField(i)}><Trash2 size={13} /></Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {podeEditar && customFields.length > 0 && (
+                        <Button className="mt-2" size="sm" onClick={() => onPatchNode({ custom_field_definitions: customFields })}>
+                          Salvar campos
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {node.kind === "list" && (
+                  <Field label="Vincular projeto">
+                    <div className="space-y-2">
+                      <Select value={nodeProjectId} onChange={(e) => setNodeProjectId(e.target.value)} disabled={!podeEditar}>
+                        <option value="">— Nenhum —</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>{formatProjectDisplayName(p)}</option>
+                        ))}
+                      </Select>
+                      {podeEditar && (
+                        <Button size="sm" variant="secondary" onClick={() => onPatchNode({ project_id: nodeProjectId || null })}>
+                          Salvar vínculo
+                        </Button>
+                      )}
+                    </div>
+                  </Field>
+                )}
+
+                {node.kind === "list" && node.projects && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Link href="/projects">
+                      <Button size="sm" variant="secondary" leftIcon={<ExternalLink size={12} />}>Projetos</Button>
+                    </Link>
+                    {saneHref && (
+                      <Link href={saneHref}>
+                        <Button size="sm" leftIcon={<ExternalLink size={12} />}>Módulo saneamento</Button>
+                      </Link>
+                    )}
+                  </div>
+                )}
+
+                {node.kind === "folder" && podeEditar && (
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" variant="secondary" leftIcon={<Folder size={12} />} onClick={() => onAddChild("folder", node.id)}>
+                      Subpasta
+                    </Button>
+                    <Button size="sm" leftIcon={<ListTodo size={12} />} onClick={() => onAddChild("list", node.id)}>
+                      Lista interna
+                    </Button>
+                  </div>
+                )}
+
+                {podeEditar && (
+                  <Button size="sm" variant="danger-ghost" leftIcon={<Trash2 size={13} />} onClick={onDeleteNode}>
+                    Excluir {node.kind === "folder" ? "pasta" : "lista"}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal: Criar espaço ──────────────────────────────────────────────────────
+
+function AddSpaceModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState<string>(FALLBACK_SPACE_HEX);
+  const [icon, setIcon] = useState<string>(DEFAULT_SPACE_ICON);
+  const [loading, setLoading] = useState(false);
+
+  async function handleCreate() {
+    if (!name.trim()) return;
+    setLoading(true);
+    const profile = await getCurrentProfile();
+    const row: Record<string, unknown> = { name: name.trim(), color, icon, sort_order: Date.now() };
+    if (profile?.id) row.created_by = profile.id;
+    const { data, error } = await supabase.from("workspace_spaces").insert(row).select("id").single();
+    if (error) { showErrorToast("Não foi possível criar", getSupabaseErrorMessage(error)); setLoading(false); return; }
+    showSuccessToast("Espaço criado");
+    onCreated(data.id);
+  }
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ width: "100%", maxWidth: 400, background: "var(--background)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", boxShadow: "var(--shadow-lg)", overflow: "hidden" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-2)" }}>
+          <span className="text-sm font-bold">Novo espaço</span>
+          <Button size="icon-sm" variant="ghost" onClick={onClose}><X size={16} /></Button>
+        </div>
+        <div style={{ padding: 20 }} className="space-y-4">
+          <Field label="Nome">
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
+              placeholder="Ex.: COPASA"
+            />
+          </Field>
+          <Field label="Ícone">
+            <div className="grid grid-cols-3 gap-2">
+              {SPACE_ICON_KEYS.map((k) => {
+                const Icon = SPACE_ICON_MAP[k];
+                const active = icon === k;
+                return (
+                  <button key={k} type="button" onClick={() => setIcon(k)}
+                    style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "7px 4px", borderRadius: 7, border: `2px solid ${active ? "var(--primary)" : "var(--border)"}`, background: active ? "var(--primary-soft)" : "var(--surface)", cursor: "pointer" }}>
+                    <Icon size={16} style={{ color: active ? "var(--primary)" : "var(--muted-fg)" }} />
+                    <span style={{ fontSize: 9, fontWeight: 600, color: active ? "var(--primary)" : "var(--muted-fg)" }}>{SPACE_ICON_LABELS[k]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+          <Field label="Cor">
+            <div className="flex flex-wrap gap-2">
+              {COLOR_PRESETS.map((c) => (
+                <button key={c} type="button" onClick={() => setColor(c)}
+                  style={{ width: 24, height: 24, borderRadius: "50%", background: c, border: color === c ? "3px solid var(--foreground)" : "2px solid var(--border)", cursor: "pointer" }}
+                />
+              ))}
+            </div>
+          </Field>
+        </div>
+        <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8, background: "var(--surface-2)" }}>
+          <Button variant="ghost" onClick={onClose} disabled={loading}>Cancelar</Button>
+          <Button onClick={() => void handleCreate()} loading={loading} disabled={!name.trim() || loading}>
+            Criar espaço
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function SpacesPage() {
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -349,14 +743,11 @@ export default function SpacesPage() {
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-
-  const [newSpaceName, setNewSpaceName] = useState("");
-  const [newSpaceColor, setNewSpaceColor] = useState<string>(FALLBACK_SPACE_HEX);
-  const [newSpaceIcon, setNewSpaceIcon] = useState<string>(DEFAULT_SPACE_ICON);
-  const [creatingSpace, setCreatingSpace] = useState(false);
   const [extensionsOk, setExtensionsOk] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userPrefs, setUserPrefs] = useState<UserPrefsPayload>({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [addSpaceOpen, setAddSpaceOpen] = useState(false);
   const prefsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userIdRef = useRef<string | null>(null);
   userIdRef.current = userId;
@@ -370,11 +761,7 @@ export default function SpacesPage() {
     if (prefsTimerRef.current) clearTimeout(prefsTimerRef.current);
     prefsTimerRef.current = setTimeout(async () => {
       const { error } = await supabase.from("user_workspace_prefs").upsert(
-        {
-          user_id: uid,
-          prefs: payload as unknown as Record<string, unknown>,
-          updated_at: new Date().toISOString(),
-        },
+        { user_id: uid, prefs: payload as unknown as Record<string, unknown>, updated_at: new Date().toISOString() },
         { onConflict: "user_id" }
       );
       if (error) logSupabaseUnlessJwt("[spaces] prefs", error);
@@ -382,20 +769,11 @@ export default function SpacesPage() {
   }, []);
 
   const loadPrefs = useCallback(async (uid: string) => {
-    const { data, error } = await supabase
-      .from("user_workspace_prefs")
-      .select("prefs")
-      .eq("user_id", uid)
-      .maybeSingle();
-    if (error) {
-      if (!schemaLikelyMissing(error)) logSupabaseUnlessJwt("[spaces] prefs load", error);
-      return;
-    }
+    const { data, error } = await supabase.from("user_workspace_prefs").select("prefs").eq("user_id", uid).maybeSingle();
+    if (error) { if (!schemaLikelyMissing(error)) logSupabaseUnlessJwt("[spaces] prefs load", error); return; }
     const p = (data?.prefs || {}) as UserPrefsPayload;
     setUserPrefs(p);
-    if (p.treeExpanded && Object.keys(p.treeExpanded).length > 0) {
-      setExpandedFolders(p.treeExpanded);
-    }
+    if (p.treeExpanded && Object.keys(p.treeExpanded).length > 0) setExpandedFolders(p.treeExpanded);
   }, []);
 
   const loadAll = useCallback(async () => {
@@ -406,17 +784,12 @@ export default function SpacesPage() {
 
     const [spRes, projRes] = await Promise.all([
       supabase.from("workspace_spaces").select("*").order("sort_order").order("name"),
-      supabase
-        .from("projects")
-        .select("id, name, municipality, state, discipline, sanitation_type")
-        .order("name"),
+      supabase.from("projects").select("id, name, municipality, state, discipline, sanitation_type").order("name"),
     ]);
 
     if (spRes.error) {
       if (schemaLikelyMissing(spRes.error)) {
-        setSchemaBanner(
-          "As tabelas de Espaços ainda não existem. Execute lib/sql/workspaces-spaces.sql no Supabase. Para Kanban, itens e campos customizados, execute também lib/sql/workspaces-spaces-extensions.sql."
-        );
+        setSchemaBanner("As tabelas de Espaços ainda não existem. Execute lib/sql/workspaces-spaces.sql no Supabase.");
         setSpaces([]);
         setNodes([]);
       } else {
@@ -430,81 +803,42 @@ export default function SpacesPage() {
     }
 
     setSpaces((spRes.data as WorkspaceSpace[]) || []);
-
     const sidList = ((spRes.data as WorkspaceSpace[]) || []).map((s) => s.id);
+
     if (sidList.length === 0) {
       setNodes([]);
       setExtensionsOk(false);
-      if (projRes.error) {
-        logSupabaseUnlessJwt("[spaces] projects", projRes.error);
-        setProjects([]);
-      } else {
-        setProjects((projRes.data as ProjectPick[]) || []);
-      }
+      if (!projRes.error) setProjects((projRes.data as ProjectPick[]) || []);
       setLoading(false);
       return;
     }
 
     let ext = true;
-    const resExt = await supabase
-      .from("workspace_space_nodes")
-      .select(NODE_SELECT_EXTENDED)
-      .in("space_id", sidList)
-      .order("sort_order")
-      .order("name");
-
+    const resExt = await supabase.from("workspace_space_nodes").select(NODE_SELECT_EXTENDED).in("space_id", sidList).order("sort_order").order("name");
     let rows: Array<Record<string, unknown>> = [];
 
     if (!resExt.error) {
       rows = (resExt.data || []) as Array<Record<string, unknown>>;
     } else if (isColumnMissingError(resExt.error)) {
       ext = false;
-      const resBasic = await supabase
-        .from("workspace_space_nodes")
-        .select(NODE_SELECT_BASIC)
-        .in("space_id", sidList)
-        .order("sort_order")
-        .order("name");
+      const resBasic = await supabase.from("workspace_space_nodes").select(NODE_SELECT_BASIC).in("space_id", sidList).order("sort_order").order("name");
       if (resBasic.error) {
         logSupabaseUnlessJwt("[spaces] nodes", resBasic.error);
-        showErrorToast("Não foi possível carregar pastas/listas", getSupabaseErrorMessage(resBasic.error));
-        setNodes([]);
-        setExtensionsOk(false);
-        if (projRes.error) {
-          logSupabaseUnlessJwt("[spaces] projects", projRes.error);
-          setProjects([]);
-        } else {
-          setProjects((projRes.data as ProjectPick[]) || []);
-        }
+        showErrorToast("Não foi possível carregar pastas/listas");
         setLoading(false);
         return;
       }
       rows = (resBasic.data || []) as Array<Record<string, unknown>>;
     } else {
       logSupabaseUnlessJwt("[spaces] nodes", resExt.error);
-      showErrorToast("Não foi possível carregar pastas/listas", getSupabaseErrorMessage(resExt.error));
-      setNodes([]);
-      setExtensionsOk(false);
-      if (projRes.error) {
-        logSupabaseUnlessJwt("[spaces] projects", projRes.error);
-        setProjects([]);
-      } else {
-        setProjects((projRes.data as ProjectPick[]) || []);
-      }
+      showErrorToast("Não foi possível carregar pastas/listas");
       setLoading(false);
       return;
     }
 
     setExtensionsOk(ext);
     setNodes(rows.map((r) => mapRowToWorkspaceNode(r, ext)));
-
-    if (projRes.error) {
-      logSupabaseUnlessJwt("[spaces] projects", projRes.error);
-      setProjects([]);
-    } else {
-      setProjects((projRes.data as ProjectPick[]) || []);
-    }
-
+    if (!projRes.error) setProjects((projRes.data as ProjectPick[]) || []);
     setLoading(false);
   }, []);
 
@@ -517,145 +851,61 @@ export default function SpacesPage() {
     });
   }, [loadPrefs]);
 
-  useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+  useEffect(() => { void loadAll(); }, [loadAll]);
 
   useEffect(() => {
     if (!selectedSpaceId && spaces.length > 0) setSelectedSpaceId(spaces[0].id);
-    if (selectedSpaceId && !spaces.some((s) => s.id === selectedSpaceId)) {
-      setSelectedSpaceId(spaces[0]?.id ?? null);
-    }
+    if (selectedSpaceId && !spaces.some((s) => s.id === selectedSpaceId)) setSelectedSpaceId(spaces[0]?.id ?? null);
   }, [spaces, selectedSpaceId]);
 
-  const nodesInSpace = useMemo(
-    () => nodes.filter((n) => n.space_id === selectedSpaceId),
-    [nodes, selectedSpaceId]
-  );
-
+  const nodesInSpace = useMemo(() => nodes.filter((n) => n.space_id === selectedSpaceId), [nodes, selectedSpaceId]);
   const selectedSpace = spaces.find((s) => s.id === selectedSpaceId) ?? null;
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
 
   function toggleFolder(id: string) {
     setExpandedFolders((prev) => {
       const next = { ...prev, [id]: !(prev[id] ?? true) };
-      setUserPrefs((p) => {
-        const merged = { ...p, treeExpanded: next };
-        debounceSavePrefs(merged);
-        return merged;
-      });
+      setUserPrefs((p) => { const merged = { ...p, treeExpanded: next }; debounceSavePrefs(merged); return merged; });
       return next;
     });
   }
 
-  async function handleCreateSpace() {
-    if (!newSpaceName.trim() || !podeGerirEspacos) return;
-    setCreatingSpace(true);
-    const profile = await getCurrentProfile();
-    const nextOrder =
-      spaces.length > 0 ? Math.max(...spaces.map((s) => s.sort_order)) + 1 : 0;
-    const row: Record<string, unknown> = {
-      name: newSpaceName.trim(),
-      color: newSpaceColor.trim() || FALLBACK_SPACE_HEX,
-      icon: newSpaceIcon.trim() || DEFAULT_SPACE_ICON,
-      sort_order: nextOrder,
-    };
-    if (profile?.id) row.created_by = profile.id;
-
-    const { data, error } = await supabase.from("workspace_spaces").insert(row).select("id").single();
-
-    if (error) {
-      if (schemaLikelyMissing(error)) {
-        setSchemaBanner(
-          "Execute lib/sql/workspaces-spaces.sql no Supabase para habilitar Espaços."
-        );
-      } else {
-        logSupabaseUnlessJwt("[spaces] create space", error);
-        showErrorToast("Não foi possível criar o espaço", getSupabaseErrorMessage(error));
-      }
-      setCreatingSpace(false);
-      return;
-    }
-
-    setNewSpaceName("");
-    showSuccessToast("Espaço criado", "Adicione pastas e listas na árvore à esquerda.");
-    await loadAll();
-    if (data?.id) setSelectedSpaceId(data.id);
-    setCreatingSpace(false);
-  }
-
   async function handleDeleteSpace(id: string) {
     if (!podeGerirEspacos) return;
-    if (!window.confirm("Excluir este espaço e todo o conteúdo (pastas e listas)?")) return;
+    if (!window.confirm("Excluir este espaço e todo o conteúdo?")) return;
     const { error } = await supabase.from("workspace_spaces").delete().eq("id", id);
-    if (error) {
-      showErrorToast("Não foi possível excluir", getSupabaseErrorMessage(error));
-      return;
-    }
+    if (error) { showErrorToast("Não foi possível excluir", getSupabaseErrorMessage(error)); return; }
     if (selectedSpaceId === id) setSelectedSpaceId(null);
-    showSuccessToast("Espaço removido", "");
+    showSuccessToast("Espaço removido");
     await loadAll();
   }
 
-  async function handleUpdateSpace(
-    id: string,
-    patch: Partial<Pick<WorkspaceSpace, "name" | "color" | "icon">>
-  ) {
+  async function handleUpdateSpace(id: string, patch: Partial<Pick<WorkspaceSpace, "name" | "color" | "icon">>) {
     if (!podeGerirEspacos) return;
-    if (patch.name !== undefined && !String(patch.name).trim()) {
-      showErrorToast("Nome inválido", "Informe um nome para o espaço.");
-      return;
-    }
+    if (patch.name !== undefined && !String(patch.name).trim()) { showErrorToast("Informe um nome para o espaço."); return; }
     const { error } = await supabase.from("workspace_spaces").update(patch).eq("id", id);
-    if (error) {
-      showErrorToast("Não foi possível salvar", getSupabaseErrorMessage(error));
-      return;
-    }
-    showSuccessToast("Espaço atualizado", "");
+    if (error) { showErrorToast("Não foi possível salvar", getSupabaseErrorMessage(error)); return; }
+    showSuccessToast("Espaço atualizado");
     await loadAll();
   }
 
   async function addNode(kind: "folder" | "list", parentId: string | null) {
     if (!selectedSpaceId || !podeEditarNos) return;
-    const name =
-      kind === "folder"
-        ? window.prompt("Nome da pasta:", "Nova pasta")
-        : window.prompt("Nome da lista:", "Nova lista");
+    const name = kind === "folder" ? window.prompt("Nome da pasta:", "Nova pasta") : window.prompt("Nome da lista:", "Nova lista");
     if (!name?.trim()) return;
-
     const sibs = siblingsOf(nodes, selectedSpaceId, parentId);
     const nextOrder = sibs.length > 0 ? Math.max(...sibs.map((x) => x.sort_order)) + 1 : 0;
-
-    const insert: Record<string, unknown> = {
-      space_id: selectedSpaceId,
-      parent_id: parentId,
-      kind,
-      name: name.trim(),
-      sort_order: nextOrder,
-      color: null,
-      project_id: null,
-    };
-    if (extensionsOk) {
-      insert.default_view = "list";
-      insert.custom_field_definitions = [];
-    }
-
+    const insert: Record<string, unknown> = { space_id: selectedSpaceId, parent_id: parentId, kind, name: name.trim(), sort_order: nextOrder, color: null, project_id: null };
+    if (extensionsOk) { insert.default_view = "list"; insert.custom_field_definitions = []; }
     const { error } = await supabase.from("workspace_space_nodes").insert(insert);
-
-    if (error) {
-      showErrorToast("Não foi possível criar", getSupabaseErrorMessage(error));
-      return;
-    }
-    showSuccessToast(kind === "folder" ? "Pasta criada" : "Lista criada", "");
+    if (error) { showErrorToast("Não foi possível criar", getSupabaseErrorMessage(error)); return; }
+    showSuccessToast(kind === "folder" ? "Pasta criada" : "Lista criada");
     await loadAll();
   }
 
   async function updateNodePatch(id: string, patch: Record<string, unknown>) {
     const { error } = await supabase.from("workspace_space_nodes").update(patch).eq("id", id);
-    if (error) {
-      showErrorToast("Não foi possível salvar", getSupabaseErrorMessage(error));
-      return;
-    }
+    if (error) { showErrorToast("Não foi possível salvar", getSupabaseErrorMessage(error)); return; }
     await loadAll();
   }
 
@@ -663,10 +913,7 @@ export default function SpacesPage() {
     if (!podeEditarNos) return;
     if (!window.confirm("Excluir este item e todo o conteúdo interno?")) return;
     const { error } = await supabase.from("workspace_space_nodes").delete().eq("id", id);
-    if (error) {
-      showErrorToast("Não foi possível excluir", getSupabaseErrorMessage(error));
-      return;
-    }
+    if (error) { showErrorToast("Não foi possível excluir", getSupabaseErrorMessage(error)); return; }
     if (selectedNodeId === id) setSelectedNodeId(null);
     await loadAll();
   }
@@ -684,592 +931,445 @@ export default function SpacesPage() {
     await loadAll();
   }
 
-  async function applyDropMove(draggedId: string, targetId: string, placement: TreePlacement) {
-    if (!podeEditarNos || !selectedSpaceId) return;
-
-    let updates: { id: string; parent_id: string | null; sort_order: number }[] | null = null;
-    if (targetId === "__root__") {
-      updates = computeMoveToRootEnd(nodes, selectedSpaceId, draggedId);
-    } else {
-      updates = computeTreeMove(nodes, selectedSpaceId, draggedId, targetId, placement);
-    }
-    if (!updates?.length) return;
-
-    const dragged = nodes.find((n) => n.id === draggedId);
-    if (!dragged) return;
-
-    const newParentForDragged = updates.find((u) => u.id === draggedId)?.parent_id ?? null;
-    const patches = [...updates];
-
-    if (dragged.parent_id !== newParentForDragged) {
-      const oldSibs = siblingsOf(nodes, dragged.space_id, dragged.parent_id).filter(
-        (n) => n.id !== draggedId
-      );
-      oldSibs.forEach((n, i) => {
-        patches.push({ id: n.id, parent_id: dragged.parent_id, sort_order: i });
-      });
-    }
-
-    await Promise.all(
-      patches.map((p) =>
-        supabase
-          .from("workspace_space_nodes")
-          .update({ parent_id: p.parent_id, sort_order: p.sort_order })
-          .eq("id", p.id)
-      )
-    );
-    await loadAll();
-  }
-
   const detailProject = selectedNode?.projects;
   const saneHref =
-    detailProject &&
-    projectQualifiesForSaneamentoModule(detailProject.discipline, detailProject.sanitation_type)
+    detailProject && projectQualifiesForSaneamentoModule(detailProject.discipline, detailProject.sanitation_type)
       ? `/saneamento/${detailProject.id}`
       : null;
 
+  // ─── Render ───────────────────────────────────────────────────────────────
+
   return (
-    <div>
-      <PageHeader
-        title="Espaços"
-        description="Estruture o trabalho em espaços, pastas e listas. Associe listas a projetos quando quiser acompanhar entregas no mesmo lugar."
-        actions={
-          podeGerirEspacos ? (
-            <Button leftIcon={<Plus size={16} />} onClick={() => void loadAll()} variant="secondary">
-              Atualizar
-            </Button>
-          ) : undefined
-        }
-      />
-
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Schema banner */}
       {schemaBanner && (
-        <Card className="mb-4 p-4" style={{ borderColor: "var(--warning)", background: "var(--warning-soft)" }}>
-          <p className="text-sm" style={{ fontWeight: 600, color: "var(--warning-fg)", margin: 0 }}>
-            {schemaBanner}
-          </p>
-        </Card>
+        <div
+          className="mb-4 p-3 rounded-lg text-sm font-semibold"
+          style={{ background: "var(--warning-soft)", color: "var(--warning-fg)", border: "1px solid var(--warning)" }}
+        >
+          {schemaBanner}
+        </div>
       )}
 
+      {/* Extensions hint */}
       {!schemaBanner && !extensionsOk && spaces.length > 0 && (
-        <Card className="mb-4 p-3" style={{ background: "var(--surface-2)", borderColor: "var(--border)" }}>
-          <p className="text-sm text-muted m-0">
-            <strong className="text-foreground">Extensões opcionais:</strong> execute{" "}
-            <code className="text-xs">lib/sql/workspaces-spaces-extensions.sql</code> no Supabase para
-            ativar itens nas listas, quadro Kanban, campos customizados e preferências pessoais de vista.
-          </p>
-        </Card>
+        <div className="mb-3 p-3 rounded-lg text-sm" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+          <strong>Extensões opcionais:</strong> execute{" "}
+          <code className="text-xs">lib/sql/workspaces-spaces-extensions.sql</code> para ativar itens, Kanban e campos customizados.
+        </div>
       )}
 
+      {/* Main layout */}
       <div
-        className="flex gap-4 flex-col lg:flex-row"
-        style={{ alignItems: "stretch", minHeight: "min(70vh, 720px)" }}
+        style={{
+          display: "flex",
+          flex: 1,
+          minHeight: 0,
+          height: "calc(100vh - 180px)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          overflow: "hidden",
+          boxShadow: "var(--shadow-sm)",
+        }}
       >
-        <Card
-          className="p-0 overflow-hidden flex flex-col"
+        {/* ── LEFT SIDEBAR ── */}
+        <div
           style={{
-            flex: "0 0 min(100%, 320px)",
-            maxHeight: "80vh",
+            width: 248,
+            flexShrink: 0,
+            borderRight: "1px solid var(--border)",
+            background: "var(--surface-2)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
           }}
         >
+          {/* Header */}
           <div
-            className="p-3 border-b flex items-center justify-between gap-2"
-            style={{ borderColor: "var(--border)" }}
+            style={{
+              padding: "10px 12px",
+              borderBottom: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
           >
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">Espaços</span>
-          </div>
-          <div className="overflow-y-auto flex-1 p-2" style={{ maxHeight: "calc(80vh - 56px)" }}>
-            {loading && <p className="text-sm text-muted px-2">Carregando…</p>}
-            {!loading && spaces.length === 0 && !schemaBanner && (
-              <EmptyState
-                title="Nenhum espaço ainda"
-                description={
-                  podeGerirEspacos
-                    ? "Crie um espaço de topo (ex.: cliente ou área) e depois adicione pastas e listas."
-                    : "Peça a um líder, coordenador ou à gerência para criar o primeiro espaço."
-                }
-              />
-            )}
-            {spaces.map((s) => (
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted-fg)" }}>
+              Espaços
+            </span>
+            {podeGerirEspacos && !schemaBanner && (
               <button
-                key={s.id}
                 type="button"
-                onClick={() => {
-                  setSelectedSpaceId(s.id);
-                  setSelectedNodeId(null);
-                }}
-                className="w-full flex items-center gap-2 rounded-lg px-2 py-2 text-left mb-1"
+                onClick={() => setAddSpaceOpen(true)}
+                title="Novo espaço"
                 style={{
-                  background:
-                    selectedSpaceId === s.id
-                      ? "color-mix(in srgb, var(--primary) 14%, var(--surface))"
-                      : "transparent",
-                  border: "1px solid",
-                  borderColor:
-                    selectedSpaceId === s.id ? "color-mix(in srgb, var(--primary) 35%, transparent)" : "transparent",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--muted-fg)",
+                  display: "flex",
+                  alignItems: "center",
+                  padding: 3,
+                  borderRadius: 5,
                 }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface)"; e.currentTarget.style.color = "var(--primary)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--muted-fg)"; }}
               >
-                <SpaceGlyph icon={s.icon} color={s.color} />
-                <span className="text-sm font-semibold truncate flex-1">{s.name}</span>
+                <Plus size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Content */}
+          <div style={{ overflowY: "auto", flex: 1, padding: "6px 4px" }}>
+            {loading && <p className="text-xs text-muted px-3 py-2">Carregando…</p>}
+
+            {!loading && spaces.length === 0 && !schemaBanner && (
+              <div style={{ padding: "16px 12px", textAlign: "center" }}>
+                <p className="text-xs text-muted">Nenhum espaço ainda.</p>
                 {podeGerirEspacos && (
-                  <Button
-                    size="icon-sm"
-                    variant="danger-ghost"
-                    title="Excluir espaço"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDeleteSpace(s.id);
+                  <button
+                    type="button"
+                    onClick={() => setAddSpaceOpen(true)}
+                    className="text-xs font-semibold"
+                    style={{ color: "var(--primary)", background: "none", border: "none", cursor: "pointer", marginTop: 6 }}
+                  >
+                    + Criar primeiro espaço
+                  </button>
+                )}
+              </div>
+            )}
+
+            {spaces.map((s) => {
+              const isSelected = selectedSpaceId === s.id;
+              const spaceNodes = nodes.filter((n) => n.space_id === s.id);
+
+              return (
+                <div key={s.id}>
+                  {/* Space row */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 0,
+                      borderRadius: 6,
+                      background: isSelected ? "color-mix(in srgb, var(--primary) 10%, var(--surface))" : "transparent",
+                      border: `1px solid ${isSelected ? "color-mix(in srgb, var(--primary) 25%, transparent)" : "transparent"}`,
+                      marginBottom: 1,
                     }}
                   >
-                    <Trash2 size={12} />
-                  </Button>
-                )}
-              </button>
-            ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSpaceId(s.id);
+                        setSelectedNodeId(null);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        flex: 1,
+                        minWidth: 0,
+                        padding: "6px 8px",
+                        textAlign: "left",
+                      }}
+                    >
+                      <SpaceGlyph icon={s.icon} color={s.color} size={13} />
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: isSelected ? 700 : 600,
+                          color: isSelected ? "var(--foreground)" : "var(--muted-fg)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          flex: 1,
+                          minWidth: 0,
+                        }}
+                      >
+                        {s.name}
+                      </span>
+                    </button>
+
+                    {podeGerirEspacos && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); void handleDeleteSpace(s.id); }}
+                        title="Excluir espaço"
+                        style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted-fg)", padding: "4px 6px", borderRadius: 4, flexShrink: 0, opacity: 0 }}
+                        className="delete-space-btn"
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.opacity = "1"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.opacity = "0"; }}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Tree when space is selected */}
+                  {isSelected && spaceNodes.length > 0 && (
+                    <div style={{ marginLeft: 8, marginBottom: 4 }}>
+                      <SidebarTree
+                        nodes={spaceNodes}
+                        spaceId={s.id}
+                        selectedNodeId={selectedNodeId}
+                        expandedFolders={expandedFolders}
+                        onToggleFolder={toggleFolder}
+                        onSelectNode={setSelectedNodeId}
+                        podeEditar={podeEditarNos}
+                        onMoveUpDown={(node, dir) => void moveNode(node as WorkspaceNode, dir)}
+                      />
+                    </div>
+                  )}
+
+                  {/* Add folder/list when space selected */}
+                  {isSelected && podeEditarNos && (
+                    <div className="flex gap-1 px-2 pb-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => void addNode("folder", null)}
+                        title="Nova pasta"
+                        style={{ background: "transparent", border: "1px dashed var(--border)", borderRadius: 5, cursor: "pointer", color: "var(--muted-fg)", fontSize: 10, fontWeight: 600, padding: "3px 6px", display: "flex", alignItems: "center", gap: 3 }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}
+                      >
+                        <Folder size={10} /> Pasta
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void addNode("list", null)}
+                        title="Nova lista"
+                        style={{ background: "transparent", border: "1px dashed var(--border)", borderRadius: 5, cursor: "pointer", color: "var(--muted-fg)", fontSize: 10, fontWeight: 600, padding: "3px 6px", display: "flex", alignItems: "center", gap: 3 }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}
+                      >
+                        <ListTodo size={10} /> Lista
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+        </div>
 
-          {podeGerirEspacos && !schemaBanner && (
-            <div
-              className="p-3 border-t space-y-2"
-              style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}
-            >
-              <Field label="Novo espaço">
-                <Input
-                  value={newSpaceName}
-                  onChange={(e) => setNewSpaceName(e.target.value)}
-                  placeholder="Ex.: COPASA"
-                />
-              </Field>
-              <Field label="Cor">
-                <SpaceColorPicker value={newSpaceColor} onChange={setNewSpaceColor} />
-              </Field>
-              <Field label="Ícone">
-                <SpaceIconPicker value={newSpaceIcon} onChange={setNewSpaceIcon} />
-              </Field>
-              <Button
-                className="w-full"
-                leftIcon={<Plus size={14} />}
-                disabled={creatingSpace || !newSpaceName.trim()}
-                onClick={() => void handleCreateSpace()}
-              >
-                Criar espaço
-              </Button>
-            </div>
-          )}
-        </Card>
-
-        <Card className="flex-1 p-0 overflow-hidden flex flex-col min-h-[420px]">
+        {/* ── MAIN CONTENT ── */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--surface)" }}>
           {!selectedSpace ? (
-            <div className="p-6">
-              <EmptyState title="Selecione um espaço" description="Ou crie um novo na coluna à esquerda." />
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <EmptyState
+                title="Selecione um espaço"
+                description={podeGerirEspacos ? "Escolha um espaço à esquerda ou clique em + para criar." : "Escolha um espaço na navegação à esquerda."}
+              />
             </div>
           ) : (
             <>
+              {/* Content header */}
               <div
-                className="p-4 border-b flex flex-wrap items-center justify-between gap-2"
-                style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}
+                style={{
+                  padding: "10px 16px",
+                  borderBottom: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  flexShrink: 0,
+                }}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <SpaceGlyph icon={selectedSpace.icon} color={selectedSpace.color} size={22} />
-                  <div className="min-w-0">
-                    <div className="text-lg font-bold truncate">{selectedSpace.name}</div>
-                    <div className="text-xs text-muted">
-                      Pastas agrupam listas; listas podem vincular um projeto.
-                    </div>
-                  </div>
-                </div>
-                {podeEditarNos && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" leftIcon={<Folder size={14} />} onClick={() => void addNode("folder", null)}>
-                      Pasta na raiz
-                    </Button>
-                    <Button size="sm" leftIcon={<ListTodo size={14} />} onClick={() => void addNode("list", null)}>
-                      Lista na raiz
-                    </Button>
-                  </div>
-                )}
-              </div>
-              {podeGerirEspacos && (
-                <SpaceEditor
-                  space={selectedSpace}
-                  onSave={(id, patch) => void handleUpdateSpace(id, patch)}
-                />
-              )}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col lg:flex-row gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold uppercase text-muted mb-2">Árvore</div>
-                  {nodesInSpace.length === 0 ? (
-                    <p className="text-sm text-muted">Nenhuma pasta ou lista. Adicione itens na raiz ou dentro de pastas.</p>
-                  ) : selectedSpaceId ? (
-                    <WorkspaceTreeDnD
-                      nodes={nodesInSpace as WorkspaceTreeNode[]}
-                      spaceId={selectedSpaceId}
-                      selectedNodeId={selectedNodeId}
-                      expandedFolders={expandedFolders}
-                      onToggleFolder={toggleFolder}
-                      onSelectNode={setSelectedNodeId}
-                      podeEditar={podeEditarNos}
-                      onMoveUpDown={(node, dir) => void moveNode(node as WorkspaceNode, dir)}
-                      onDropReorder={(from, to, p) => void applyDropMove(from, to, p)}
-                    />
-                  ) : null}
-                </div>
-                <div className="lg:border-l lg:pl-4 flex-1 min-w-0" style={{ borderColor: "var(--border)" }}>
-                  {!selectedNode ? (
-                    <p className="text-sm text-muted">Clique em uma pasta ou lista para ver detalhes e personalizar.</p>
-                  ) : (
-                    <>
-                    <NodeInspector
-                      node={selectedNode}
-                      projects={projects}
-                      extensionsOk={extensionsOk}
-                      podeEditar={podeEditarNos}
-                      onPatch={(patch) => void updateNodePatch(selectedNode.id, patch)}
-                      onDelete={() => void handleDeleteNode(selectedNode.id)}
-                      onAddChild={(kind, parentId) => void addNode(kind, parentId)}
-                      saneHref={saneHref}
-                    />
-                    {selectedNode.kind === "list" && extensionsOk && (
-                      <ListItemsSection
-                        listNodeId={selectedNode.id}
-                        enabled={extensionsOk}
-                        defaultView={(selectedNode.default_view as WorkspaceViewMode) || "list"}
-                        userViewMode={userPrefs.listViewByNode?.[selectedNode.id] ?? null}
-                        onUserViewModeChange={(mode) => {
-                          setUserPrefs((p) => {
-                            const merged = {
-                              ...p,
-                              listViewByNode: { ...p.listViewByNode, [selectedNode.id]: mode },
-                            };
-                            debounceSavePrefs(merged);
-                            return merged;
-                          });
-                        }}
-                        kanbanColumnsRaw={selectedNode.kanban_columns}
-                        customFieldDefs={selectedNode.custom_field_definitions ?? []}
-                        podeEditarItens={podeEditarNos || myRole === "projetista" || myRole === "employee"}
-                      />
+                <div className="flex items-center justify-between gap-2">
+                  {/* Breadcrumb */}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <SpaceGlyph icon={selectedSpace.icon} color={selectedSpace.color} size={15} />
+                    <span className="text-sm font-semibold truncate" style={{ color: "var(--foreground)" }}>
+                      {selectedSpace.name}
+                    </span>
+                    {selectedNode && (
+                      <>
+                        <ChevronRight size={13} style={{ color: "var(--muted-fg)", flexShrink: 0 }} />
+                        <span
+                          className="text-sm truncate"
+                          style={{ color: "var(--muted-fg)", fontWeight: 500 }}
+                        >
+                          {selectedNode.name}
+                        </span>
+                      </>
                     )}
-                    </>
-                  )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {(podeGerirEspacos || (podeEditarNos && selectedNode)) && (
+                      <button
+                        type="button"
+                        onClick={() => setSettingsOpen(true)}
+                        title="Configurações"
+                        style={{
+                          background: "transparent",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          cursor: "pointer",
+                          color: "var(--muted-fg)",
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "4px 8px",
+                          gap: 4,
+                          fontSize: 12,
+                          fontWeight: 500,
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}
+                      >
+                        <Settings size={13} /> Configurar
+                      </button>
+                    )}
+                  </div>
                 </div>
+              </div>
+
+              {/* Content body */}
+              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                {!selectedNode ? (
+                  /* Space overview: show top-level nodes */
+                  <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+                    <p className="text-sm text-muted mb-4">
+                      Selecione uma lista ou pasta na barra lateral para ver o conteúdo.
+                    </p>
+                    {nodesInSpace.filter((n) => n.parent_id === null).length === 0 ? (
+                      <EmptyState
+                        title="Espaço vazio"
+                        description={podeEditarNos ? "Adicione pastas e listas na barra lateral." : "Nenhuma pasta ou lista criada ainda."}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                          gap: 12,
+                        }}
+                      >
+                        {nodesInSpace
+                          .filter((n) => n.parent_id === null)
+                          .sort((a, b) => a.sort_order - b.sort_order)
+                          .map((node) => (
+                            <button
+                              key={node.id}
+                              type="button"
+                              onClick={() => setSelectedNodeId(node.id)}
+                              style={{
+                                background: "var(--surface-2)",
+                                border: "1px solid var(--border)",
+                                borderRadius: "var(--radius-md)",
+                                padding: "14px 16px",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                textAlign: "left",
+                                transition: "all 0.15s",
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
+                            >
+                              {node.kind === "folder" ? (
+                                <Folder size={18} style={{ color: node.color || "var(--warning)", flexShrink: 0 }} />
+                              ) : (
+                                <ListTodo size={18} style={{ color: node.color || "var(--primary)", flexShrink: 0 }} />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold truncate">{node.name}</div>
+                                <div className="text-xs text-muted">{node.kind === "folder" ? "Pasta" : "Lista"}</div>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                ) : selectedNode.kind === "folder" ? (
+                  /* Folder contents */
+                  <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+                    <p className="text-sm text-muted mb-4">Conteúdo da pasta <strong>{selectedNode.name}</strong>:</p>
+                    {nodesInSpace.filter((n) => n.parent_id === selectedNode.id).length === 0 ? (
+                      <EmptyState
+                        title="Pasta vazia"
+                        description={podeEditarNos ? "Adicione subpastas ou listas via Configurar." : "Nenhum item ainda."}
+                      />
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+                        {nodesInSpace
+                          .filter((n) => n.parent_id === selectedNode.id)
+                          .sort((a, b) => a.sort_order - b.sort_order)
+                          .map((node) => (
+                            <button
+                              key={node.id}
+                              type="button"
+                              onClick={() => setSelectedNodeId(node.id)}
+                              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, textAlign: "left", transition: "all 0.15s" }}
+                              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
+                            >
+                              {node.kind === "folder" ? <Folder size={18} style={{ color: node.color || "var(--warning)", flexShrink: 0 }} /> : <ListTodo size={18} style={{ color: node.color || "var(--primary)", flexShrink: 0 }} />}
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-semibold truncate">{node.name}</div>
+                                <div className="text-xs text-muted">{node.kind === "folder" ? "Pasta" : "Lista"}</div>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* LIST ITEMS (full width) */
+                  <ListItemsSection
+                    listNodeId={selectedNode.id}
+                    enabled={extensionsOk}
+                    defaultView={(selectedNode.default_view as WorkspaceViewMode) || "list"}
+                    userViewMode={userPrefs.listViewByNode?.[selectedNode.id] ?? null}
+                    onUserViewModeChange={(mode) => {
+                      setUserPrefs((p) => {
+                        const merged = { ...p, listViewByNode: { ...p.listViewByNode, [selectedNode.id]: mode } };
+                        debounceSavePrefs(merged);
+                        return merged;
+                      });
+                    }}
+                    kanbanColumnsRaw={selectedNode.kanban_columns}
+                    customFieldDefs={selectedNode.custom_field_definitions ?? []}
+                    podeEditarItens={podeEditarNos || myRole === "projetista" || myRole === "employee"}
+                  />
+                )}
               </div>
             </>
           )}
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function SpaceEditor({
-  space,
-  onSave,
-}: {
-  space: WorkspaceSpace;
-  onSave: (id: string, patch: Partial<Pick<WorkspaceSpace, "name" | "color" | "icon">>) => void;
-}) {
-  const [name, setName] = useState(space.name);
-  const [color, setColor] = useState(() => normalizePickerHex(space.color));
-  const [icon, setIcon] = useState(() => (space.icon?.trim() ? space.icon.trim() : DEFAULT_SPACE_ICON));
-
-  useEffect(() => {
-    setName(space.name);
-    setColor(normalizePickerHex(space.color));
-    setIcon(space.icon?.trim() ? space.icon.trim() : DEFAULT_SPACE_ICON);
-  }, [space.id, space.name, space.color, space.icon]);
-
-  return (
-    <div
-      className="px-4 py-3 border-b"
-      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
-    >
-      <div className="text-xs font-bold uppercase text-muted mb-2">Personalizar este espaço</div>
-      <div className="space-y-3">
-        <Field label="Nome">
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field label="Cor">
-            <SpaceColorPicker value={color} onChange={setColor} />
-          </Field>
-          <Field label="Ícone">
-            <SpaceIconPicker value={icon} onChange={setIcon} />
-          </Field>
         </div>
       </div>
-      <Button
-        className="mt-3"
-        size="sm"
-        onClick={() =>
-          onSave(space.id, { name: name.trim() || space.name, color, icon })
-        }
-      >
-        Salvar espaço
-      </Button>
-    </div>
-  );
-}
 
-function NodeInspector({
-  node,
-  projects,
-  extensionsOk,
-  podeEditar,
-  onPatch,
-  onDelete,
-  onAddChild,
-  saneHref,
-}: {
-  node: WorkspaceNode;
-  projects: ProjectPick[];
-  extensionsOk: boolean;
-  podeEditar: boolean;
-  onPatch: (patch: Record<string, unknown>) => void;
-  onDelete: () => void;
-  onAddChild: (kind: "folder" | "list", parentId: string) => void;
-  saneHref: string | null;
-}) {
-  const [name, setName] = useState(node.name);
-  const [color, setColor] = useState(node.color || "");
-  const [projectId, setProjectId] = useState(node.project_id || "");
-  const [customFields, setCustomFields] = useState<CustomFieldDef[]>(
-    () => node.custom_field_definitions ?? []
-  );
+      {/* Settings panel */}
+      {settingsOpen && (
+        <SettingsPanel
+          space={selectedSpace}
+          node={selectedNode}
+          projects={projects}
+          extensionsOk={extensionsOk}
+          podeGerirEspacos={podeGerirEspacos}
+          podeEditar={podeEditarNos}
+          onClose={() => setSettingsOpen(false)}
+          onSaveSpace={(id, patch) => { void handleUpdateSpace(id, patch); setSettingsOpen(false); }}
+          onPatchNode={(patch) => selectedNode && void updateNodePatch(selectedNode.id, patch)}
+          onDeleteNode={() => { void handleDeleteNode(selectedNode!.id); setSettingsOpen(false); }}
+          onAddChild={(kind, parentId) => void addNode(kind, parentId)}
+          saneHref={saneHref}
+        />
+      )}
 
-  useEffect(() => {
-    setName(node.name);
-    setColor(node.color || "");
-    setProjectId(node.project_id || "");
-    setCustomFields(node.custom_field_definitions ?? []);
-  }, [node.id, node.name, node.color, node.project_id, node.custom_field_definitions]);
-
-  const linked = node.projects;
-
-  function addCustomField() {
-    const id = `cf_${crypto.randomUUID().slice(0, 8)}`;
-    setCustomFields((prev) => [...prev, { id, name: "Novo campo", type: "text" }]);
-  }
-
-  function updateField(i: number, patch: Partial<CustomFieldDef>) {
-    setCustomFields((prev) => prev.map((f, j) => (j === i ? { ...f, ...patch } : f)));
-  }
-
-  function removeField(i: number) {
-    setCustomFields((prev) => prev.filter((_, j) => j !== i));
-  }
-
-  function saveCustomFields() {
-    onPatch({ custom_field_definitions: customFields });
-    showSuccessToast("Campos salvos", "");
-  }
-
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <h3 className="text-base font-bold m-0 flex items-center gap-2">
-          {node.kind === "folder" ? <Folder size={18} /> : <ListTodo size={18} />}
-          {node.kind === "folder" ? "Pasta" : "Lista"}
-        </h3>
-        {podeEditar && (
-          <Button size="sm" variant="danger-ghost" leftIcon={<Trash2 size={14} />} onClick={onDelete}>
-            Excluir
-          </Button>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        <Field label="Nome">
-          <div className="flex gap-2">
-            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!podeEditar} />
-            {podeEditar && (
-              <Button onClick={() => onPatch({ name: name.trim() || node.name })}>Salvar</Button>
-            )}
-          </div>
-        </Field>
-
-        <Field label="Cor do item (opcional)">
-          <div className="flex gap-2 flex-wrap items-center">
-            <Select value={color || ""} onChange={(e) => setColor(e.target.value)} disabled={!podeEditar}>
-              <option value="">Padrão do tema</option>
-              {COLOR_PRESETS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-            {podeEditar && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onPatch({ color: color || null })}
-              >
-                Aplicar cor
-              </Button>
-            )}
-          </div>
-        </Field>
-
-        {node.kind === "list" && extensionsOk && (
-          <>
-            <Field label="Vista padrão (equipe)">
-              <Select
-                value={node.default_view || "list"}
-                onChange={(e) =>
-                  onPatch({ default_view: e.target.value === "kanban" ? "kanban" : "list" })
-                }
-                disabled={!podeEditar}
-              >
-                <option value="list">Lista</option>
-                <option value="kanban">Quadro (Kanban)</option>
-              </Select>
-              <p className="text-xs text-muted mt-1 m-0">
-                Cada usuário pode alternar Lista/Quadro no painel abaixo; aqui define o padrão da lista.
-              </p>
-            </Field>
-
-            <div className="mt-1">
-              <KanbanColumnsEditor
-                valueRaw={node.kanban_columns}
-                podeEditar={podeEditar}
-                onSave={(cols) => onPatch({ kanban_columns: cols })}
-              />
-            </div>
-            <p className="text-xs text-muted mt-2 m-0">
-              Arraste as colunas com as setas. A chave interna identifica o cartão no banco — evite mudá-la depois de criar itens.
-            </p>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase text-muted">Campos customizados</span>
-                {podeEditar && (
-                  <Button size="sm" variant="secondary" leftIcon={<Plus size={14} />} onClick={addCustomField}>
-                    Campo
-                  </Button>
-                )}
-              </div>
-              <div className="space-y-2">
-                {customFields.map((f, i) => (
-                  <div
-                    key={f.id}
-                    className="flex flex-wrap gap-2 items-end p-2 rounded-lg"
-                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-                  >
-                    <Field label="Nome" className="flex-1 min-w-[120px] mb-0">
-                      <Input
-                        value={f.name}
-                        onChange={(e) => updateField(i, { name: e.target.value })}
-                        disabled={!podeEditar}
-                      />
-                    </Field>
-                    <Field label="Tipo" className="w-32 mb-0">
-                      <Select
-                        value={f.type}
-                        onChange={(e) =>
-                          updateField(i, {
-                            type: e.target.value as CustomFieldDef["type"],
-                            options: e.target.value === "select" ? f.options ?? ["A", "B"] : undefined,
-                          })
-                        }
-                        disabled={!podeEditar}
-                      >
-                        <option value="text">Texto</option>
-                        <option value="number">Número</option>
-                        <option value="date">Data</option>
-                        <option value="select">Lista</option>
-                      </Select>
-                    </Field>
-                    {f.type === "select" && (
-                      <Field label="Opções (vírgula)" className="flex-1 min-w-[160px] mb-0">
-                        <Input
-                          value={(f.options || []).join(", ")}
-                          onChange={(e) =>
-                            updateField(i, {
-                              options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
-                            })
-                          }
-                          disabled={!podeEditar}
-                          placeholder="A, B, C"
-                        />
-                      </Field>
-                    )}
-                    <span className="text-[10px] text-muted font-mono pb-2">id: {f.id}</span>
-                    {podeEditar && (
-                      <Button size="icon-sm" variant="danger-ghost" onClick={() => removeField(i)}>
-                        <Trash2 size={14} />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {podeEditar && customFields.length > 0 && (
-                <Button className="mt-2" size="sm" onClick={saveCustomFields}>
-                  Salvar campos
-                </Button>
-              )}
-            </div>
-          </>
-        )}
-
-        {node.kind === "list" && (
-          <Field label="Vincular projeto (opcional)">
-            <div className="flex flex-col gap-2">
-              <Select
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                disabled={!podeEditar}
-              >
-                <option value="">— Nenhum —</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {formatProjectDisplayName(p)}
-                  </option>
-                ))}
-              </Select>
-              {podeEditar && (
-                <Button
-                  size="sm"
-                  onClick={() => onPatch({ project_id: projectId || null })}
-                  variant="secondary"
-                >
-                  Salvar vínculo
-                </Button>
-              )}
-            </div>
-          </Field>
-        )}
-
-        {node.kind === "list" && linked && (
-          <Card className="p-3" style={{ background: "var(--surface-2)" }}>
-            <div className="text-xs font-bold uppercase text-muted mb-1">Projeto vinculado</div>
-            <div className="font-semibold">{formatProjectDisplayName(linked)}</div>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <Link href="/projects" className="inline-flex">
-                <Button size="sm" variant="secondary" leftIcon={<ExternalLink size={14} />}>
-                  Abrir Projetos
-                </Button>
-              </Link>
-              {saneHref && (
-                <Link href={saneHref}>
-                  <Button size="sm" leftIcon={<ExternalLink size={14} />}>
-                    Módulo saneamento
-                  </Button>
-                </Link>
-              )}
-            </div>
-          </Card>
-        )}
-
-        {node.kind === "folder" && podeEditar && (
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button size="sm" variant="secondary" leftIcon={<Folder size={14} />} onClick={() => onAddChild("folder", node.id)}>
-              Subpasta
-            </Button>
-            <Button size="sm" leftIcon={<ListTodo size={14} />} onClick={() => onAddChild("list", node.id)}>
-              Lista interna
-            </Button>
-          </div>
-        )}
-      </div>
+      {/* Add space modal */}
+      {addSpaceOpen && (
+        <AddSpaceModal
+          onClose={() => setAddSpaceOpen(false)}
+          onCreated={(id) => {
+            setAddSpaceOpen(false);
+            void loadAll().then(() => setSelectedSpaceId(id));
+          }}
+        />
+      )}
     </div>
   );
 }
