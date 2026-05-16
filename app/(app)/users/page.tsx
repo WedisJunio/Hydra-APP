@@ -372,7 +372,7 @@ export default function UsersPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("users")
-      .select("id, name, email, role, is_active, created_at, job_title, department, phone, photo_url")
+      .select("id, name, full_name, email, role, is_active, created_at, job_title, department, phone, photo_url")
       .order("name", { ascending: true });
 
     if (error) {
@@ -381,7 +381,15 @@ export default function UsersPage() {
       return;
     }
 
-    setUsers(data || []);
+    // Sempre prefere full_name (mais atualizado/completo) sobre name.
+    // Resolve casos legados onde a coluna `name` ficou desatualizada.
+    type Row = UserListItem & { full_name?: string | null };
+    const normalized: UserListItem[] = ((data as Row[]) || []).map((u) => ({
+      ...u,
+      name: (u.full_name && u.full_name.trim()) || u.name,
+    }));
+
+    setUsers(normalized);
     setLoading(false);
   }
 

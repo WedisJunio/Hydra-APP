@@ -49,6 +49,7 @@ const menuItems: SidebarMenuItem[] = [
 type CurrentUserProfile = {
   id: string;
   name: string | null;
+  full_name: string | null;
   email: string | null;
   role: string | null;
 };
@@ -75,7 +76,7 @@ export default function AppLayout({
 
       const { data } = await supabase
         .from("users")
-        .select("id, name, email, role")
+        .select("id, name, full_name, email, role")
         .eq("auth_user_id", user.id)
         .limit(1)
         .maybeSingle();
@@ -157,7 +158,11 @@ export default function AppLayout({
       .join(" ");
   }
 
-  const displayName = currentUser?.name?.trim() || prettifyEmailHandle(authEmail);
+  // Prioridade: full_name (atualizado via modal de perfil) → name (legado) → email tratado
+  const displayName =
+    currentUser?.full_name?.trim() ||
+    currentUser?.name?.trim() ||
+    prettifyEmailHandle(authEmail);
   const displayRole =
     (currentUser?.role && ROLE_LABELS[currentUser.role]) ||
     currentUser?.role ||

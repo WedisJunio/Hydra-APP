@@ -54,12 +54,20 @@ export async function updateUserProfile(
     return { success: false, error: "Permissão negada" };
   }
 
+  // Mantém `name` (coluna usada no sidebar, listagem, tarefas e PDFs) sempre
+  // sincronizada com `full_name`. Sem isso, ao editar o nome no modal, o
+  // valor antigo continua sendo exibido em todas as outras telas.
+  const payload: Record<string, unknown> = {
+    ...updates,
+    updated_at: new Date().toISOString(),
+  };
+  if (typeof updates.full_name === "string" && updates.full_name.trim()) {
+    payload.name = updates.full_name.trim();
+  }
+
   const { error } = await supabase
     .from("users")
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    })
+    .update(payload)
     .eq("id", userId);
 
   if (error) {
