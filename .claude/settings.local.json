@@ -23,7 +23,8 @@
       "Bash(git commit *)",
       "Bash(xargs grep *)",
       "Bash(xargs wc *)",
-      "Bash(findstr \"scripts\" /A:10)"
+      "Bash(findstr \"scripts\" /A:10)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp"
     ]
   },
   "hooks": {

@@ -151,6 +151,14 @@ function sanitizeFileName(name: string) {
     .slice(0, 90);
 }
 
+function isMissingAttachmentsColumn(error: unknown) {
+  const message =
+    error && typeof error === "object" && "message" in error
+      ? String((error as { message?: string }).message || "")
+      : "";
+  return message.toLowerCase().includes("attachments");
+}
+
 function AttachmentIcon({ type }: { type: string }) {
   const kind = getAttachmentKind(type);
   if (kind === "image") return <ImageIcon size={15} />;
@@ -259,13 +267,34 @@ export default function ChatPage() {
       setMessages([]);
       return;
     }
-    const { data, error } = await supabase
+    const query = supabase
       .from("messages")
       .select(
         "id, content, attachments, sender_id, created_at, project_id, chat_group_id, users:sender_id (name, email, role)"
       )
       .eq("chat_group_id", groupId)
       .order("created_at", { ascending: true });
+    const { data, error } = await query;
+
+    if (error && isMissingAttachmentsColumn(error)) {
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("messages")
+        .select(
+          "id, content, sender_id, created_at, project_id, chat_group_id, users:sender_id (name, email, role)"
+        )
+        .eq("chat_group_id", groupId)
+        .order("created_at", { ascending: true });
+      if (fallbackError) {
+        showErrorToast("Erro ao carregar mensagens", getSupabaseErrorMessage(fallbackError));
+        return;
+      }
+      setMessages(((fallbackData as unknown as Message[]) || []).map((m) => ({
+        ...m,
+        attachments: [],
+      })));
+      return;
+    }
+
     if (error) {
       showErrorToast("Erro ao carregar mensagens", getSupabaseErrorMessage(error));
       return;
@@ -368,15 +397,30 @@ export default function ChatPage() {
       });
     }
 
-    const { error } = await supabase.from("messages").insert({
+    const messagePayload: {
+      content: string;
+      sender_id: string;
+      chat_group_id: string;
+      attachments?: ChatAttachment[];
+    } = {
       content: trimmed,
-      attachments: uploadedAttachments,
       sender_id: senderId,
       chat_group_id: selectedGroupId,
-    });
+    };
+
+    if (uploadedAttachments.length > 0) {
+      messagePayload.attachments = uploadedAttachments;
+    }
+
+    const { error } = await supabase.from("messages").insert(messagePayload);
 
     if (error) {
-      showErrorToast("Erro ao enviar mensagem", getSupabaseErrorMessage(error));
+      const message =
+        isMissingAttachmentsColumn(error) && uploadedAttachments.length > 0
+          ? "Atualize o banco com lib/sql/chat-groups.sql para habilitar anexos."
+          : getSupabaseErrorMessage(error);
+      console.error("Erro ao enviar mensagem:", error);
+      showErrorToast("Erro ao enviar mensagem", message);
       setSending(false);
       return;
     }

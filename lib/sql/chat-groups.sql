@@ -73,14 +73,14 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $ensure_project_chat_group$
 BEGIN
   INSERT INTO public.chat_groups (name, project_id, created_by)
   VALUES (NEW.name, NEW.id, NEW.created_by)
   ON CONFLICT (project_id) DO NOTHING;
   RETURN NEW;
 END;
-$$;
+$ensure_project_chat_group$;
 
 DROP TRIGGER IF EXISTS trg_ensure_project_chat_group ON public.projects;
 CREATE TRIGGER trg_ensure_project_chat_group
@@ -96,14 +96,14 @@ LANGUAGE SQL
 STABLE
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $is_chat_group_member$
   SELECT EXISTS (
     SELECT 1
     FROM public.chat_group_members cgm
     WHERE cgm.chat_group_id = p_chat_group_id
       AND cgm.user_id = public.current_app_user_id()
   );
-$$;
+$is_chat_group_member$;
 
 CREATE OR REPLACE FUNCTION public.can_access_chat_group(p_chat_group_id UUID)
 RETURNS BOOLEAN
@@ -111,7 +111,7 @@ LANGUAGE SQL
 STABLE
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $can_access_chat_group$
   SELECT
     public.is_admin()
     OR EXISTS (
@@ -129,7 +129,7 @@ AS $$
           OR public.is_project_member(cg.project_id)
         )
     );
-$$;
+$can_access_chat_group$;
 
 CREATE OR REPLACE FUNCTION public.can_manage_chat_group_members(p_chat_group_id UUID)
 RETURNS BOOLEAN
@@ -137,7 +137,7 @@ LANGUAGE SQL
 STABLE
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $can_manage_chat_group_members$
   SELECT
     public.is_admin()
     OR EXISTS (
@@ -152,7 +152,7 @@ AS $$
           )
         )
     );
-$$;
+$can_manage_chat_group_members$;
 
 CREATE OR REPLACE FUNCTION public.add_chat_group_member(
   p_chat_group_id UUID,
@@ -162,7 +162,7 @@ RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $add_chat_group_member$
 BEGIN
   IF NOT public.can_manage_chat_group_members(p_chat_group_id) THEN
     RAISE EXCEPTION 'not allowed to manage chat group members'
@@ -173,7 +173,7 @@ BEGIN
   VALUES (p_chat_group_id, p_user_id, public.current_app_user_id())
   ON CONFLICT (chat_group_id, user_id) DO NOTHING;
 END;
-$$;
+$add_chat_group_member$;
 
 CREATE OR REPLACE FUNCTION public.remove_chat_group_member(
   p_chat_group_id UUID,
@@ -183,7 +183,7 @@ RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $remove_chat_group_member$
 BEGIN
   IF NOT public.can_manage_chat_group_members(p_chat_group_id) THEN
     RAISE EXCEPTION 'not allowed to manage chat group members'
@@ -199,7 +199,7 @@ BEGIN
   WHERE chat_group_id = p_chat_group_id
     AND user_id = p_user_id;
 END;
-$$;
+$remove_chat_group_member$;
 
 -- ─── 6. RLS: chat_groups ─────────────────────────────────────────────────────
 
