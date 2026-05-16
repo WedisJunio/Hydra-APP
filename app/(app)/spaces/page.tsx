@@ -225,6 +225,7 @@ function SidebarTree({
   podeEditar,
   onMoveUpDown,
   onAddChild,
+  onAddProject,
   onDeleteNode,
 }: {
   nodes: WorkspaceNode[];
@@ -241,7 +242,6 @@ function SidebarTree({
 }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
 
-  // Desestrutura onAddProject do closure para usar no renderBranch
   function renderBranch(parentId: string | null, depth: number) {
     const list = nodes
       .filter((n) => n.space_id === spaceId && n.parent_id === parentId)
