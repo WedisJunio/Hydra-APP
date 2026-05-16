@@ -84,7 +84,7 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
   critical: { label: "Crítica", color: "#ef4444" },
 };
 
-const TASK_GRID = "36px 1fr 80px 110px";
+const TASK_GRID = "36px 1fr 80px 110px 36px";
 
 // ─── Cores automáticas por status ───────────────────────────────────────────
 
@@ -134,7 +134,16 @@ function formatFieldValue(val: string | number | null, type: CustomFieldDef["typ
 
 // ─── Linha de tarefa do projeto (read-only) ──────────────────────────────────
 
-function ProjectTaskRow({ task }: { task: ProjectTask }) {
+function ProjectTaskRow({
+  task,
+  podeEditar,
+  onDelete,
+}: {
+  task: ProjectTask;
+  podeEditar: boolean;
+  onDelete: (id: string) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
   const status = TASK_STATUS_CONFIG[task.status] ?? { label: task.status, color: "#64748b" };
   const priority = task.priority ? PRIORITY_CONFIG[task.priority] : null;
   const isOverdue =
@@ -152,9 +161,10 @@ function ProjectTaskRow({ task }: { task: ProjectTask }) {
         minHeight: 36,
         borderBottom: "1px solid var(--border)",
         transition: "background 0.1s",
+        background: hovered ? "var(--surface-2)" : "transparent",
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface-2)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       {/* Status dot */}
       <div className="flex items-center justify-center">
@@ -228,6 +238,33 @@ function ProjectTaskRow({ task }: { task: ProjectTask }) {
           </span>
         )}
       </div>
+
+      {/* Delete */}
+      <div className="flex items-center justify-center">
+        {podeEditar && (
+          <button
+            type="button"
+            title="Excluir tarefa"
+            onClick={() => onDelete(task.id)}
+            style={{
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--muted-fg)",
+              display: "flex",
+              alignItems: "center",
+              padding: 4,
+              borderRadius: 4,
+              opacity: hovered ? 1 : 0,
+              transition: "opacity 0.15s, color 0.15s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; }}
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -235,9 +272,13 @@ function ProjectTaskRow({ task }: { task: ProjectTask }) {
 function ProjectTaskGroup({
   statusKey,
   tasks,
+  podeEditar,
+  onDelete,
 }: {
   statusKey: string;
   tasks: ProjectTask[];
+  podeEditar: boolean;
+  onDelete: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const cfg = TASK_STATUS_CONFIG[statusKey] ?? { label: statusKey, color: "#64748b", Icon: Clock };
@@ -271,8 +312,11 @@ function ProjectTaskGroup({
         </div>
         <div style={{ padding: "0 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted-fg)", letterSpacing: "0.05em" }}>Prioridade</div>
         <div style={{ padding: "0 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "var(--muted-fg)", letterSpacing: "0.05em" }}>Prazo</div>
+        <div />
       </div>
-      {open && tasks.map((t) => <ProjectTaskRow key={t.id} task={t} />)}
+      {open && tasks.map((t) => (
+        <ProjectTaskRow key={t.id} task={t} podeEditar={podeEditar} onDelete={onDelete} />
+      ))}
     </div>
   );
 }
@@ -280,9 +324,13 @@ function ProjectTaskGroup({
 function ProjectTasksSection({
   tasks,
   projectId,
+  podeEditar,
+  onDelete,
 }: {
   tasks: ProjectTask[];
   projectId: string;
+  podeEditar: boolean;
+  onDelete: (id: string) => void;
 }) {
   const grouped = useMemo(() => {
     const map: Record<string, ProjectTask[]> = {};
@@ -377,6 +425,7 @@ function ProjectTasksSection({
         <div style={{ padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted-fg)" }}>
           Prazo
         </div>
+        <div />
       </div>
 
       {/* Groups */}
@@ -384,11 +433,9 @@ function ProjectTasksSection({
         <ProjectTaskGroup
           key={statusKey}
           statusKey={statusKey}
-          tasks={([] as ProjectTask[]).concat(
-            TASK_STATUS_ORDER.includes(statusKey)
-              ? tasks.filter((t) => t.status === statusKey)
-              : tasks.filter((t) => t.status === statusKey)
-          )}
+          tasks={tasks.filter((t) => t.status === statusKey)}
+          podeEditar={podeEditar}
+          onDelete={onDelete}
         />
       ))}
     </div>
@@ -572,7 +619,7 @@ function ItemRow({
           <button
             type="button"
             onClick={() => void removeItem(item.id)}
-            title="Excluir"
+            title="Excluir item"
             style={{
               background: "transparent",
               border: "none",
@@ -582,11 +629,11 @@ function ItemRow({
               alignItems: "center",
               padding: 4,
               borderRadius: 4,
-              opacity: 0,
+              opacity: 0.25,
+              transition: "opacity 0.15s, color 0.15s",
             }}
-            className="delete-btn"
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.opacity = "1"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.opacity = "0"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.opacity = "1"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.opacity = "0.25"; }}
           >
             <Trash2 size={13} />
           </button>
@@ -1004,6 +1051,13 @@ export function ListItemsSection({
     await load();
   }
 
+  async function deleteProjectTask(id: string) {
+    if (!window.confirm("Excluir esta tarefa permanentemente? Esta ação não pode ser desfeita.")) return;
+    const { error } = await supabase.from("tasks").delete().eq("id", id);
+    if (error) { showErrorToast("Não foi possível excluir a tarefa", getSupabaseErrorMessage(error)); return; }
+    setProjectTasks((prev) => prev.filter((t) => t.id !== id));
+  }
+
   if (!enabled) {
     return (
       <Card className="p-4 m-4" style={{ background: "var(--surface-2)" }}>
@@ -1080,7 +1134,12 @@ export function ListItemsSection({
 
           {/* ── Tarefas do projeto vinculado ── */}
           {projectId && (
-            <ProjectTasksSection tasks={projectTasks} projectId={projectId} />
+            <ProjectTasksSection
+              tasks={projectTasks}
+              projectId={projectId}
+              podeEditar={podeEditarItens}
+              onDelete={(id) => void deleteProjectTask(id)}
+            />
           )}
 
           {/* ── Itens da lista (workspace) ── */}

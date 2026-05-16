@@ -235,6 +235,7 @@ function SidebarTree({
   podeEditar: boolean;
   onMoveUpDown: (node: WorkspaceNode, dir: -1 | 1) => void;
   onAddChild?: (kind: "folder" | "list", parentId: string) => void;
+  onDeleteNode?: (id: string) => void;
 }) {
   const [hoverId, setHoverId] = useState<string | null>(null);
 
@@ -332,58 +333,51 @@ function SidebarTree({
               )}
             </button>
 
-            {/* Folder hover actions: add subfolder / add list */}
-            {isFolder && podeEditar && onAddChild && (isHovered || isSelected) && (
+            {/* Hover actions */}
+            {podeEditar && (isHovered || isSelected) && (
               <div
                 style={{ display: "flex", alignItems: "center", gap: 1, paddingRight: 4, flexShrink: 0 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <button
-                  type="button"
-                  title="Nova subpasta"
-                  onClick={(e) => { e.stopPropagation(); onAddChild("folder", node.id); }}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "2px 3px",
-                    borderRadius: 4,
-                    color: "var(--muted-fg)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 2,
-                    fontSize: 9,
-                    fontWeight: 700,
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--warning)"; e.currentTarget.style.background = "color-mix(in srgb, var(--warning) 12%, transparent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
-                >
-                  <Folder size={10} />
-                  <Plus size={8} />
-                </button>
-                <button
-                  type="button"
-                  title="Nova lista"
-                  onClick={(e) => { e.stopPropagation(); onAddChild("list", node.id); }}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "2px 3px",
-                    borderRadius: 4,
-                    color: "var(--muted-fg)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 2,
-                    fontSize: 9,
-                    fontWeight: 700,
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.background = "color-mix(in srgb, var(--primary) 12%, transparent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
-                >
-                  <ListTodo size={10} />
-                  <Plus size={8} />
-                </button>
+                {/* Add subfolder / add list (folders only) */}
+                {isFolder && onAddChild && (
+                  <>
+                    <button
+                      type="button"
+                      title="Nova subpasta"
+                      onClick={(e) => { e.stopPropagation(); onAddChild("folder", node.id); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "var(--muted-fg)", display: "flex", alignItems: "center", gap: 2, fontSize: 9, fontWeight: 700 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--warning)"; e.currentTarget.style.background = "color-mix(in srgb, var(--warning) 12%, transparent)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
+                    >
+                      <Folder size={10} /><Plus size={8} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Nova lista"
+                      onClick={(e) => { e.stopPropagation(); onAddChild("list", node.id); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "var(--muted-fg)", display: "flex", alignItems: "center", gap: 2, fontSize: 9, fontWeight: 700 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; e.currentTarget.style.background = "color-mix(in srgb, var(--primary) 12%, transparent)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
+                    >
+                      <ListTodo size={10} /><Plus size={8} />
+                    </button>
+                  </>
+                )}
+
+                {/* Delete node */}
+                {onDeleteNode && (
+                  <button
+                    type="button"
+                    title={`Excluir ${isFolder ? "pasta" : "lista"}`}
+                    onClick={(e) => { e.stopPropagation(); onDeleteNode(node.id); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 3px", borderRadius: 4, color: "var(--muted-fg)", display: "flex", alignItems: "center" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.background = "color-mix(in srgb, #ef4444 12%, transparent)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; e.currentTarget.style.background = "none"; }}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1464,6 +1458,7 @@ export default function SpacesPage() {
                         podeEditar={podeEditarNos}
                         onMoveUpDown={(node, dir) => void moveNode(node as WorkspaceNode, dir)}
                         onAddChild={(kind, parentId) => setAddingNode({ kind, parentId })}
+                        onDeleteNode={(id) => void handleDeleteNode(id)}
                       />
                     </div>
                   )}

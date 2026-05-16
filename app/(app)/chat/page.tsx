@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Send,
   Plus,
-  Hash,
   Activity,
   Search,
   MessageCircle,
@@ -20,8 +19,10 @@ import {
   X,
   Users,
   UserPlus,
-  Check,
   ExternalLink,
+  FolderKanban,
+  MessagesSquare,
+  MapPin,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -35,8 +36,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { canCreateChatGroup } from "@/lib/permissions";
-import { getTodayLocalISO } from "@/lib/utils";
+import { ROLE_LABELS, canCreateChatGroup } from "@/lib/permissions";
+import { cn, getTodayLocalISO } from "@/lib/utils";
 import { downloadChatTranscriptPdf } from "@/lib/chat-export-pdf";
 import { formatProjectDisplayName } from "@/lib/project-display";
 
@@ -166,6 +167,38 @@ function AttachmentIcon({ type }: { type: string }) {
   return <FileText size={15} />;
 }
 
+function ChatChannelGlyph({
+  isProject,
+  active = false,
+  size = 15,
+  className,
+}: {
+  isProject: boolean;
+  active?: boolean;
+  size?: number;
+  className?: string;
+}) {
+  const Icon = isProject ? FolderKanban : MessagesSquare;
+  return (
+    <span
+      className={cn(
+        "chat-group-glyph",
+        isProject ? "chat-group-glyph-project" : "chat-group-glyph-group",
+        active && "chat-group-glyph-active",
+        className
+      )}
+      aria-hidden
+    >
+      <Icon size={size} strokeWidth={2} />
+    </span>
+  );
+}
+
+function formatUserRoleLabel(role: string | null | undefined): string | null {
+  if (!role) return null;
+  return ROLE_LABELS[role] ?? role;
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -175,6 +208,9 @@ export default function ChatPage() {
   const [groupSearch, setGroupSearch] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
   const [showMembersPanel, setShowMembersPanel] = useState(false);
+  const [newGroupModalOpen, setNewGroupModalOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [creatingGroup, setCreatingGroup] = useState(false);
 
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [currentProfileId, setCurrentProfileId] = useState<string | null>(null);
@@ -302,13 +338,22 @@ export default function ChatPage() {
     setMessages((data as unknown as Message[]) || []);
   }
 
-  async function handleCreateGroup() {
+  function openNewGroupModal() {
     if (!canCreateGroup) {
       showErrorToast("Sem permissão", "Você não tem permissão para criar grupos.");
       return;
     }
-    const groupName = window.prompt("Nome do novo grupo:");
-    if (!groupName || !groupName.trim()) return;
+    setNewGroupName("");
+    setNewGroupModalOpen(true);
+  }
+
+  async function submitNewGroup() {
+    const trimmed = newGroupName.trim();
+    if (!trimmed) {
+      showErrorToast("Nome obrigatório", "Informe um nome para o grupo.");
+      return;
+    }
+    if (!canCreateGroup) return;
 
     const profile = await getCurrentProfile();
     if (!profile) {
@@ -316,16 +361,18 @@ export default function ChatPage() {
       return;
     }
 
+    setCreatingGroup(true);
     const { data: group, error } = await supabase
       .from("chat_groups")
       .insert({
-        name: groupName.trim(),
+        name: trimmed,
         created_by: profile.id,
       })
       .select("id")
       .single();
 
     if (error || !group) {
+      setCreatingGroup(false);
       showErrorToast("Erro ao criar grupo", getSupabaseErrorMessage(error));
       return;
     }
@@ -339,8 +386,12 @@ export default function ChatPage() {
     await loadChatGroups();
     await loadGroupMembers(group.id);
     setSelectedGroupId(group.id);
+    setNewGroupModalOpen(false);
+    setNewGroupName("");
+    setCreatingGroup(false);
+    setShowMembersPanel(true);
     if (isNarrow) setMobilePanel("chat");
-    showSuccessToast("Grupo criado", "Grupo criado com sucesso.");
+    showSuccessToast("Grupo criado", "Convide pessoas no painel de participantes.");
   }
 
   async function handleSendMessage() {
@@ -593,6 +644,15 @@ export default function ChatPage() {
   }, [currentProfileId, mutedGroupIds, selectedGroupId, showMessagePopup]);
 
   useEffect(() => {
+    if (!newGroupModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNewGroupModalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [newGroupModalOpen]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
@@ -617,12 +677,15 @@ export default function ChatPage() {
       .filter((user) => !memberIds.has(user.id))
       .filter((user) => {
         if (!q) return true;
+        const roleLabel = formatUserRoleLabel(user.role)?.toLowerCase() ?? "";
         return (
           user.name.toLowerCase().includes(q) ||
-          (user.email || "").toLowerCase().includes(q)
+          (user.email || "").toLowerCase().includes(q) ||
+          (user.role || "").toLowerCase().includes(q) ||
+          roleLabel.includes(q)
         );
       })
-      .slice(0, 8);
+      .slice(0, 24);
   }, [memberIds, memberSearch, users]);
 
   const projectById = useMemo(
@@ -686,9 +749,14 @@ export default function ChatPage() {
     if (!q) return chatGroups;
     return chatGroups.filter((g) => {
       const label = g.project_id ? (projectById[g.project_id] ?? g.name) : g.name;
-      return label.toLowerCase().includes(q) || g.name.toLowerCase().includes(q);
+      const proj = g.project_id ? projects.find((p) => p.id === g.project_id) : null;
+      const loc = proj
+        ? [proj.municipality, proj.state].filter(Boolean).join(" ").toLowerCase()
+        : "";
+      const haystack = `${label} ${g.name} ${loc}`.toLowerCase();
+      return haystack.includes(q);
     });
-  }, [chatGroups, groupSearch, projectById]);
+  }, [chatGroups, groupSearch, projectById, projects]);
 
   const enrichedMessages = useMemo((): EnrichedMessage[] => {
     return messages.map((m, i) => {
@@ -791,7 +859,7 @@ export default function ChatPage() {
     <div>
       <PageHeader
         title="Chat"
-        description="Grupos por projeto e grupos gerais, mensagens em tempo real."
+        description="Canais por projeto e grupos livres. Convide a equipe, silencie canais e acompanhe em tempo real."
         className="mb-4"
       />
 
@@ -821,10 +889,10 @@ export default function ChatPage() {
                   size="sm"
                   variant="secondary"
                   leftIcon={<Plus size={14} />}
-                  onClick={handleCreateGroup}
-                  title="Novo grupo"
+                  onClick={openNewGroupModal}
+                  title="Criar grupo e convidar pessoas"
                 >
-                  Novo
+                  Novo grupo
                 </Button>
               )}
             </div>
@@ -844,7 +912,7 @@ export default function ChatPage() {
                     }}
                   />
                   <Input
-                    placeholder="Buscar grupo..."
+                    placeholder="Buscar por nome, projeto ou cidade…"
                     value={groupSearch}
                     onChange={(e) => setGroupSearch(e.target.value)}
                     style={{ paddingLeft: 34 }}
@@ -868,6 +936,13 @@ export default function ChatPage() {
                 const label = group.project_id
                   ? (projectById[group.project_id] ?? group.name)
                   : group.name;
+                const projRow =
+                  isProjectGroup && group.project_id
+                    ? projects.find((p) => p.id === group.project_id)
+                    : null;
+                const locationLine =
+                  projRow &&
+                  [projRow.municipality, projRow.state].filter(Boolean).join(" · ");
                 return (
                   <button
                     key={group.id}
@@ -875,10 +950,16 @@ export default function ChatPage() {
                     onClick={() => selectGroup(group.id)}
                     className={`chat-group-item ${isActive ? "chat-group-item-active" : ""}`}
                   >
-                    <span className="chat-group-hash">
-                      <Hash size={15} strokeWidth={2} />
+                    <ChatChannelGlyph isProject={isProjectGroup} active={isActive} size={15} />
+                    <span className="chat-group-label-col min-w-0 flex-1">
+                      <span className="chat-group-label truncate">{label}</span>
+                      {locationLine ? (
+                        <span className="chat-group-sublabel truncate">
+                          <MapPin size={10} style={{ marginRight: 4, flexShrink: 0 }} />
+                          {locationLine}
+                        </span>
+                      ) : null}
                     </span>
-                    <span className="chat-group-label truncate">{label}</span>
                     <Badge variant={isProjectGroup ? "info" : "neutral"}>
                       {isProjectGroup ? "Projeto" : "Grupo"}
                     </Badge>
@@ -907,17 +988,17 @@ export default function ChatPage() {
                     <ChevronLeft size={18} />
                   </Button>
                 )}
-                <div
-                  className="chat-thread-channel-icon"
-                  style={{
-                    background: "color-mix(in srgb, var(--primary) 14%, transparent)",
-                    color: "var(--primary)",
-                  }}
-                >
-                  <Hash size={18} />
+                <div className="chat-thread-channel-icon">
+                  <ChatChannelGlyph
+                    isProject={!!selectedGroup?.project_id}
+                    size={21}
+                    className="chat-thread-glyph-lg"
+                  />
                 </div>
                 <div className="min-w-0">
-                  <p className="chat-thread-meta m-0">Canal</p>
+                  <p className="chat-thread-meta m-0">
+                    {selectedGroup?.project_id ? "Canal do projeto" : "Grupo de conversa"}
+                  </p>
                   <h2 className="chat-thread-title m-0 truncate">{channelTitle}</h2>
                 </div>
               </div>
@@ -928,9 +1009,17 @@ export default function ChatPage() {
                   leftIcon={<Users size={14} />}
                   onClick={() => setShowMembersPanel((prev) => !prev)}
                   disabled={!selectedGroupId}
-                  title="Ver participantes do grupo"
+                  title={
+                    showMembersPanel
+                      ? "Ocultar participantes"
+                      : "Ver e convidar participantes"
+                  }
                 >
-                  {groupMembers.length || (selectedGroup?.project_id ? "Projeto" : 0)}
+                  {selectedGroupId
+                    ? `${groupMembers.length} ${
+                        groupMembers.length === 1 ? "pessoa" : "pessoas"
+                      }`
+                    : "—"}
                 </Button>
                 <Button
                   size="sm"
@@ -983,8 +1072,8 @@ export default function ChatPage() {
                     <h3 className="chat-members-title">Participantes</h3>
                     <p className="chat-members-sub">
                       {isSelectedAdHocGroup
-                        ? "Controle quem participa deste grupo."
-                        : "Grupos de projeto seguem a equipe vinculada ao projeto."}
+                        ? "Quem pode ver e enviar mensagens neste grupo. Toque em um nome sugerido para adicionar."
+                        : "Este canal acompanha o projeto; a equipe com acesso ao projeto costuma participar automaticamente."}
                     </p>
                   </div>
                   <Button
@@ -998,54 +1087,86 @@ export default function ChatPage() {
                 </div>
 
                 <div className="chat-members-grid">
-                  <div className="chat-members-list">
-                    {groupMembers.length === 0 && (
-                      <p className="text-sm text-muted">
-                        {isSelectedAdHocGroup
-                          ? "Nenhum participante cadastrado ainda."
-                          : "Participantes do projeto aparecem conforme as regras de acesso."}
-                      </p>
-                    )}
-                    {groupMembers.map((member) => (
-                      <div key={member.user_id} className="chat-member-row">
-                        <Avatar
-                          name={member.users?.name || "Usuário"}
-                          src={member.users?.photo_url || null}
-                          size="sm"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="chat-member-name truncate">
-                            {member.users?.name || "Usuário"}
+                  <div className="chat-members-column">
+                    <div className="chat-members-section-label">
+                      No grupo
+                      <span className="chat-members-count">{groupMembers.length}</span>
+                    </div>
+                    <div className="chat-members-list">
+                      {groupMembers.length === 0 && (
+                        <p className="text-sm text-muted">
+                          {isSelectedAdHocGroup
+                            ? "Ninguém além de você ainda — use a coluna ao lado para convidar."
+                            : "Lista preenchida conforme as regras do projeto."}
+                        </p>
+                      )}
+                      {groupMembers.map((member) => (
+                        <div key={member.user_id} className="chat-member-row">
+                          <Avatar
+                            name={member.users?.name || "Usuário"}
+                            src={member.users?.photo_url || null}
+                            size="sm"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="chat-member-name truncate">
+                              {member.users?.name || "Usuário"}
+                            </div>
+                            <div className="chat-member-email truncate">
+                              {member.users?.email || "—"}
+                            </div>
+                            {formatUserRoleLabel(member.users?.role ?? null) ? (
+                              <div className="chat-member-role truncate">
+                                {formatUserRoleLabel(member.users?.role ?? null)}
+                              </div>
+                            ) : null}
                           </div>
-                          <div className="chat-member-email truncate">
-                            {member.users?.email || member.users?.role || "Sem e-mail"}
-                          </div>
+                          {canManageSelectedGroup && member.user_id !== currentProfileId && (
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              onClick={() => removeMember(member.user_id)}
+                              title="Remover do grupo"
+                            >
+                              <X size={14} />
+                            </Button>
+                          )}
                         </div>
-                        {canManageSelectedGroup && member.user_id !== currentProfileId && (
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            onClick={() => removeMember(member.user_id)}
-                            title="Remover do grupo"
-                          >
-                            <X size={14} />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
 
                   {canManageSelectedGroup && (
-                    <div className="chat-members-add">
-                      <div className="chat-members-add-title">
-                        <UserPlus size={15} />
-                        Adicionar pessoa
+                    <div className="chat-members-column chat-members-add">
+                      <div className="chat-members-section-label">
+                        Convidar
+                        <UserPlus size={14} style={{ opacity: 0.85 }} />
                       </div>
-                      <Input
-                        placeholder="Buscar por nome ou e-mail..."
-                        value={memberSearch}
-                        onChange={(e) => setMemberSearch(e.target.value)}
-                      />
+                      <Field label="Buscar na empresa" className="mb-0">
+                        <div style={{ position: "relative" }}>
+                          <Search
+                            size={15}
+                            style={{
+                              position: "absolute",
+                              left: 10,
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              color: "var(--muted-fg)",
+                              pointerEvents: "none",
+                            }}
+                          />
+                          <Input
+                            placeholder="Nome, e-mail ou cargo…"
+                            value={memberSearch}
+                            onChange={(e) => setMemberSearch(e.target.value)}
+                            style={{ paddingLeft: 34 }}
+                          />
+                        </div>
+                      </Field>
+                      <p className="chat-members-hint text-xs text-muted m-0">
+                        {availableUsersToAdd.length} sugestão
+                        {availableUsersToAdd.length === 1 ? "" : "ões"} · toque para
+                        adicionar
+                      </p>
                       <div className="chat-user-pick-list">
                         {availableUsersToAdd.map((user) => (
                           <button
@@ -1058,14 +1179,25 @@ export default function ChatPage() {
                             <span className="min-w-0 flex-1">
                               <span className="chat-member-name truncate">{user.name}</span>
                               <span className="chat-member-email truncate">
-                                {user.email || user.role || "Sem e-mail"}
+                                {user.email || "—"}
                               </span>
+                              {formatUserRoleLabel(user.role) ? (
+                                <span className="chat-member-role truncate">
+                                  {formatUserRoleLabel(user.role)}
+                                </span>
+                              ) : null}
                             </span>
-                            <Check size={14} />
+                            <span className="chat-user-pick-action">
+                              <Plus size={16} />
+                            </span>
                           </button>
                         ))}
                         {availableUsersToAdd.length === 0 && (
-                          <p className="text-xs text-muted">Nenhuma pessoa disponível.</p>
+                          <p className="text-xs text-muted m-0">
+                            {memberSearch.trim()
+                              ? "Nenhum resultado. Ajuste a busca."
+                              : "Todos os usuários visíveis já estão no grupo."}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -1273,6 +1405,60 @@ export default function ChatPage() {
         </div>
       </Card>
 
+      {newGroupModalOpen && (
+        <div
+          className="chat-modal-backdrop"
+          role="presentation"
+          onClick={() => !creatingGroup && setNewGroupModalOpen(false)}
+        >
+          <div
+            className="chat-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chat-new-group-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="chat-new-group-title" className="chat-modal-title">
+              Novo grupo de conversa
+            </h3>
+            <p className="chat-modal-desc text-sm text-muted">
+              Crie um canal livre (sem projeto), depois convide quem precisa acompanhar o assunto.
+            </p>
+            <Field label="Nome do grupo" className="mb-0">
+              <Input
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="Ex.: Obras — COPASA"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void submitNewGroup();
+                  }
+                }}
+              />
+            </Field>
+            <div className="chat-modal-actions">
+              <Button
+                variant="secondary"
+                disabled={creatingGroup}
+                onClick={() => setNewGroupModalOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                loading={creatingGroup}
+                disabled={creatingGroup || !newGroupName.trim()}
+                onClick={() => void submitNewGroup()}
+                leftIcon={<Plus size={14} />}
+              >
+                Criar e convidar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .chat-shell-premium {
           overflow: hidden;
@@ -1377,21 +1563,111 @@ export default function ChatPage() {
           color: var(--primary);
         }
 
-        .chat-group-hash {
+        .chat-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 10050;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          background: color-mix(in srgb, var(--foreground) 38%, transparent);
+        }
+
+        .chat-modal {
+          width: min(440px, 100%);
+          max-height: min(90vh, 560px);
+          overflow: auto;
+          padding: 22px;
+          border-radius: var(--radius-lg);
+          border: 1px solid var(--border);
+          background: var(--surface);
+          box-shadow: var(--shadow-lg);
+        }
+
+        .chat-modal-title {
+          margin: 0;
+          font-size: 17px;
+          font-weight: 800;
+          letter-spacing: -0.02em;
+        }
+
+        .chat-modal-desc {
+          margin: 8px 0 16px;
+          line-height: 1.45;
+        }
+
+        .chat-modal-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          justify-content: flex-end;
+          margin-top: 18px;
+        }
+
+        .chat-group-glyph {
           width: 28px;
           height: 28px;
           border-radius: 8px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          background: color-mix(in srgb, var(--muted) 10%, transparent);
-          color: var(--muted);
+          flex-shrink: 0;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .chat-group-glyph-project {
+          background: color-mix(in srgb, #0d9488 18%, transparent);
+          color: #0d9488;
+        }
+
+        .chat-group-glyph-group {
+          background: color-mix(in srgb, #6366f1 18%, transparent);
+          color: #6366f1;
+        }
+
+        .chat-group-item-active .chat-group-glyph-project {
+          background: color-mix(in srgb, #0d9488 28%, var(--surface));
+          color: #0f766e;
+        }
+
+        .chat-group-item-active .chat-group-glyph-group {
+          background: color-mix(in srgb, #6366f1 28%, var(--surface));
+          color: #4338ca;
+        }
+
+        .chat-thread-channel-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
           flex-shrink: 0;
         }
 
-        .chat-group-item-active .chat-group-hash {
-          background: color-mix(in srgb, var(--primary) 18%, transparent);
-          color: var(--primary);
+        .chat-thread-glyph-lg {
+          width: 42px;
+          height: 42px;
+          border-radius: 12px;
+        }
+
+        .chat-thread-glyph-lg svg {
+          width: 22px;
+          height: 22px;
+        }
+
+        .chat-group-label-col {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          text-align: left;
+        }
+
+        .chat-group-sublabel {
+          display: inline-flex;
+          align-items: center;
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--muted-fg);
+          line-height: 1.2;
         }
 
         .chat-group-label {
@@ -1415,16 +1691,6 @@ export default function ChatPage() {
           gap: 12px;
           flex-shrink: 0;
           background: var(--surface);
-        }
-
-        .chat-thread-channel-icon {
-          width: 42px;
-          height: 42px;
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
         }
 
         .chat-thread-meta {
