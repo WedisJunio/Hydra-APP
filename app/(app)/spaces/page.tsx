@@ -33,7 +33,7 @@ import {
 
 import { supabase } from "@/lib/supabase/client";
 import { getCurrentProfile } from "@/lib/supabase/profile";
-import { getSupabaseErrorMessage, logSupabaseUnlessJwt } from "@/lib/supabase/errors";
+import { getSupabaseErrorMessage, logSupabaseUnlessJwt, extractPostgrestErrorMessage } from "@/lib/supabase/errors";
 import { ensureFreshSupabaseSession } from "@/lib/supabase/session-refresh";
 import { canEditWorkspaceNodes, canManageWorkspaceSpaces } from "@/lib/permissions";
 import { formatProjectDisplayName } from "@/lib/project-display";
@@ -70,8 +70,12 @@ const NODE_SELECT_BASIC =
   "id, space_id, parent_id, kind, name, color, sort_order, project_id, projects(id, name, municipality, state, discipline, sanitation_type)";
 
 function isColumnMissingError(err: unknown): boolean {
-  const m = getSupabaseErrorMessage(err).toLowerCase();
-  return (m.includes("column") && m.includes("does not exist")) || m.includes("could not find");
+  const m = extractPostgrestErrorMessage(err).toLowerCase();
+  return (
+    (m.includes("column") && m.includes("does not exist")) ||
+    m.includes("could not find") ||
+    (m.includes("does not exist") && (m.includes("default_view") || m.includes("custom_field") || m.includes("kanban")))
+  );
 }
 
 type WorkspaceSpace = {
@@ -174,15 +178,15 @@ function normalizePickerHex(v: string | null | undefined): string {
 // ─── Schema detection ─────────────────────────────────────────────────────────
 
 function schemaLikelyMissing(err: unknown): boolean {
-  const s = getSupabaseErrorMessage(err).toLowerCase();
+  // Use raw message so table/column names are preserved before normalization
+  const s = extractPostgrestErrorMessage(err).toLowerCase();
   return (
     s.includes("workspace_spaces") ||
     s.includes("workspace_space_nodes") ||
     s.includes("workspace_list_items") ||
     s.includes("user_workspace_prefs") ||
-    s.includes("does not exist") ||
-    s.includes("não existe") ||
-    (s.includes("relation") && s.includes("exist"))
+    (s.includes("relation") && s.includes("does not exist")) ||
+    (s.includes("table") && s.includes("does not exist"))
   );
 }
 
