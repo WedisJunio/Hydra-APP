@@ -111,3 +111,6 @@ CREATE POLICY workspace_space_nodes_delete ON public.workspace_space_nodes
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.workspace_spaces TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.workspace_space_nodes TO authenticated;
+
+-- Próximo passo (opcional): lib/sql/workspaces-spaces-extensions.sql
+-- (itens de lista, Kanban, campos customizados, preferências por usuário).

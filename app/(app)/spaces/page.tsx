@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Layers,
@@ -8,8 +8,6 @@ import {
   ListTodo,
   Plus,
   Trash2,
-  ChevronRight,
-  ChevronDown,
   Building2,
   Briefcase,
   Factory,
@@ -18,8 +16,6 @@ import {
   Grid3x3,
   Sparkles,
   ExternalLink,
-  ArrowUp,
-  ArrowDown,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,13 +26,44 @@ import { ensureFreshSupabaseSession } from "@/lib/supabase/session-refresh";
 import { canEditWorkspaceNodes, canManageWorkspaceSpaces } from "@/lib/permissions";
 import { formatProjectDisplayName } from "@/lib/project-display";
 import { projectQualifiesForSaneamentoModule } from "@/lib/saneamento/discipline";
+import {
+  type WorkspaceTreeNode,
+  type TreePlacement,
+  type WorkspaceViewMode,
+  type CustomFieldDef,
+  computeTreeMove,
+  computeMoveToRootEnd,
+  parseKanbanColumns,
+  parseCustomFieldDefs,
+  DEFAULT_KANBAN_COLUMNS,
+} from "@/lib/workspaces/spaces-shared";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Badge } from "@/components/ui/badge";
+import { WorkspaceTreeDnD } from "@/components/spaces/workspace-tree";
+import { ListItemsSection } from "@/components/spaces/list-items-section";
+
+type UserPrefsPayload = {
+  treeExpanded?: Record<string, boolean>;
+  listViewByNode?: Record<string, WorkspaceViewMode>;
+};
+
+const NODE_SELECT_EXTENDED =
+  "id, space_id, parent_id, kind, name, color, sort_order, project_id, default_view, custom_field_definitions, kanban_columns, projects(id, name, municipality, state, discipline, sanitation_type)";
+
+const NODE_SELECT_BASIC =
+  "id, space_id, parent_id, kind, name, color, sort_order, project_id, projects(id, name, municipality, state, discipline, sanitation_type)";
+
+function isColumnMissingError(err: unknown): boolean {
+  const m = getSupabaseErrorMessage(err).toLowerCase();
+  return (
+    (m.includes("column") && m.includes("does not exist")) ||
+    m.includes("could not find")
+  );
+}
 
 type WorkspaceSpace = {
   id: string;
@@ -56,6 +83,9 @@ type WorkspaceNode = {
   color: string | null;
   sort_order: number;
   project_id: string | null;
+  default_view?: WorkspaceViewMode;
+  custom_field_definitions?: CustomFieldDef[];
+  kanban_columns?: unknown;
   projects?: {
     id: string;
     name: string;
@@ -129,10 +159,32 @@ function schemaLikelyMissing(err: unknown): boolean {
   return (
     s.includes("workspace_spaces") ||
     s.includes("workspace_space_nodes") ||
+    s.includes("workspace_list_items") ||
+    s.includes("user_workspace_prefs") ||
     s.includes("does not exist") ||
     s.includes("não existe") ||
     (s.includes("relation") && s.includes("exist"))
   );
+}
+
+function mapRowToWorkspaceNode(r: Record<string, unknown>, extensionsOk: boolean): WorkspaceNode {
+  return {
+    id: String(r.id),
+    space_id: String(r.space_id),
+    parent_id: (r.parent_id as string | null) ?? null,
+    kind: r.kind as "folder" | "list",
+    name: String(r.name),
+    color: (r.color as string | null) ?? null,
+    sort_order: Number(r.sort_order),
+    project_id: (r.project_id as string | null) ?? null,
+    projects: normalizeProjectEmbed(r.projects),
+    default_view:
+      extensionsOk && r.default_view === "kanban" ? "kanban" : extensionsOk ? "list" : undefined,
+    custom_field_definitions: extensionsOk
+      ? parseCustomFieldDefs(r.custom_field_definitions)
+      : undefined,
+    kanban_columns: extensionsOk ? r.kanban_columns : undefined,
+  };
 }
 
 function siblingsOf(
@@ -161,13 +213,54 @@ export default function SpacesPage() {
   const [newSpaceColor, setNewSpaceColor] = useState<string>(COLOR_PRESETS[0]);
   const [newSpaceIcon, setNewSpaceIcon] = useState<string>("layers");
   const [creatingSpace, setCreatingSpace] = useState(false);
+  const [extensionsOk, setExtensionsOk] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userPrefs, setUserPrefs] = useState<UserPrefsPayload>({});
+  const prefsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  userIdRef.current = userId;
 
   const podeGerirEspacos = canManageWorkspaceSpaces(myRole);
   const podeEditarNos = canEditWorkspaceNodes(myRole);
 
+  const debounceSavePrefs = useCallback((payload: UserPrefsPayload) => {
+    const uid = userIdRef.current;
+    if (!uid) return;
+    if (prefsTimerRef.current) clearTimeout(prefsTimerRef.current);
+    prefsTimerRef.current = setTimeout(async () => {
+      const { error } = await supabase.from("user_workspace_prefs").upsert(
+        {
+          user_id: uid,
+          prefs: payload as unknown as Record<string, unknown>,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+      if (error) logSupabaseUnlessJwt("[spaces] prefs", error);
+    }, 450);
+  }, []);
+
+  const loadPrefs = useCallback(async (uid: string) => {
+    const { data, error } = await supabase
+      .from("user_workspace_prefs")
+      .select("prefs")
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (error) {
+      if (!schemaLikelyMissing(error)) logSupabaseUnlessJwt("[spaces] prefs load", error);
+      return;
+    }
+    const p = (data?.prefs || {}) as UserPrefsPayload;
+    setUserPrefs(p);
+    if (p.treeExpanded && Object.keys(p.treeExpanded).length > 0) {
+      setExpandedFolders(p.treeExpanded);
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setSchemaBanner(null);
+    setExtensionsOk(false);
     await ensureFreshSupabaseSession();
 
     const [spRes, projRes] = await Promise.all([
@@ -181,7 +274,7 @@ export default function SpacesPage() {
     if (spRes.error) {
       if (schemaLikelyMissing(spRes.error)) {
         setSchemaBanner(
-          "As tabelas de Espaços ainda não existem no banco. Execute o arquivo lib/sql/workspaces-spaces.sql no Supabase (SQL Editor)."
+          "As tabelas de Espaços ainda não existem. Execute lib/sql/workspaces-spaces.sql no Supabase. Para Kanban, itens e campos customizados, execute também lib/sql/workspaces-spaces-extensions.sql."
         );
         setSpaces([]);
         setNodes([]);
@@ -200,32 +293,69 @@ export default function SpacesPage() {
     const sidList = ((spRes.data as WorkspaceSpace[]) || []).map((s) => s.id);
     if (sidList.length === 0) {
       setNodes([]);
+      setExtensionsOk(false);
+      if (projRes.error) {
+        logSupabaseUnlessJwt("[spaces] projects", projRes.error);
+        setProjects([]);
+      } else {
+        setProjects((projRes.data as ProjectPick[]) || []);
+      }
       setLoading(false);
       return;
     }
 
-    const nodeRes = await supabase
+    let ext = true;
+    const resExt = await supabase
       .from("workspace_space_nodes")
-      .select(
-        "id, space_id, parent_id, kind, name, color, sort_order, project_id, projects(id, name, municipality, state, discipline, sanitation_type)"
-      )
+      .select(NODE_SELECT_EXTENDED)
       .in("space_id", sidList)
       .order("sort_order")
       .order("name");
 
-    if (nodeRes.error) {
-      logSupabaseUnlessJwt("[spaces] nodes", nodeRes.error);
-      showErrorToast("Não foi possível carregar pastas/listas", getSupabaseErrorMessage(nodeRes.error));
-      setNodes([]);
+    let rows: Array<Record<string, unknown>> = [];
+
+    if (!resExt.error) {
+      rows = (resExt.data || []) as Array<Record<string, unknown>>;
+    } else if (isColumnMissingError(resExt.error)) {
+      ext = false;
+      const resBasic = await supabase
+        .from("workspace_space_nodes")
+        .select(NODE_SELECT_BASIC)
+        .in("space_id", sidList)
+        .order("sort_order")
+        .order("name");
+      if (resBasic.error) {
+        logSupabaseUnlessJwt("[spaces] nodes", resBasic.error);
+        showErrorToast("Não foi possível carregar pastas/listas", getSupabaseErrorMessage(resBasic.error));
+        setNodes([]);
+        setExtensionsOk(false);
+        if (projRes.error) {
+          logSupabaseUnlessJwt("[spaces] projects", projRes.error);
+          setProjects([]);
+        } else {
+          setProjects((projRes.data as ProjectPick[]) || []);
+        }
+        setLoading(false);
+        return;
+      }
+      rows = (resBasic.data || []) as Array<Record<string, unknown>>;
     } else {
-      const rows = (nodeRes.data || []) as Array<Omit<WorkspaceNode, "projects"> & { projects?: unknown }>;
-      setNodes(
-        rows.map((r) => ({
-          ...r,
-          projects: normalizeProjectEmbed(r.projects),
-        }))
-      );
+      logSupabaseUnlessJwt("[spaces] nodes", resExt.error);
+      showErrorToast("Não foi possível carregar pastas/listas", getSupabaseErrorMessage(resExt.error));
+      setNodes([]);
+      setExtensionsOk(false);
+      if (projRes.error) {
+        logSupabaseUnlessJwt("[spaces] projects", projRes.error);
+        setProjects([]);
+      } else {
+        setProjects((projRes.data as ProjectPick[]) || []);
+      }
+      setLoading(false);
+      return;
     }
+
+    setExtensionsOk(ext);
+    setNodes(rows.map((r) => mapRowToWorkspaceNode(r, ext)));
 
     if (projRes.error) {
       logSupabaseUnlessJwt("[spaces] projects", projRes.error);
@@ -238,8 +368,13 @@ export default function SpacesPage() {
   }, []);
 
   useEffect(() => {
-    getCurrentProfile().then((p) => setMyRole(p?.role ?? null));
-  }, []);
+    getCurrentProfile().then((p) => {
+      setMyRole(p?.role ?? null);
+      const id = p?.id ?? null;
+      setUserId(id);
+      if (id) void loadPrefs(id);
+    });
+  }, [loadPrefs]);
 
   useEffect(() => {
     void loadAll();
@@ -261,7 +396,15 @@ export default function SpacesPage() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
 
   function toggleFolder(id: string) {
-    setExpandedFolders((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }));
+    setExpandedFolders((prev) => {
+      const next = { ...prev, [id]: !(prev[id] ?? true) };
+      setUserPrefs((p) => {
+        const merged = { ...p, treeExpanded: next };
+        debounceSavePrefs(merged);
+        return merged;
+      });
+      return next;
+    });
   }
 
   async function handleCreateSpace() {
@@ -343,7 +486,7 @@ export default function SpacesPage() {
     const sibs = siblingsOf(nodes, selectedSpaceId, parentId);
     const nextOrder = sibs.length > 0 ? Math.max(...sibs.map((x) => x.sort_order)) + 1 : 0;
 
-    const { error } = await supabase.from("workspace_space_nodes").insert({
+    const insert: Record<string, unknown> = {
       space_id: selectedSpaceId,
       parent_id: parentId,
       kind,
@@ -351,7 +494,13 @@ export default function SpacesPage() {
       sort_order: nextOrder,
       color: null,
       project_id: null,
-    });
+    };
+    if (extensionsOk) {
+      insert.default_view = "list";
+      insert.custom_field_definitions = [];
+    }
+
+    const { error } = await supabase.from("workspace_space_nodes").insert(insert);
 
     if (error) {
       showErrorToast("Não foi possível criar", getSupabaseErrorMessage(error));
@@ -395,92 +544,41 @@ export default function SpacesPage() {
     await loadAll();
   }
 
-  function renderNodeTree(parentId: string | null, depth: number) {
-    if (!selectedSpaceId) return null;
-    const list = siblingsOf(nodesInSpace, selectedSpaceId, parentId);
-    return (
-      <div style={{ marginLeft: depth > 0 ? 12 : 0 }}>
-        {list.map((node) => {
-          const isFolder = node.kind === "folder";
-          const open = expandedFolders[node.id] ?? true;
-          const rowColor = node.color || (isFolder ? "var(--warning)" : "var(--primary)");
-          return (
-            <div key={node.id} style={{ marginBottom: 2 }}>
-              <div
-                className="flex items-center gap-1"
-                style={{
-                  borderRadius: 8,
-                  background:
-                    selectedNodeId === node.id
-                      ? "color-mix(in srgb, var(--primary) 12%, var(--surface))"
-                      : "transparent",
-                  border:
-                    selectedNodeId === node.id ? "1px solid color-mix(in srgb, var(--primary) 35%, transparent)" : "1px solid transparent",
-                }}
-              >
-                {isFolder ? (
-                  <button
-                    type="button"
-                    onClick={() => toggleFolder(node.id)}
-                    className="p-1 rounded"
-                    style={{ color: "var(--muted-fg)" }}
-                    aria-label={open ? "Recolher" : "Expandir"}
-                  >
-                    {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </button>
-                ) : (
-                  <span style={{ width: 22 }} />
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSelectedNodeId(node.id)}
-                  className="flex items-center gap-2 min-w-0 flex-1 text-left py-1.5 pr-2"
-                  style={{ background: "none", border: "none", cursor: "pointer" }}
-                >
-                  {isFolder ? (
-                    <Folder size={15} style={{ color: rowColor, flexShrink: 0 }} />
-                  ) : (
-                    <ListTodo size={15} style={{ color: rowColor, flexShrink: 0 }} />
-                  )}
-                  <span
-                    className="text-sm font-semibold truncate"
-                    style={{ color: "var(--foreground)" }}
-                  >
-                    {node.name}
-                  </span>
-                  {node.kind === "list" && node.project_id && (
-                    <Badge variant="neutral" style={{ fontSize: 10, flexShrink: 0 }}>
-                      Projeto
-                    </Badge>
-                  )}
-                </button>
-                {podeEditarNos && (
-                  <div className="flex items-center gap-0.5 pr-1">
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      title="Mover para cima"
-                      onClick={() => void moveNode(node, -1)}
-                    >
-                      <ArrowUp size={12} />
-                    </Button>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      title="Mover para baixo"
-                      onClick={() => void moveNode(node, 1)}
-                    >
-                      <ArrowDown size={12} />
-                    </Button>
-                  </div>
-                )}
-              </div>
-              {isFolder && open && renderNodeTree(node.id, depth + 1)}
-            </div>
-          );
-        })}
-      </div>
+  async function applyDropMove(draggedId: string, targetId: string, placement: TreePlacement) {
+    if (!podeEditarNos || !selectedSpaceId) return;
+
+    let updates: { id: string; parent_id: string | null; sort_order: number }[] | null = null;
+    if (targetId === "__root__") {
+      updates = computeMoveToRootEnd(nodes, selectedSpaceId, draggedId);
+    } else {
+      updates = computeTreeMove(nodes, selectedSpaceId, draggedId, targetId, placement);
+    }
+    if (!updates?.length) return;
+
+    const dragged = nodes.find((n) => n.id === draggedId);
+    if (!dragged) return;
+
+    const newParentForDragged = updates.find((u) => u.id === draggedId)?.parent_id ?? null;
+    const patches = [...updates];
+
+    if (dragged.parent_id !== newParentForDragged) {
+      const oldSibs = siblingsOf(nodes, dragged.space_id, dragged.parent_id).filter(
+        (n) => n.id !== draggedId
+      );
+      oldSibs.forEach((n, i) => {
+        patches.push({ id: n.id, parent_id: dragged.parent_id, sort_order: i });
+      });
+    }
+
+    await Promise.all(
+      patches.map((p) =>
+        supabase
+          .from("workspace_space_nodes")
+          .update({ parent_id: p.parent_id, sort_order: p.sort_order })
+          .eq("id", p.id)
+      )
     );
+    await loadAll();
   }
 
   const detailProject = selectedNode?.projects;
@@ -508,6 +606,16 @@ export default function SpacesPage() {
         <Card className="mb-4 p-4" style={{ borderColor: "var(--warning)", background: "var(--warning-soft)" }}>
           <p className="text-sm" style={{ fontWeight: 600, color: "var(--warning-fg)", margin: 0 }}>
             {schemaBanner}
+          </p>
+        </Card>
+      )}
+
+      {!schemaBanner && !extensionsOk && spaces.length > 0 && (
+        <Card className="mb-4 p-3" style={{ background: "var(--surface-2)", borderColor: "var(--border)" }}>
+          <p className="text-sm text-muted m-0">
+            <strong className="text-foreground">Extensões opcionais:</strong> execute{" "}
+            <code className="text-xs">lib/sql/workspaces-spaces-extensions.sql</code> no Supabase para
+            ativar itens nas listas, quadro Kanban, campos customizados e preferências pessoais de vista.
           </p>
         </Card>
       )}
@@ -665,23 +773,57 @@ export default function SpacesPage() {
                   <div className="text-xs font-bold uppercase text-muted mb-2">Árvore</div>
                   {nodesInSpace.length === 0 ? (
                     <p className="text-sm text-muted">Nenhuma pasta ou lista. Adicione itens na raiz ou dentro de pastas.</p>
-                  ) : (
-                    renderNodeTree(null, 0)
-                  )}
+                  ) : selectedSpaceId ? (
+                    <WorkspaceTreeDnD
+                      nodes={nodesInSpace as WorkspaceTreeNode[]}
+                      spaceId={selectedSpaceId}
+                      selectedNodeId={selectedNodeId}
+                      expandedFolders={expandedFolders}
+                      onToggleFolder={toggleFolder}
+                      onSelectNode={setSelectedNodeId}
+                      podeEditar={podeEditarNos}
+                      onMoveUpDown={(node, dir) => void moveNode(node as WorkspaceNode, dir)}
+                      onDropReorder={(from, to, p) => void applyDropMove(from, to, p)}
+                    />
+                  ) : null}
                 </div>
                 <div className="lg:border-l lg:pl-4 flex-1 min-w-0" style={{ borderColor: "var(--border)" }}>
                   {!selectedNode ? (
                     <p className="text-sm text-muted">Clique em uma pasta ou lista para ver detalhes e personalizar.</p>
                   ) : (
+                    <>
                     <NodeInspector
                       node={selectedNode}
                       projects={projects}
+                      extensionsOk={extensionsOk}
                       podeEditar={podeEditarNos}
                       onPatch={(patch) => void updateNodePatch(selectedNode.id, patch)}
                       onDelete={() => void handleDeleteNode(selectedNode.id)}
                       onAddChild={(kind, parentId) => void addNode(kind, parentId)}
                       saneHref={saneHref}
                     />
+                    {selectedNode.kind === "list" && extensionsOk && (
+                      <ListItemsSection
+                        listNodeId={selectedNode.id}
+                        enabled={extensionsOk}
+                        defaultView={(selectedNode.default_view as WorkspaceViewMode) || "list"}
+                        userViewMode={userPrefs.listViewByNode?.[selectedNode.id] ?? null}
+                        onUserViewModeChange={(mode) => {
+                          setUserPrefs((p) => {
+                            const merged = {
+                              ...p,
+                              listViewByNode: { ...p.listViewByNode, [selectedNode.id]: mode },
+                            };
+                            debounceSavePrefs(merged);
+                            return merged;
+                          });
+                        }}
+                        kanbanColumnsRaw={selectedNode.kanban_columns}
+                        customFieldDefs={selectedNode.custom_field_definitions ?? []}
+                        podeEditarItens={podeEditarNos || myRole === "projetista" || myRole === "employee"}
+                      />
+                    )}
+                    </>
                   )}
                 </div>
               </div>
@@ -755,6 +897,7 @@ function SpaceEditor({
 function NodeInspector({
   node,
   projects,
+  extensionsOk,
   podeEditar,
   onPatch,
   onDelete,
@@ -763,6 +906,7 @@ function NodeInspector({
 }: {
   node: WorkspaceNode;
   projects: ProjectPick[];
+  extensionsOk: boolean;
   podeEditar: boolean;
   onPatch: (patch: Record<string, unknown>) => void;
   onDelete: () => void;
@@ -772,14 +916,55 @@ function NodeInspector({
   const [name, setName] = useState(node.name);
   const [color, setColor] = useState(node.color || "");
   const [projectId, setProjectId] = useState(node.project_id || "");
+  const [kanbanJson, setKanbanJson] = useState(
+    () => JSON.stringify(parseKanbanColumns(node.kanban_columns), null, 2)
+  );
+  const [customFields, setCustomFields] = useState<CustomFieldDef[]>(
+    () => node.custom_field_definitions ?? []
+  );
 
   useEffect(() => {
     setName(node.name);
     setColor(node.color || "");
     setProjectId(node.project_id || "");
-  }, [node.id, node.name, node.color, node.project_id]);
+    setKanbanJson(JSON.stringify(parseKanbanColumns(node.kanban_columns), null, 2));
+    setCustomFields(node.custom_field_definitions ?? []);
+  }, [node.id, node.name, node.color, node.project_id, node.kanban_columns, node.custom_field_definitions]);
 
   const linked = node.projects;
+
+  function saveKanbanJson() {
+    try {
+      const parsed = JSON.parse(kanbanJson) as unknown;
+      const cols = parseKanbanColumns(parsed);
+      if (cols.length === 0) {
+        showErrorToast("JSON inválido", "Informe ao menos uma coluna { key, label }.");
+        return;
+      }
+      onPatch({ kanban_columns: cols });
+      showSuccessToast("Colunas salvas", "");
+    } catch {
+      showErrorToast("JSON inválido", "Verifique a sintaxe do array.");
+    }
+  }
+
+  function addCustomField() {
+    const id = `cf_${crypto.randomUUID().slice(0, 8)}`;
+    setCustomFields((prev) => [...prev, { id, name: "Novo campo", type: "text" }]);
+  }
+
+  function updateField(i: number, patch: Partial<CustomFieldDef>) {
+    setCustomFields((prev) => prev.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  }
+
+  function removeField(i: number) {
+    setCustomFields((prev) => prev.filter((_, j) => j !== i));
+  }
+
+  function saveCustomFields() {
+    onPatch({ custom_field_definitions: customFields });
+    showSuccessToast("Campos salvos", "");
+  }
 
   return (
     <div>
@@ -826,6 +1011,121 @@ function NodeInspector({
             )}
           </div>
         </Field>
+
+        {node.kind === "list" && extensionsOk && (
+          <>
+            <Field label="Vista padrão (equipe)">
+              <Select
+                value={node.default_view || "list"}
+                onChange={(e) =>
+                  onPatch({ default_view: e.target.value === "kanban" ? "kanban" : "list" })
+                }
+                disabled={!podeEditar}
+              >
+                <option value="list">Lista</option>
+                <option value="kanban">Quadro (Kanban)</option>
+              </Select>
+              <p className="text-xs text-muted mt-1 m-0">
+                Cada usuário pode alternar Lista/Quadro no painel abaixo; aqui define o padrão da lista.
+              </p>
+            </Field>
+
+            <Field
+              label="Colunas do quadro (JSON)"
+              help='Ex.: [{"key":"todo","label":"A fazer"},{"key":"done","label":"Feito"}]'
+            >
+              <Textarea
+                value={kanbanJson}
+                onChange={(e) => setKanbanJson(e.target.value)}
+                disabled={!podeEditar}
+                rows={5}
+                className="font-mono text-xs"
+              />
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {podeEditar && (
+                  <>
+                    <Button size="sm" variant="secondary" onClick={() => setKanbanJson(JSON.stringify(DEFAULT_KANBAN_COLUMNS, null, 2))}>
+                      Restaurar 3 colunas padrão
+                    </Button>
+                    <Button size="sm" onClick={saveKanbanJson}>
+                      Salvar colunas
+                    </Button>
+                  </>
+                )}
+              </div>
+            </Field>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase text-muted">Campos customizados</span>
+                {podeEditar && (
+                  <Button size="sm" variant="secondary" leftIcon={<Plus size={14} />} onClick={addCustomField}>
+                    Campo
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {customFields.map((f, i) => (
+                  <div
+                    key={f.id}
+                    className="flex flex-wrap gap-2 items-end p-2 rounded-lg"
+                    style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+                  >
+                    <Field label="Nome" className="flex-1 min-w-[120px] mb-0">
+                      <Input
+                        value={f.name}
+                        onChange={(e) => updateField(i, { name: e.target.value })}
+                        disabled={!podeEditar}
+                      />
+                    </Field>
+                    <Field label="Tipo" className="w-32 mb-0">
+                      <Select
+                        value={f.type}
+                        onChange={(e) =>
+                          updateField(i, {
+                            type: e.target.value as CustomFieldDef["type"],
+                            options: e.target.value === "select" ? f.options ?? ["A", "B"] : undefined,
+                          })
+                        }
+                        disabled={!podeEditar}
+                      >
+                        <option value="text">Texto</option>
+                        <option value="number">Número</option>
+                        <option value="date">Data</option>
+                        <option value="select">Lista</option>
+                      </Select>
+                    </Field>
+                    {f.type === "select" && (
+                      <Field label="Opções (vírgula)" className="flex-1 min-w-[160px] mb-0">
+                        <Input
+                          value={(f.options || []).join(", ")}
+                          onChange={(e) =>
+                            updateField(i, {
+                              options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                            })
+                          }
+                          disabled={!podeEditar}
+                          placeholder="A, B, C"
+                        />
+                      </Field>
+                    )}
+                    <span className="text-[10px] text-muted font-mono pb-2">id: {f.id}</span>
+                    {podeEditar && (
+                      <Button size="icon-sm" variant="danger-ghost" onClick={() => removeField(i)}>
+                        <Trash2 size={14} />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {podeEditar && customFields.length > 0 && (
+                <Button className="mt-2" size="sm" onClick={saveCustomFields}>
+                  Salvar campos
+                </Button>
+              )}
+            </div>
+          </>
+        )}
 
         {node.kind === "list" && (
           <Field label="Vincular projeto (opcional)">

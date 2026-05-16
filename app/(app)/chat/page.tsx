@@ -13,6 +13,15 @@ import {
   FileDown,
   Bell,
   BellOff,
+  Paperclip,
+  Image as ImageIcon,
+  Video,
+  FileText,
+  X,
+  Users,
+  UserPlus,
+  Check,
+  ExternalLink,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -34,6 +43,7 @@ import { formatProjectDisplayName } from "@/lib/project-display";
 type Message = {
   id: string;
   content: string;
+  attachments?: ChatAttachment[] | null;
   sender_id: string;
   created_at: string;
   project_id: string | null;
@@ -56,6 +66,33 @@ type ChatGroup = {
   id: string;
   name: string;
   project_id: string | null;
+  created_by?: string | null;
+};
+
+type ChatAttachment = {
+  name: string;
+  url: string;
+  type: string;
+  size: number;
+  path?: string;
+};
+
+type ChatMember = {
+  user_id: string;
+  users?: {
+    name: string;
+    email?: string | null;
+    role?: string | null;
+    photo_url?: string | null;
+  } | null;
+};
+
+type UserOption = {
+  id: string;
+  name: string;
+  email?: string | null;
+  role?: string | null;
+  photo_url?: string | null;
 };
 
 type EnrichedMessage = Message & {
@@ -65,6 +102,8 @@ type EnrichedMessage = Message & {
 };
 
 const CHAT_MUTED_GROUPS_KEY = "hydra-chat-muted-groups";
+const CHAT_ATTACHMENTS_BUCKET = "chat-attachments";
+const MAX_CHAT_ATTACHMENT_SIZE = 50 * 1024 * 1024;
 
 function localDateKey(iso: string): string {
   const d = new Date(iso);
@@ -91,11 +130,43 @@ function formatDateRuleLabel(iso: string): string {
   });
 }
 
+function formatFileSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getAttachmentKind(type: string) {
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  return "file";
+}
+
+function sanitizeFileName(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 90);
+}
+
+function AttachmentIcon({ type }: { type: string }) {
+  const kind = getAttachmentKind(type);
+  if (kind === "image") return <ImageIcon size={15} />;
+  if (kind === "video") return <Video size={15} />;
+  return <FileText size={15} />;
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [chatGroups, setChatGroups] = useState<ChatGroup[]>([]);
+  const [groupMembers, setGroupMembers] = useState<ChatMember[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
   const [groupSearch, setGroupSearch] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [showMembersPanel, setShowMembersPanel] = useState(false);
 
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [currentProfileId, setCurrentProfileId] = useState<string | null>(null);
@@ -103,6 +174,7 @@ export default function ChatPage() {
 
   const [content, setContent] = useState("");
   const [sending, setSending] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [mutedGroupIds, setMutedGroupIds] = useState<string[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
@@ -112,6 +184,7 @@ export default function ChatPage() {
   const [mobilePanel, setMobilePanel] = useState<"list" | "chat">("list");
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const senderNameCache = useRef<Record<string, string>>({});
   const notifiedPermissionRef = useRef(false);
 
@@ -135,10 +208,22 @@ export default function ChatPage() {
     setProjects(data || []);
   }
 
+  async function loadUsers() {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, name, email, role, photo_url")
+      .order("name", { ascending: true });
+    if (error) {
+      showErrorToast("Erro ao carregar pessoas", getSupabaseErrorMessage(error));
+      return;
+    }
+    setUsers((data as UserOption[]) || []);
+  }
+
   async function loadChatGroups() {
     const { data, error } = await supabase
       .from("chat_groups")
-      .select("id, name, project_id")
+      .select("id, name, project_id, created_by")
       .order("name", { ascending: true });
     if (error) {
       showErrorToast("Erro ao carregar grupos", getSupabaseErrorMessage(error));
@@ -152,6 +237,23 @@ export default function ChatPage() {
     });
   }
 
+  async function loadGroupMembers(groupId: string) {
+    if (!groupId) {
+      setGroupMembers([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("chat_group_members")
+      .select("user_id, users:user_id (name, email, role, photo_url)")
+      .eq("chat_group_id", groupId)
+      .order("created_at", { ascending: true });
+    if (error) {
+      setGroupMembers([]);
+      return;
+    }
+    setGroupMembers((data as unknown as ChatMember[]) || []);
+  }
+
   async function loadMessages(groupId: string) {
     if (!groupId) {
       setMessages([]);
@@ -160,7 +262,7 @@ export default function ChatPage() {
     const { data, error } = await supabase
       .from("messages")
       .select(
-        "id, content, sender_id, created_at, project_id, chat_group_id, users:sender_id (name, email, role)"
+        "id, content, attachments, sender_id, created_at, project_id, chat_group_id, users:sender_id (name, email, role)"
       )
       .eq("chat_group_id", groupId)
       .order("created_at", { ascending: true });
@@ -199,7 +301,14 @@ export default function ChatPage() {
       return;
     }
 
+    await supabase.from("chat_group_members").insert({
+      chat_group_id: group.id,
+      user_id: profile.id,
+      added_by: profile.id,
+    });
+
     await loadChatGroups();
+    await loadGroupMembers(group.id);
     setSelectedGroupId(group.id);
     if (isNarrow) setMobilePanel("chat");
     showSuccessToast("Grupo criado", "Grupo avulso criado com sucesso.");
@@ -207,7 +316,7 @@ export default function ChatPage() {
 
   async function handleSendMessage() {
     const trimmed = content.trim();
-    if (!trimmed || !selectedGroupId) return;
+    if ((!trimmed && selectedFiles.length === 0) || !selectedGroupId) return;
 
     const senderId =
       currentProfileId || (await getCurrentProfile())?.id || null;
@@ -217,8 +326,51 @@ export default function ChatPage() {
     }
 
     setSending(true);
+    const uploadedAttachments: ChatAttachment[] = [];
+    for (const file of selectedFiles) {
+      if (file.size > MAX_CHAT_ATTACHMENT_SIZE) {
+        showErrorToast(
+          "Arquivo muito grande",
+          `${file.name} passa de ${formatFileSize(MAX_CHAT_ATTACHMENT_SIZE)}.`
+        );
+        setSending(false);
+        return;
+      }
+
+      const safeName = sanitizeFileName(file.name);
+      const path = `${selectedGroupId}/${senderId}/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from(CHAT_ATTACHMENTS_BUCKET)
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type || "application/octet-stream",
+        });
+
+      if (uploadError) {
+        showErrorToast(
+          "Erro ao anexar arquivo",
+          `${getSupabaseErrorMessage(uploadError)}. Verifique se o bucket '${CHAT_ATTACHMENTS_BUCKET}' existe.`
+        );
+        setSending(false);
+        return;
+      }
+
+      const { data } = supabase.storage
+        .from(CHAT_ATTACHMENTS_BUCKET)
+        .getPublicUrl(path);
+      uploadedAttachments.push({
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        path,
+        url: data.publicUrl,
+      });
+    }
+
     const { error } = await supabase.from("messages").insert({
       content: trimmed,
+      attachments: uploadedAttachments,
       sender_id: senderId,
       chat_group_id: selectedGroupId,
     });
@@ -230,8 +382,24 @@ export default function ChatPage() {
     }
 
     setContent("");
+    setSelectedFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setSending(false);
-    showSuccessToast("Mensagem enviada", `Canal: ${channelTitle}`);
+    showSuccessToast(
+      uploadedAttachments.length > 0 ? "Mensagem com anexo enviada" : "Mensagem enviada",
+      `Canal: ${channelTitle}`
+    );
+  }
+
+  function handlePickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const next = [...selectedFiles, ...files].slice(0, 8);
+    setSelectedFiles(next);
+  }
+
+  function removeSelectedFile(index: number) {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
   const saveMutedGroups = useCallback((next: string[]) => {
@@ -299,6 +467,7 @@ export default function ChatPage() {
   useEffect(() => {
     loadCurrentProfile();
     loadProjects();
+    loadUsers();
     loadChatGroups();
   }, []);
 
@@ -332,7 +501,13 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedGroupId) loadMessages(selectedGroupId);
+    if (selectedGroupId) {
+      loadMessages(selectedGroupId);
+      loadGroupMembers(selectedGroupId);
+      return;
+    }
+    setMessages([]);
+    setGroupMembers([]);
   }, [selectedGroupId]);
 
   useEffect(() => {
@@ -381,6 +556,30 @@ export default function ChatPage() {
     () => chatGroups.find((group) => group.id === selectedGroupId) || null,
     [chatGroups, selectedGroupId]
   );
+  const isSelectedAdHocGroup = !!selectedGroup && !selectedGroup.project_id;
+  const canManageSelectedGroup =
+    !!selectedGroup &&
+    isSelectedAdHocGroup &&
+    (canCreateGroup || selectedGroup.created_by === currentProfileId);
+
+  const memberIds = useMemo(
+    () => new Set(groupMembers.map((member) => member.user_id)),
+    [groupMembers]
+  );
+
+  const availableUsersToAdd = useMemo(() => {
+    const q = memberSearch.trim().toLowerCase();
+    return users
+      .filter((user) => !memberIds.has(user.id))
+      .filter((user) => {
+        if (!q) return true;
+        return (
+          user.name.toLowerCase().includes(q) ||
+          (user.email || "").toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 8);
+  }, [memberIds, memberSearch, users]);
 
   const projectById = useMemo(
     () =>
@@ -470,7 +669,44 @@ export default function ChatPage() {
 
   function selectGroup(id: string) {
     setSelectedGroupId(id);
+    setShowMembersPanel(false);
     if (isNarrow) setMobilePanel("chat");
+  }
+
+  async function addMember(userId: string) {
+    if (!selectedGroupId || !canManageSelectedGroup) return;
+    const profile = await getCurrentProfile();
+    const { error } = await supabase.from("chat_group_members").insert({
+      chat_group_id: selectedGroupId,
+      user_id: userId,
+      added_by: profile?.id || currentProfileId,
+    });
+    if (error) {
+      showErrorToast("Erro ao adicionar pessoa", getSupabaseErrorMessage(error));
+      return;
+    }
+    await loadGroupMembers(selectedGroupId);
+    setMemberSearch("");
+    showSuccessToast("Pessoa adicionada", "O grupo avulso foi atualizado.");
+  }
+
+  async function removeMember(userId: string) {
+    if (!selectedGroupId || !canManageSelectedGroup) return;
+    if (userId === currentProfileId) {
+      showErrorToast("Ação bloqueada", "Você não pode remover a si mesmo do grupo.");
+      return;
+    }
+    const { error } = await supabase
+      .from("chat_group_members")
+      .delete()
+      .eq("chat_group_id", selectedGroupId)
+      .eq("user_id", userId);
+    if (error) {
+      showErrorToast("Erro ao remover pessoa", getSupabaseErrorMessage(error));
+      return;
+    }
+    await loadGroupMembers(selectedGroupId);
+    showSuccessToast("Pessoa removida", "O acesso ao grupo foi atualizado.");
   }
 
   async function handleExportChatPdf() {
@@ -640,6 +876,16 @@ export default function ChatPage() {
                 <Button
                   size="sm"
                   variant="secondary"
+                  leftIcon={<Users size={14} />}
+                  onClick={() => setShowMembersPanel((prev) => !prev)}
+                  disabled={!selectedGroupId}
+                  title="Ver participantes do grupo"
+                >
+                  {groupMembers.length || (selectedGroup?.project_id ? "Projeto" : 0)}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
                   leftIcon={selectedGroupMuted ? <BellOff size={14} /> : <Bell size={14} />}
                   onClick={() => selectedGroupId && toggleMuteGroup(selectedGroupId)}
                   disabled={!selectedGroupId}
@@ -680,6 +926,104 @@ export default function ChatPage() {
                 </Badge>
               </div>
             </header>
+
+            {showMembersPanel && selectedGroupId && (
+              <section className="chat-members-panel">
+                <div className="chat-members-head">
+                  <div>
+                    <h3 className="chat-members-title">Participantes</h3>
+                    <p className="chat-members-sub">
+                      {isSelectedAdHocGroup
+                        ? "Controle quem participa deste grupo avulso."
+                        : "Grupos de projeto seguem a equipe vinculada ao projeto."}
+                    </p>
+                  </div>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => setShowMembersPanel(false)}
+                    title="Fechar participantes"
+                  >
+                    <X size={16} />
+                  </Button>
+                </div>
+
+                <div className="chat-members-grid">
+                  <div className="chat-members-list">
+                    {groupMembers.length === 0 && (
+                      <p className="text-sm text-muted">
+                        {isSelectedAdHocGroup
+                          ? "Nenhum participante cadastrado ainda."
+                          : "Participantes do projeto aparecem conforme as regras de acesso."}
+                      </p>
+                    )}
+                    {groupMembers.map((member) => (
+                      <div key={member.user_id} className="chat-member-row">
+                        <Avatar
+                          name={member.users?.name || "Usuário"}
+                          src={member.users?.photo_url || null}
+                          size="sm"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="chat-member-name truncate">
+                            {member.users?.name || "Usuário"}
+                          </div>
+                          <div className="chat-member-email truncate">
+                            {member.users?.email || member.users?.role || "Sem e-mail"}
+                          </div>
+                        </div>
+                        {canManageSelectedGroup && member.user_id !== currentProfileId && (
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            onClick={() => removeMember(member.user_id)}
+                            title="Remover do grupo"
+                          >
+                            <X size={14} />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {canManageSelectedGroup && (
+                    <div className="chat-members-add">
+                      <div className="chat-members-add-title">
+                        <UserPlus size={15} />
+                        Adicionar pessoa
+                      </div>
+                      <Input
+                        placeholder="Buscar por nome ou e-mail..."
+                        value={memberSearch}
+                        onChange={(e) => setMemberSearch(e.target.value)}
+                      />
+                      <div className="chat-user-pick-list">
+                        {availableUsersToAdd.map((user) => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            className="chat-user-pick"
+                            onClick={() => addMember(user.id)}
+                          >
+                            <Avatar name={user.name} src={user.photo_url} size="sm" />
+                            <span className="min-w-0 flex-1">
+                              <span className="chat-member-name truncate">{user.name}</span>
+                              <span className="chat-member-email truncate">
+                                {user.email || user.role || "Sem e-mail"}
+                              </span>
+                            </span>
+                            <Check size={14} />
+                          </button>
+                        ))}
+                        {availableUsersToAdd.length === 0 && (
+                          <p className="text-xs text-muted">Nenhuma pessoa disponível.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             <div className="chat-thread-body">
               {!selectedGroupId && (
@@ -737,7 +1081,53 @@ export default function ChatPage() {
                               isMine ? "chat-bubble-mine" : "chat-bubble-theirs"
                             }`}
                           >
-                            <p className="chat-bubble-text m-0">{message.content}</p>
+                            {message.content && (
+                              <p className="chat-bubble-text m-0">{message.content}</p>
+                            )}
+                            {message.attachments && message.attachments.length > 0 && (
+                              <div className="chat-attachments">
+                                {message.attachments.map((attachment, index) => {
+                                  const kind = getAttachmentKind(attachment.type);
+                                  return (
+                                    <a
+                                      key={`${attachment.url}-${index}`}
+                                      href={attachment.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className={`chat-attachment chat-attachment-${kind}`}
+                                    >
+                                      {kind === "image" ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={attachment.url}
+                                          alt={attachment.name}
+                                          className="chat-attachment-image"
+                                        />
+                                      ) : kind === "video" ? (
+                                        <video
+                                          src={attachment.url}
+                                          className="chat-attachment-video"
+                                          controls
+                                        />
+                                      ) : (
+                                        <span className="chat-attachment-file-icon">
+                                          <AttachmentIcon type={attachment.type} />
+                                        </span>
+                                      )}
+                                      <span className="chat-attachment-meta">
+                                        <span className="chat-attachment-name truncate">
+                                          {attachment.name}
+                                        </span>
+                                        <span className="chat-attachment-size">
+                                          {formatFileSize(attachment.size)}
+                                          <ExternalLink size={11} />
+                                        </span>
+                                      </span>
+                                    </a>
+                                  );
+                                })}
+                              </div>
+                            )}
                             <time className="chat-bubble-time">
                               {new Date(message.created_at).toLocaleTimeString(
                                 "pt-BR",
@@ -758,11 +1148,53 @@ export default function ChatPage() {
             </div>
 
             <footer className="chat-composer">
+              {selectedFiles.length > 0 && (
+                <div className="chat-selected-files">
+                  {selectedFiles.map((file, index) => (
+                    <div key={`${file.name}-${index}`} className="chat-selected-file">
+                      <span className="chat-selected-file-icon">
+                        <AttachmentIcon type={file.type || "application/octet-stream"} />
+                      </span>
+                      <span className="chat-selected-file-meta min-w-0">
+                        <span className="chat-selected-file-name truncate">{file.name}</span>
+                        <span className="chat-selected-file-size">{formatFileSize(file.size)}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeSelectedFile(index)}
+                        className="chat-selected-file-remove"
+                        title="Remover anexo"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="chat-composer-inner">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
+                  className="hidden"
+                  onChange={handlePickFiles}
+                />
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!selectedGroupId || sending}
+                  title="Anexar fotos, vídeos, prints e arquivos"
+                  className="chat-attach-button"
+                >
+                  <Paperclip size={17} />
+                </Button>
                 <Textarea
                   placeholder={
                     selectedGroupId
-                      ? "Escreva uma mensagem… (Enter para enviar, Shift+Enter para nova linha)"
+                      ? "Mensagem, print, foto, vídeo ou arquivo..."
                       : "Selecione um canal para conversar"
                   }
                   value={content}
@@ -780,7 +1212,7 @@ export default function ChatPage() {
                 <Button
                   onClick={handleSendMessage}
                   loading={sending}
-                  disabled={!selectedGroupId || !content.trim()}
+                  disabled={!selectedGroupId || (!content.trim() && selectedFiles.length === 0)}
                   className="chat-composer-send"
                   leftIcon={!sending ? <Send size={16} /> : undefined}
                 >
@@ -966,8 +1398,106 @@ export default function ChatPage() {
           min-height: 0;
           overflow-y: auto;
           background:
-            radial-gradient(800px 280px at 10% 0%, color-mix(in srgb, var(--primary) 6%, transparent), transparent 55%),
+            linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 86%, var(--primary) 4%), var(--surface-2)),
             var(--surface-2);
+        }
+
+        .chat-members-panel {
+          flex-shrink: 0;
+          border-bottom: 1px solid var(--border);
+          background: color-mix(in srgb, var(--surface) 92%, var(--primary) 3%);
+          padding: 14px 18px;
+          box-shadow: var(--shadow-xs);
+        }
+
+        .chat-members-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+
+        .chat-members-title {
+          font-size: 14px;
+          font-weight: 800;
+          line-height: 1.2;
+        }
+
+        .chat-members-sub {
+          font-size: 12px;
+          color: var(--muted-fg);
+          margin-top: 2px;
+        }
+
+        .chat-members-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+          gap: 14px;
+          align-items: start;
+        }
+
+        .chat-members-list,
+        .chat-user-pick-list {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          max-height: 210px;
+          overflow-y: auto;
+        }
+
+        .chat-member-row,
+        .chat-user-pick {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 8px;
+          border-radius: var(--radius-md);
+          border: 1px solid var(--border);
+          background: var(--surface);
+          min-width: 0;
+        }
+
+        .chat-user-pick {
+          width: 100%;
+          cursor: pointer;
+          text-align: left;
+          color: var(--foreground);
+        }
+
+        .chat-user-pick:hover {
+          border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+          background: var(--primary-soft);
+        }
+
+        .chat-member-name {
+          display: block;
+          font-size: 13px;
+          font-weight: 700;
+          line-height: 1.2;
+        }
+
+        .chat-member-email {
+          display: block;
+          font-size: 11px;
+          color: var(--muted-fg);
+          line-height: 1.25;
+          margin-top: 2px;
+        }
+
+        .chat-members-add {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .chat-members-add-title {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 800;
+          color: var(--primary);
         }
 
         .chat-thread-empty {
@@ -1075,6 +1605,80 @@ export default function ChatPage() {
           font-variant-numeric: tabular-nums;
         }
 
+        .chat-attachments {
+          display: grid;
+          gap: 8px;
+          margin-top: 8px;
+          min-width: min(280px, 70vw);
+        }
+
+        .chat-attachment {
+          display: grid;
+          grid-template-columns: 40px minmax(0, 1fr);
+          gap: 9px;
+          align-items: center;
+          color: inherit;
+          border-radius: 12px;
+          overflow: hidden;
+          border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+          background: color-mix(in srgb, var(--surface) 72%, transparent);
+        }
+
+        .chat-bubble-mine .chat-attachment {
+          background: rgba(255,255,255,0.12);
+          border-color: rgba(255,255,255,0.2);
+        }
+
+        .chat-attachment-image,
+        .chat-attachment-video {
+          grid-column: 1 / -1;
+          width: 100%;
+          max-height: 340px;
+          object-fit: cover;
+          background: #000;
+          display: block;
+        }
+
+        .chat-attachment-file-icon {
+          width: 40px;
+          height: 40px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--primary);
+        }
+
+        .chat-bubble-mine .chat-attachment-file-icon {
+          color: #fff;
+        }
+
+        .chat-attachment-meta {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          min-width: 0;
+          padding: 8px 10px 8px 0;
+        }
+
+        .chat-attachment-image + .chat-attachment-meta,
+        .chat-attachment-video + .chat-attachment-meta {
+          grid-column: 1 / -1;
+          padding: 8px 10px 10px;
+        }
+
+        .chat-attachment-name {
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .chat-attachment-size {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 11px;
+          opacity: 0.78;
+        }
+
         .chat-composer {
           flex-shrink: 0;
           padding: 14px 16px 16px;
@@ -1093,6 +1697,69 @@ export default function ChatPage() {
           border: 1px solid var(--border);
           background: var(--surface-2);
           box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 50%, transparent);
+        }
+
+        .chat-selected-files {
+          max-width: 920px;
+          margin: 0 auto 8px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .chat-selected-file {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          max-width: min(320px, 100%);
+          padding: 7px 8px;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-md);
+          background: var(--surface-2);
+        }
+
+        .chat-selected-file-icon {
+          color: var(--primary);
+          display: inline-flex;
+          flex-shrink: 0;
+        }
+
+        .chat-selected-file-meta {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.2;
+        }
+
+        .chat-selected-file-name {
+          font-size: 12px;
+          font-weight: 700;
+        }
+
+        .chat-selected-file-size {
+          font-size: 10px;
+          color: var(--muted-fg);
+          margin-top: 2px;
+        }
+
+        .chat-selected-file-remove {
+          border: 0;
+          background: transparent;
+          color: var(--muted-fg);
+          display: inline-flex;
+          cursor: pointer;
+          padding: 2px;
+          border-radius: 999px;
+          flex-shrink: 0;
+        }
+
+        .chat-selected-file-remove:hover {
+          color: var(--danger);
+          background: var(--danger-soft);
+        }
+
+        .chat-attach-button {
+          margin: 8px 0 8px 4px;
+          flex-shrink: 0;
         }
 
         .chat-composer-input {
@@ -1118,6 +1785,18 @@ export default function ChatPage() {
           }
           .chat-bubble-wrap {
             max-width: 88%;
+          }
+          .chat-thread-header {
+            align-items: flex-start;
+          }
+          .chat-members-grid {
+            grid-template-columns: 1fr;
+          }
+          .chat-composer-inner {
+            gap: 6px;
+          }
+          .chat-composer-send span:last-child {
+            display: none;
           }
         }
       `}</style>

@@ -5,9 +5,13 @@ CREATE TABLE IF NOT EXISTS public.messages (
   recipient_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
   project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
+  attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE public.messages
+  ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- Indexes for faster queries
 CREATE INDEX IF NOT EXISTS messages_sender_idx ON public.messages(sender_id);

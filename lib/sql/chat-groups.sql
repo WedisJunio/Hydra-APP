@@ -23,11 +23,23 @@ ALTER TABLE public.messages
   ADD COLUMN IF NOT EXISTS chat_group_id UUID REFERENCES public.chat_groups(id) ON DELETE CASCADE;
 
 ALTER TABLE public.messages
+  ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.messages
   ALTER COLUMN project_id DROP NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.chat_group_members (
+  chat_group_id UUID NOT NULL REFERENCES public.chat_groups(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  added_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (chat_group_id, user_id)
+);
 
 CREATE INDEX IF NOT EXISTS chat_groups_project_id_idx ON public.chat_groups(project_id);
 CREATE INDEX IF NOT EXISTS chat_groups_name_idx ON public.chat_groups(name);
 CREATE INDEX IF NOT EXISTS messages_chat_group_id_idx ON public.messages(chat_group_id);
+CREATE INDEX IF NOT EXISTS chat_group_members_user_id_idx ON public.chat_group_members(user_id);
 
 -- ─── 2. Backfill grupos por projeto ───────────────────────────────────────────
 
@@ -36,6 +48,14 @@ SELECT p.name, p.id, p.created_by
 FROM public.projects p
 LEFT JOIN public.chat_groups cg ON cg.project_id = p.id
 WHERE cg.id IS NULL;
+
+-- Creator becomes the first member of existing ad hoc groups.
+INSERT INTO public.chat_group_members (chat_group_id, user_id, added_by)
+SELECT id, created_by, created_by
+FROM public.chat_groups
+WHERE project_id IS NULL
+  AND created_by IS NOT NULL
+ON CONFLICT (chat_group_id, user_id) DO NOTHING;
 
 -- ─── 3. Backfill mensagens para chat_group_id ─────────────────────────────────
 
@@ -84,7 +104,18 @@ AS $$
       FROM public.chat_groups cg
       WHERE cg.id = p_chat_group_id
         AND (
-          cg.project_id IS NULL
+          (
+            cg.project_id IS NULL
+            AND (
+              cg.created_by = public.current_app_user_id()
+              OR EXISTS (
+                SELECT 1
+                FROM public.chat_group_members cgm
+                WHERE cgm.chat_group_id = cg.id
+                  AND cgm.user_id = public.current_app_user_id()
+              )
+            )
+          )
           OR public.is_project_member(cg.project_id)
         )
     );
@@ -103,8 +134,19 @@ CREATE POLICY chat_groups_select ON public.chat_groups
   FOR SELECT TO authenticated
   USING (
     public.is_admin()
-    OR project_id IS NULL
     OR public.is_project_member(project_id)
+    OR (
+      project_id IS NULL
+      AND (
+        created_by = public.current_app_user_id()
+        OR EXISTS (
+          SELECT 1
+          FROM public.chat_group_members cgm
+          WHERE cgm.chat_group_id = id
+            AND cgm.user_id = public.current_app_user_id()
+        )
+      )
+    )
   );
 
 CREATE POLICY chat_groups_insert ON public.chat_groups
@@ -126,6 +168,72 @@ CREATE POLICY chat_groups_update ON public.chat_groups
 CREATE POLICY chat_groups_delete ON public.chat_groups
   FOR DELETE TO authenticated
   USING (public.is_admin() OR created_by = public.current_app_user_id());
+
+-- ─── 6b. RLS: chat_group_members ───────────────────────────────────────────
+
+ALTER TABLE public.chat_group_members ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS chat_group_members_select ON public.chat_group_members;
+DROP POLICY IF EXISTS chat_group_members_insert ON public.chat_group_members;
+DROP POLICY IF EXISTS chat_group_members_delete ON public.chat_group_members;
+
+CREATE POLICY chat_group_members_select ON public.chat_group_members
+  FOR SELECT TO authenticated
+  USING (
+    public.is_admin()
+    OR user_id = public.current_app_user_id()
+    OR EXISTS (
+      SELECT 1
+      FROM public.chat_groups cg
+      WHERE cg.id = chat_group_id
+        AND (
+          cg.created_by = public.current_app_user_id()
+          OR public.is_project_member(cg.project_id)
+          OR EXISTS (
+            SELECT 1
+            FROM public.chat_group_members mine
+            WHERE mine.chat_group_id = chat_group_id
+              AND mine.user_id = public.current_app_user_id()
+          )
+        )
+    )
+  );
+
+CREATE POLICY chat_group_members_insert ON public.chat_group_members
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    public.is_admin()
+    OR EXISTS (
+      SELECT 1
+      FROM public.chat_groups cg
+      WHERE cg.id = chat_group_id
+        AND cg.project_id IS NULL
+        AND (
+          cg.created_by = public.current_app_user_id()
+          OR public.current_app_user_role() IN (
+            'admin', 'manager', 'coordinator', 'leader', 'projetista_lider'
+          )
+        )
+    )
+  );
+
+CREATE POLICY chat_group_members_delete ON public.chat_group_members
+  FOR DELETE TO authenticated
+  USING (
+    public.is_admin()
+    OR EXISTS (
+      SELECT 1
+      FROM public.chat_groups cg
+      WHERE cg.id = chat_group_id
+        AND cg.project_id IS NULL
+        AND (
+          cg.created_by = public.current_app_user_id()
+          OR public.current_app_user_role() IN (
+            'admin', 'manager', 'coordinator', 'leader', 'projetista_lider'
+          )
+        )
+    )
+  );
 
 -- ─── 7. RLS: messages (agora com chat_group_id) ──────────────────────────────
 
