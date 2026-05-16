@@ -23,6 +23,7 @@ import {
   MapPin,
   SquarePen,
   Download,
+  Trash2,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -35,7 +36,7 @@ import { Field, Input, Textarea } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ROLE_LABELS, canCreateChatGroup } from "@/lib/permissions";
+import { ROLE_LABELS, canCreateChatGroup, isAdmin } from "@/lib/permissions";
 import { cn, getTodayLocalISO } from "@/lib/utils";
 import { downloadChatTranscriptPdf } from "@/lib/chat-export-pdf";
 import { formatProjectDisplayName } from "@/lib/project-display";
@@ -211,6 +212,7 @@ export default function ChatPage() {
   const [newGroupModalOpen, setNewGroupModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const [deletingGroup, setDeletingGroup] = useState(false);
 
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [currentProfileId, setCurrentProfileId] = useState<string | null>(null);
@@ -753,6 +755,12 @@ export default function ChatPage() {
     return parts.join(" · ");
   }, [selectedGroupId, selectedGroup, groupMembers.length, selectedGroupMuted]);
 
+  const canDeleteSelectedGroup = useMemo(() => {
+    if (!selectedGroup || !currentProfileId) return false;
+    if (isAdmin(currentUserRole)) return true;
+    return !!selectedGroup.created_by && selectedGroup.created_by === currentProfileId;
+  }, [selectedGroup, currentProfileId, currentUserRole]);
+
   const filteredGroups = useMemo(() => {
     const q = groupSearch.trim().toLowerCase();
     if (!q) return chatGroups;
@@ -858,6 +866,36 @@ export default function ChatPage() {
       messages.length === 0
         ? "Download iniciado (canal sem mensagens)."
         : `${messages.length} mensagem(ns) no arquivo.`
+    );
+  }
+
+  async function handleDeleteChatGroup() {
+    if (!selectedGroupId || !selectedGroup || !canDeleteSelectedGroup) return;
+    const groupIdToDelete = selectedGroupId;
+    const label = channelTitle;
+    const isProjectChannel = !!selectedGroup.project_id;
+    const detail = isProjectChannel
+      ? "Este canal está vinculado a um projeto. O projeto não será apagado; apenas o chat, as mensagens e a lista de participantes deste canal serão removidos."
+      : "Todas as mensagens e participantes deste grupo serão removidos. Não dá para desfazer.";
+    if (!window.confirm(`Excluir permanentemente o canal «${label}»?\n\n${detail}`)) {
+      return;
+    }
+    setDeletingGroup(true);
+    const { error } = await supabase.from("chat_groups").delete().eq("id", groupIdToDelete);
+    setDeletingGroup(false);
+    if (error) {
+      console.error("Erro ao excluir grupo:", error);
+      showErrorToast("Não foi possível excluir", getSupabaseErrorMessage(error));
+      return;
+    }
+    saveMutedGroups(mutedGroupIds.filter((id) => id !== groupIdToDelete));
+    setShowMembersPanel(false);
+    await loadChatGroups();
+    showSuccessToast(
+      "Canal excluído",
+      isProjectChannel
+        ? "O projeto permanece; o chat foi removido."
+        : "O grupo e o histórico foram removidos."
     );
   }
 
@@ -1096,6 +1134,17 @@ export default function ChatPage() {
                         PDF
                       </span>
                     </button>
+                    {canDeleteSelectedGroup && selectedGroupId ? (
+                      <button
+                        type="button"
+                        className="chat-toolbar-btn chat-toolbar-btn-danger"
+                        disabled={deletingGroup}
+                        onClick={() => void handleDeleteChatGroup()}
+                        title="Excluir este canal permanentemente"
+                      >
+                        <Trash2 size={18} strokeWidth={1.75} />
+                      </button>
+                    ) : null}
                   </div>
                   <div className="chat-live-status" title="Mensagens sincronizadas em tempo real">
                     <span className="chat-live-pulse" aria-hidden />
@@ -1242,6 +1291,27 @@ export default function ChatPage() {
                     </div>
                   )}
                 </div>
+
+                {canDeleteSelectedGroup && selectedGroupId ? (
+                  <div className="chat-members-danger-zone">
+                    <p className="chat-members-danger-title">Zona de risco</p>
+                    <p className="chat-members-danger-desc">
+                      {selectedGroup?.project_id
+                        ? "Excluir remove o canal de chat, mensagens e participantes. O projeto continua existindo."
+                        : "Excluir remove o grupo, mensagens e participantes. Não dá para desfazer."}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="danger-ghost"
+                      className="w-full sm:w-auto"
+                      disabled={deletingGroup}
+                      onClick={() => void handleDeleteChatGroup()}
+                      leftIcon={<Trash2 size={16} strokeWidth={1.75} />}
+                    >
+                      Excluir este canal
+                    </Button>
+                  </div>
+                ) : null}
               </section>
             )}
 
@@ -2048,6 +2118,15 @@ export default function ChatPage() {
           color: var(--warning);
         }
 
+        .chat-toolbar-btn-danger {
+          color: var(--danger);
+        }
+
+        .chat-toolbar-btn-danger:hover:not(:disabled) {
+          background: color-mix(in srgb, var(--danger) 12%, transparent);
+          color: var(--danger);
+        }
+
         .chat-toolbar-btn-back {
           min-width: 40px;
           padding: 0;
@@ -2141,6 +2220,28 @@ export default function ChatPage() {
           grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
           gap: 18px;
           align-items: start;
+        }
+
+        .chat-members-danger-zone {
+          margin-top: 18px;
+          padding-top: 16px;
+          border-top: 1px dashed color-mix(in srgb, var(--danger) 35%, var(--border));
+        }
+
+        .chat-members-danger-title {
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: var(--danger);
+          margin: 0 0 6px;
+        }
+
+        .chat-members-danger-desc {
+          font-size: 12px;
+          color: var(--muted-fg);
+          margin: 0 0 12px;
+          line-height: 1.45;
         }
 
         .chat-members-column {
