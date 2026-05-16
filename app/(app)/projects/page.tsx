@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Pencil,
@@ -570,6 +570,15 @@ export default function ProjectsPage() {
   const projetistaSomenteTarefas = isNarrowProjetista(myRole);
   const podeCriarProjeto = canCreateProject(myRole);
   const podeEditarProjeto = canEditProjectShell(myRole);
+
+  /** Mesma rota que o card em Saneamento → Visão do projeto, quando o projeto qualifica. */
+  const openProjectPrimaryDetails = useCallback((project: Project) => {
+    if (projectQualifiesForSaneamentoModule(project.discipline, project.sanitation_type)) {
+      router.push(`/saneamento/${project.id}`);
+      return;
+    }
+    setDetailProjectId(project.id);
+  }, [router]);
 
   const hasRunningTimer = useMemo(
     () => tasks.some((task) => task.is_timer_running),
@@ -1545,7 +1554,10 @@ export default function ProjectsPage() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3
-                    onClick={(e) => { e.stopPropagation(); setDetailProjectId(project.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openProjectPrimaryDetails(project);
+                    }}
                     style={{
                       fontSize: 17,
                       fontWeight: 700,
@@ -1553,11 +1565,29 @@ export default function ProjectsPage() {
                       letterSpacing: "-0.01em",
                       color: "var(--foreground)",
                       cursor: "pointer",
-                      transition: "color 0.12s ease",
+                      transition:
+                        "color 0.15s ease, text-decoration-color 0.15s ease, text-underline-offset 0.15s ease",
+                      textDecoration: "underline",
+                      textDecorationColor: "transparent",
+                      textUnderlineOffset: "3px",
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--primary)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground)"; }}
-                    title="Clique para ver detalhes e disciplinas"
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = "var(--primary)";
+                      e.currentTarget.style.textDecorationColor =
+                        "color-mix(in srgb, var(--primary) 50%, transparent)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "var(--foreground)";
+                      e.currentTarget.style.textDecorationColor = "transparent";
+                    }}
+                    title={
+                      projectQualifiesForSaneamentoModule(
+                        project.discipline,
+                        project.sanitation_type
+                      )
+                        ? "Abrir página completa do projeto (igual ao card em Saneamento → Visão do projeto)"
+                        : "Ver detalhes e disciplinas deste projeto"
+                    }
                   >
                     {formatProjectDisplayName(project)}
                   </h3>
@@ -1680,8 +1710,15 @@ export default function ProjectsPage() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                onClick={() => setDetailProjectId(project.id)}
-                title="Ver detalhes do projeto"
+                onClick={() => openProjectPrimaryDetails(project)}
+                title={
+                  projectQualifiesForSaneamentoModule(
+                    project.discipline,
+                    project.sanitation_type
+                  )
+                    ? "Abrir página completa (Saneamento)"
+                    : "Ver detalhes do projeto"
+                }
               >
                 <Eye size={14} />
               </Button>

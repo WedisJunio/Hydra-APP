@@ -55,6 +55,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { ListItemsSection } from "@/components/spaces/list-items-section";
 import { KanbanColumnsEditor } from "@/components/spaces/kanban-columns-editor";
+import { ProjectTaskBoard } from "@/components/spaces/project-task-board";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1798,21 +1799,42 @@ export default function SpacesPage() {
                       );
                     })()}
                   </div>
-                ) : selectedNode.kind === "folder" ? (
-                  /* Folder contents */
-                  <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
-                    <p className="text-sm text-muted mb-4">Conteúdo da pasta <strong>{selectedNode.name}</strong>:</p>
-                    {nodesInSpace.filter((n) => n.parent_id === selectedNode.id).length === 0 ? (
-                      <EmptyState
-                        title="Pasta vazia"
-                        description={podeEditarNos ? "Adicione subpastas ou listas via Configurar." : "Nenhum item ainda."}
+                ) : selectedNode.kind === "folder" ? (() => {
+                  // Collect project IDs from all descendant list nodes
+                  const collectProjectIds = (parentId: string): string[] => {
+                    const ids: string[] = [];
+                    nodesInSpace.filter((n) => n.parent_id === parentId).forEach((child) => {
+                      if (child.kind === "list" && child.project_id) ids.push(child.project_id);
+                      else if (child.kind === "folder") ids.push(...collectProjectIds(child.id));
+                    });
+                    return ids;
+                  };
+                  const folderProjectIds = collectProjectIds(selectedNode.id);
+                  const childNodes = nodesInSpace.filter((n) => n.parent_id === selectedNode.id).sort((a, b) => a.sort_order - b.sort_order);
+
+                  if (folderProjectIds.length > 0) {
+                    // Show task board for the folder's projects
+                    return (
+                      <ProjectTaskBoard
+                        projectIds={folderProjectIds}
+                        nodeLabel={selectedNode.name}
+                        podeEditar={podeEditarNos}
                       />
-                    ) : (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                        {nodesInSpace
-                          .filter((n) => n.parent_id === selectedNode.id)
-                          .sort((a, b) => a.sort_order - b.sort_order)
-                          .map((node) => (
+                    );
+                  }
+
+                  // No linked projects — show classic folder grid
+                  return (
+                    <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+                      <p className="text-sm text-muted mb-4">Conteúdo da pasta <strong>{selectedNode.name}</strong>:</p>
+                      {childNodes.length === 0 ? (
+                        <EmptyState
+                          title="Pasta vazia"
+                          description={podeEditarNos ? "Adicione subpastas ou listas via Configurar." : "Nenhum item ainda."}
+                        />
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+                          {childNodes.map((node) => (
                             <button
                               key={node.id}
                               type="button"
@@ -1828,14 +1850,22 @@ export default function SpacesPage() {
                               </div>
                             </button>
                           ))}
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })() : selectedNode.project_id ? (
+                  /* List with linked project → show task board */
+                  <ProjectTaskBoard
+                    projectIds={[selectedNode.project_id]}
+                    nodeLabel={selectedNode.name}
+                    podeEditar={podeEditarNos}
+                  />
                 ) : (
-                  /* LIST ITEMS (full width) */
+                  /* List without project → show workspace list items */
                   <ListItemsSection
                     listNodeId={selectedNode.id}
-                    projectId={selectedNode.project_id ?? null}
+                    projectId={null}
                     enabled={extensionsOk}
                     defaultView={(selectedNode.default_view as WorkspaceViewMode) || "list"}
                     userViewMode={userPrefs.listViewByNode?.[selectedNode.id] ?? null}
