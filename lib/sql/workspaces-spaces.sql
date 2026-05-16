@@ -13,11 +13,14 @@ CREATE TABLE IF NOT EXISTS public.workspace_spaces (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   color text NOT NULL DEFAULT '#6366f1',
-  icon text NOT NULL DEFAULT 'layers',
+  icon text NOT NULL DEFAULT 'em_andamento',
   sort_order int NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid REFERENCES public.users(id) ON DELETE SET NULL
 );
+
+-- Instalações antigas: o DEFAULT acima não altera colunas já existentes. Opcional:
+-- ALTER TABLE public.workspace_spaces ALTER COLUMN icon SET DEFAULT 'em_andamento';
 
 CREATE TABLE IF NOT EXISTS public.workspace_space_nodes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

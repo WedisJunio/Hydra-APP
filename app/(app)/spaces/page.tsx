@@ -15,6 +15,11 @@ import {
   Home,
   Grid3x3,
   Sparkles,
+  CheckCircle2,
+  PlayCircle,
+  PauseCircle,
+  BadgeCheck,
+  Hourglass,
   ExternalLink,
   type LucideIcon,
 } from "lucide-react";
@@ -126,18 +131,32 @@ const COLOR_PRESETS = [
   "#64748b",
 ] as const;
 
+/** Ícones sugeridos para o espaço — leitura de fluxo / status de obra ou processo. */
 const SPACE_ICON_KEYS = [
-  "layers",
-  "building2",
-  "briefcase",
-  "factory",
-  "map",
-  "home",
-  "grid",
-  "sparkles",
+  "concluido",
+  "em_andamento",
+  "paralisado",
+  "aprovado",
+  "aprovacao",
 ] as const;
 
+const SPACE_ICON_LABELS: Record<(typeof SPACE_ICON_KEYS)[number], string> = {
+  concluido: "Concluído",
+  em_andamento: "Em andamento",
+  paralisado: "Paralisado",
+  aprovado: "Aprovado",
+  aprovacao: "Aprovação",
+};
+
+const DEFAULT_SPACE_ICON = "em_andamento" as const;
+
 const SPACE_ICON_MAP: Record<string, LucideIcon> = {
+  concluido: CheckCircle2,
+  em_andamento: PlayCircle,
+  paralisado: PauseCircle,
+  aprovado: BadgeCheck,
+  aprovacao: Hourglass,
+  /* Legado: espaços criados antes da troca de ícones */
   layers: Layers,
   building2: Building2,
   briefcase: Briefcase,
@@ -149,7 +168,7 @@ const SPACE_ICON_MAP: Record<string, LucideIcon> = {
 };
 
 function SpaceGlyph({ icon, color, size = 16 }: { icon: string; color: string; size?: number }) {
-  const Icon = SPACE_ICON_MAP[icon] ?? Layers;
+  const Icon = SPACE_ICON_MAP[icon] ?? PlayCircle;
   return <Icon size={size} style={{ color }} />;
 }
 
@@ -242,10 +261,11 @@ function SpaceColorPicker({
 
 function SpaceIconPicker({ value, onChange }: { value: string; onChange: (key: string) => void }) {
   return (
-    <div className="grid min-w-0 w-full grid-cols-4 gap-2">
+    <div className="grid min-w-0 w-full grid-cols-3 gap-2">
       {SPACE_ICON_KEYS.map((k) => {
-        const Icon = SPACE_ICON_MAP[k] ?? Layers;
+        const Icon = SPACE_ICON_MAP[k] ?? PlayCircle;
         const active = value === k;
+        const label = SPACE_ICON_LABELS[k];
         return (
           <button
             key={k}
@@ -257,15 +277,16 @@ function SpaceIconPicker({ value, onChange }: { value: string; onChange: (key: s
               background: active ? "color-mix(in srgb, var(--primary) 16%, var(--surface))" : "var(--surface)",
               boxShadow: active ? "inset 0 1px 0 rgba(255, 255, 255, 0.06)" : undefined,
             }}
-            aria-label={`Ícone ${k}`}
+            aria-label={`Ícone ${label}`}
+            title={label}
             aria-pressed={active}
           >
             <Icon size={22} style={{ color: active ? "var(--primary)" : "var(--muted-fg)" }} />
             <span
-              className="w-full truncate text-center text-[9px] font-semibold leading-tight"
+              className="w-full text-center text-[9px] font-semibold leading-tight"
               style={{ color: active ? "var(--foreground)" : "var(--muted-fg)" }}
             >
-              {k}
+              {label}
             </span>
           </button>
         );
@@ -331,7 +352,7 @@ export default function SpacesPage() {
 
   const [newSpaceName, setNewSpaceName] = useState("");
   const [newSpaceColor, setNewSpaceColor] = useState<string>(FALLBACK_SPACE_HEX);
-  const [newSpaceIcon, setNewSpaceIcon] = useState<string>("layers");
+  const [newSpaceIcon, setNewSpaceIcon] = useState<string>(DEFAULT_SPACE_ICON);
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [extensionsOk, setExtensionsOk] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -536,7 +557,7 @@ export default function SpacesPage() {
     const row: Record<string, unknown> = {
       name: newSpaceName.trim(),
       color: newSpaceColor.trim() || FALLBACK_SPACE_HEX,
-      icon: newSpaceIcon.trim() || "layers",
+      icon: newSpaceIcon.trim() || DEFAULT_SPACE_ICON,
       sort_order: nextOrder,
     };
     if (profile?.id) row.created_by = profile.id;
@@ -949,12 +970,12 @@ function SpaceEditor({
 }) {
   const [name, setName] = useState(space.name);
   const [color, setColor] = useState(() => normalizePickerHex(space.color));
-  const [icon, setIcon] = useState(() => (space.icon?.trim() ? space.icon.trim() : "layers"));
+  const [icon, setIcon] = useState(() => (space.icon?.trim() ? space.icon.trim() : DEFAULT_SPACE_ICON));
 
   useEffect(() => {
     setName(space.name);
     setColor(normalizePickerHex(space.color));
-    setIcon(space.icon?.trim() ? space.icon.trim() : "layers");
+    setIcon(space.icon?.trim() ? space.icon.trim() : DEFAULT_SPACE_ICON);
   }, [space.id, space.name, space.color, space.icon]);
 
   return (
