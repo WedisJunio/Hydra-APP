@@ -520,196 +520,183 @@ function SettingsPanel({
           <Button size="icon-sm" variant="ghost" onClick={onClose}><X size={16} /></Button>
         </div>
 
-        <div style={{ overflowY: "auto", flex: 1, padding: 20 }} className="space-y-6">
-          {/* Space settings */}
+        <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px", display: "flex", flexDirection: "column", gap: 32 }}>
+
+          {/* ── Espaço ─────────────────────────────────────────── */}
           {space && podeGerirEspacos && (
-            <div>
-              <div className="text-xs font-bold uppercase text-muted mb-3">Espaço</div>
-              <div className="space-y-3">
-                <Field label="Nome do espaço">
-                  <Input value={spaceName} onChange={(e) => setSpaceName(e.target.value)} />
-                </Field>
-                <Field label="Ícone">
-                  <div className="grid grid-cols-3 gap-2">
-                    {SPACE_ICON_KEYS.map((k) => {
-                      const Icon = SPACE_ICON_MAP[k] ?? PlayCircle;
-                      const active = spaceIcon === k;
-                      return (
-                        <button
-                          key={k}
-                          type="button"
-                          onClick={() => setSpaceIcon(k)}
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            gap: 4,
-                            padding: "8px 4px",
-                            borderRadius: 8,
-                            border: `2px solid ${active ? "var(--primary)" : "var(--border)"}`,
-                            background: active ? "var(--primary-soft)" : "var(--surface)",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <Icon size={18} style={{ color: active ? "var(--primary)" : "var(--muted-fg)" }} />
-                          <span style={{ fontSize: 10, fontWeight: 600, color: active ? "var(--primary)" : "var(--muted-fg)" }}>
-                            {SPACE_ICON_LABELS[k]}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Field>
-                <Field label="Cor">
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {COLOR_PRESETS.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setSpaceColor(c)}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          borderRadius: "50%",
-                          background: c,
-                          border: spaceColor.toLowerCase() === c.toLowerCase() ? "3px solid var(--foreground)" : "2px solid var(--border)",
-                          cursor: "pointer",
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    <input ref={nativePickerRef} type="color" value={pickerHex} onChange={(e) => setSpaceColor(e.target.value)} style={{ position: "absolute", left: -9999, opacity: 0 }} />
-                    <button
-                      type="button"
-                      onClick={() => nativePickerRef.current?.click()}
-                      style={{ width: 32, height: 32, borderRadius: 6, background: pickerHex, border: "1px solid var(--border)", cursor: "pointer", flexShrink: 0 }}
-                    />
-                    <Input value={spaceColor} onChange={(e) => setSpaceColor(e.target.value)} className="font-mono text-xs" placeholder="#6366f1" />
-                  </div>
-                </Field>
-                <Button
-                  size="sm"
-                  onClick={() => space && onSaveSpace(space.id, { name: spaceName.trim() || space.name, color: spaceColor, icon: spaceIcon })}
-                >
-                  Salvar espaço
-                </Button>
+            <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, borderBottom: "1px solid var(--border)" }}>
+                <div style={{ width: 3, height: 14, borderRadius: 2, background: "var(--primary)" }} />
+                <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted-fg)" }}>Espaço</span>
               </div>
-            </div>
+
+              <Field label="Nome do espaço">
+                <Input value={spaceName} onChange={(e) => setSpaceName(e.target.value)} />
+              </Field>
+
+              <Field label="Cor de destaque">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                  {COLOR_PRESETS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setSpaceColor(c)}
+                      style={{
+                        width: 28, height: 28, borderRadius: "50%", background: c,
+                        border: spaceColor.toLowerCase() === c.toLowerCase()
+                          ? "3px solid var(--foreground)"
+                          : "2px solid transparent",
+                        outline: spaceColor.toLowerCase() === c.toLowerCase()
+                          ? "2px solid color-mix(in srgb,var(--foreground) 25%,transparent)"
+                          : "none",
+                        cursor: "pointer", transition: "transform 0.1s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.12)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                    />
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input ref={nativePickerRef} type="color" value={pickerHex} onChange={(e) => setSpaceColor(e.target.value)} style={{ position: "absolute", left: -9999, opacity: 0 }} />
+                  <button
+                    type="button"
+                    onClick={() => nativePickerRef.current?.click()}
+                    style={{ width: 34, height: 34, borderRadius: 8, background: pickerHex, border: "2px solid var(--border)", cursor: "pointer", flexShrink: 0, transition: "border-color 0.1s" }}
+                    title="Escolher cor personalizada"
+                  />
+                  <Input value={spaceColor} onChange={(e) => setSpaceColor(e.target.value)} className="font-mono text-xs" placeholder="#6366f1" />
+                </div>
+              </Field>
+
+              <Button
+                onClick={() => space && onSaveSpace(space.id, { name: spaceName.trim() || space.name, color: spaceColor, icon: spaceIcon })}
+              >
+                Salvar espaço
+              </Button>
+            </section>
           )}
 
-          {/* Node settings */}
+          {/* ── Pasta / Lista ────────────────────────────────── */}
           {node && (
-            <div>
-              <div className="text-xs font-bold uppercase text-muted mb-3 flex items-center gap-2">
-                {node.kind === "folder" ? <Folder size={12} /> : <ListTodo size={12} />}
-                {node.kind === "folder" ? "Pasta" : "Lista"}
+            <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, borderBottom: "1px solid var(--border)" }}>
+                <div style={{ width: 3, height: 14, borderRadius: 2, background: node.kind === "folder" ? "#f59e0b" : "var(--primary)" }} />
+                <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted-fg)" }}>
+                  {node.kind === "folder" ? "Pasta" : "Lista"}
+                </span>
               </div>
-              <div className="space-y-3">
-                <Field label="Nome">
-                  <div className="flex gap-2">
-                    <Input value={nodeName} onChange={(e) => setNodeName(e.target.value)} disabled={!podeEditar} />
+
+              {/* Nome */}
+              <Field label="Nome">
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Input value={nodeName} onChange={(e) => setNodeName(e.target.value)} disabled={!podeEditar} />
+                  {podeEditar && (
+                    <Button size="sm" onClick={() => onPatchNode({ name: nodeName.trim() || node.name })}>OK</Button>
+                  )}
+                </div>
+              </Field>
+
+              {/* Lista — opções avançadas */}
+              {node.kind === "list" && extensionsOk && (
+                <>
+                  <Field label="Vista padrão">
+                    <Select
+                      value={node.default_view || "list"}
+                      onChange={(e) => onPatchNode({ default_view: e.target.value === "kanban" ? "kanban" : "list" })}
+                      disabled={!podeEditar}
+                    >
+                      <option value="list">Lista</option>
+                      <option value="kanban">Quadro (Kanban)</option>
+                    </Select>
+                  </Field>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-fg)" }}>Colunas Kanban</span>
+                    <KanbanColumnsEditor
+                      valueRaw={node.kanban_columns}
+                      podeEditar={podeEditar}
+                      onSave={(cols) => onPatchNode({ kanban_columns: cols })}
+                    />
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-fg)" }}>Campos customizados</span>
+                      {podeEditar && (
+                        <Button size="sm" variant="secondary" leftIcon={<Plus size={12} />} onClick={addCustomField}>Campo</Button>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {customFields.map((f, i) => (
+                        <div key={f.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", padding: "10px 12px", borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+                          <Field label="Nome" className="flex-1 mb-0">
+                            <Input value={f.name} onChange={(e) => updateField(i, { name: e.target.value })} disabled={!podeEditar} />
+                          </Field>
+                          <Field label="Tipo" className="w-28 mb-0">
+                            <Select
+                              value={f.type}
+                              onChange={(e) => updateField(i, { type: e.target.value as CustomFieldDef["type"], options: e.target.value === "select" ? f.options ?? ["A", "B"] : undefined })}
+                              disabled={!podeEditar}
+                            >
+                              <option value="text">Texto</option>
+                              <option value="number">Número</option>
+                              <option value="date">Data</option>
+                              <option value="select">Lista</option>
+                            </Select>
+                          </Field>
+                          {podeEditar && (
+                            <Button size="icon-sm" variant="danger-ghost" onClick={() => removeField(i)}><Trash2 size={13} /></Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {podeEditar && customFields.length > 0 && (
+                      <Button size="sm" onClick={() => onPatchNode({ custom_field_definitions: customFields })}>
+                        Salvar campos
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Vincular projeto */}
+              {node.kind === "list" && (
+                <Field label="Vincular projeto">
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <Select value={nodeProjectId} onChange={(e) => setNodeProjectId(e.target.value)} disabled={!podeEditar}>
+                      <option value="">— Nenhum —</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{formatProjectDisplayName(p)}</option>
+                      ))}
+                    </Select>
                     {podeEditar && (
-                      <Button size="sm" onClick={() => onPatchNode({ name: nodeName.trim() || node.name })}>OK</Button>
+                      <Button size="sm" variant="secondary" onClick={() => onPatchNode({ project_id: nodeProjectId || null })}>
+                        Salvar vínculo
+                      </Button>
                     )}
                   </div>
                 </Field>
+              )}
 
-                {node.kind === "list" && extensionsOk && (
-                  <>
-                    <Field label="Vista padrão">
-                      <Select
-                        value={node.default_view || "list"}
-                        onChange={(e) => onPatchNode({ default_view: e.target.value === "kanban" ? "kanban" : "list" })}
-                        disabled={!podeEditar}
-                      >
-                        <option value="list">Lista</option>
-                        <option value="kanban">Quadro (Kanban)</option>
-                      </Select>
-                    </Field>
-
-                    <div>
-                      <div className="text-xs font-semibold text-muted mb-2">Colunas Kanban</div>
-                      <KanbanColumnsEditor
-                        valueRaw={node.kanban_columns}
-                        podeEditar={podeEditar}
-                        onSave={(cols) => onPatchNode({ kanban_columns: cols })}
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-muted">Campos customizados</span>
-                        {podeEditar && (
-                          <Button size="sm" variant="secondary" leftIcon={<Plus size={12} />} onClick={addCustomField}>Campo</Button>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        {customFields.map((f, i) => (
-                          <div key={f.id} className="flex gap-2 items-end p-2 rounded-lg" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
-                            <Field label="Nome" className="flex-1 mb-0">
-                              <Input value={f.name} onChange={(e) => updateField(i, { name: e.target.value })} disabled={!podeEditar} />
-                            </Field>
-                            <Field label="Tipo" className="w-28 mb-0">
-                              <Select
-                                value={f.type}
-                                onChange={(e) => updateField(i, { type: e.target.value as CustomFieldDef["type"], options: e.target.value === "select" ? f.options ?? ["A", "B"] : undefined })}
-                                disabled={!podeEditar}
-                              >
-                                <option value="text">Texto</option>
-                                <option value="number">Número</option>
-                                <option value="date">Data</option>
-                                <option value="select">Lista</option>
-                              </Select>
-                            </Field>
-                            {podeEditar && (
-                              <Button size="icon-sm" variant="danger-ghost" onClick={() => removeField(i)}><Trash2 size={13} /></Button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      {podeEditar && customFields.length > 0 && (
-                        <Button className="mt-2" size="sm" onClick={() => onPatchNode({ custom_field_definitions: customFields })}>
-                          Salvar campos
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {node.kind === "list" && (
-                  <Field label="Vincular projeto">
-                    <div className="space-y-2">
-                      <Select value={nodeProjectId} onChange={(e) => setNodeProjectId(e.target.value)} disabled={!podeEditar}>
-                        <option value="">— Nenhum —</option>
-                        {projects.map((p) => (
-                          <option key={p.id} value={p.id}>{formatProjectDisplayName(p)}</option>
-                        ))}
-                      </Select>
-                      {podeEditar && (
-                        <Button size="sm" variant="secondary" onClick={() => onPatchNode({ project_id: nodeProjectId || null })}>
-                          Salvar vínculo
-                        </Button>
-                      )}
-                    </div>
-                  </Field>
-                )}
-
-                {node.kind === "list" && node.projects && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <Link href="/projects">
-                      <Button size="sm" variant="secondary" leftIcon={<ExternalLink size={12} />}>Projetos</Button>
+              {/* Links rápidos */}
+              {node.kind === "list" && node.projects && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <Link href="/projects">
+                    <Button size="sm" variant="secondary" leftIcon={<ExternalLink size={12} />}>Projetos</Button>
+                  </Link>
+                  {saneHref && (
+                    <Link href={saneHref}>
+                      <Button size="sm" leftIcon={<ExternalLink size={12} />}>Módulo saneamento</Button>
                     </Link>
-                    {saneHref && (
-                      <Link href={saneHref}>
-                        <Button size="sm" leftIcon={<ExternalLink size={12} />}>Módulo saneamento</Button>
-                      </Link>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
 
-                {node.kind === "folder" && podeEditar && (
-                  <div className="flex gap-2 flex-wrap">
+              {/* Ações da pasta */}
+              {node.kind === "folder" && podeEditar && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-fg)" }}>Adicionar dentro desta pasta</span>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Button size="sm" variant="secondary" leftIcon={<Folder size={12} />} onClick={() => onAddChild("folder", node.id)}>
                       Subpasta
                     </Button>
@@ -717,15 +704,18 @@ function SettingsPanel({
                       Lista interna
                     </Button>
                   </div>
-                )}
+                </div>
+              )}
 
-                {podeEditar && (
+              {/* Excluir */}
+              {podeEditar && (
+                <div style={{ paddingTop: 4, borderTop: "1px solid color-mix(in srgb,var(--border) 60%,transparent)" }}>
                   <Button size="sm" variant="danger-ghost" leftIcon={<Trash2 size={13} />} onClick={onDeleteNode}>
                     Excluir {node.kind === "folder" ? "pasta" : "lista"}
                   </Button>
-                )}
-              </div>
-            </div>
+                </div>
+              )}
+            </section>
           )}
         </div>
       </div>
