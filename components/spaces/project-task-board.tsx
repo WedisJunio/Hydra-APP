@@ -1327,14 +1327,174 @@ function ProjectRow({ node, tasks, project, phases, expanded, podeEditar, folder
   );
 }
 
+// ─── FolderProjectKanbanView ──────────────────────────────────────────────────
+// Quadro Kanban onde cada CARD é um PROJETO (não uma tarefa).
+// A coluna de cada projeto é determinada por um override manual (salvo em
+// localStorage), com fallback para o status predominante das tarefas.
+
+function FolderProjectKanbanView({ projectNodes, projectDetails, tasksByProject, phasesByProject, statuses, order, folderNodeId, onOpenProject }: {
+  projectNodes: FolderProjectNode[];
+  projectDetails: Record<string, FolderProjectDetails>;
+  tasksByProject: Record<string, ProjectTask[]>;
+  phasesByProject: Record<string, FolderProjectPhase[]>;
+  statuses: Record<string, StatusConfig>;
+  order: string[];
+  folderNodeId: string;
+  onOpenProject: (nodeId: string) => void;
+}) {
+  const storageKey = `fp-kanban-${folderNodeId}`;
+
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey) ?? "{}") as Record<string, string>; }
+    catch { return {}; }
+  });
+
+  function getProjectCol(node: FolderProjectNode): string {
+    if (statusOverrides[node.nodeId] && order.includes(statusOverrides[node.nodeId]))
+      return statusOverrides[node.nodeId];
+    const tasks = tasksByProject[node.projectId] ?? [];
+    if (tasks.length === 0) return order[0] ?? "";
+    // Most "critical" (latest in order) status present
+    for (let i = order.length - 1; i >= 0; i--) {
+      if (tasks.some((t) => normalizeStatus(t.status) === order[i])) return order[i];
+    }
+    return order[0] ?? "";
+  }
+
+  function moveProject(nodeId: string, toCol: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setStatusOverrides((prev) => {
+      const next = { ...prev, [nodeId]: toCol };
+      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  const byCol: Record<string, FolderProjectNode[]> = {};
+  for (const s of order) byCol[s] = [];
+  for (const node of projectNodes) {
+    const col = getProjectCol(node);
+    if (byCol[col]) byCol[col].push(node); else byCol[order[0] ?? ""]?.push(node);
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 12, overflowX: "auto", overflowY: "hidden", height: "100%", padding: "14px 16px", alignItems: "flex-start" }}>
+      {order.map((colKey) => {
+        const cfg = statuses[colKey]; if (!cfg) return null;
+        const Icon = cfg.Icon;
+        const projects = byCol[colKey] ?? [];
+        return (
+          <div key={colKey} style={{ minWidth: 260, maxWidth: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+            {/* Column header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px 8px" }}>
+              <Icon size={12} style={{ color: cfg.color }} />
+              <span style={{ fontSize: 10, fontWeight: 800, color: cfg.color, textTransform: "uppercase", letterSpacing: "0.07em", flex: 1 }}>{cfg.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted-fg)", background: "var(--surface-3)", borderRadius: 20, padding: "0 7px", minWidth: 22, textAlign: "center" }}>{projects.length}</span>
+            </div>
+
+            {/* Column body */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {projects.length === 0 && (
+                <div style={{ padding: "12px 8px", textAlign: "center", fontSize: 11, color: "var(--muted-fg)", border: "2px dashed var(--border)", borderRadius: 8, opacity: 0.5 }}>
+                  Nenhum projeto
+                </div>
+              )}
+              {projects.map((node) => {
+                const tasks = tasksByProject[node.projectId] ?? [];
+                const det = projectDetails[node.projectId];
+                const total = tasks.length;
+                const done = tasks.filter((t) => normalizeStatus(t.status) === order[order.length - 1]).length;
+                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                const late = tasks.filter(overdue).length;
+                const counts: Record<StatusKey, number> = { previsto: 0, planejado: 0, em_andamento: 0, paralisado: 0, cancelado: 0, aprovacao_copasa: 0 };
+                for (const t of tasks) counts[normalizeStatus(t.status)]++;
+                const sortedPhases = [...(phasesByProject[node.projectId] ?? [])].sort((a, b) => a.order - b.order);
+                const curPhase = sortedPhases.find((p) => p.status === "in_progress" || p.status === "in_review");
+
+                return (
+                  <div
+                    key={node.nodeId}
+                    onClick={() => onOpenProject(node.nodeId)}
+                    style={{
+                      background: "var(--surface)",
+                      border: `1px solid var(--border)`,
+                      borderLeft: `3px solid ${cfg.color}`,
+                      borderRadius: "var(--radius-md)",
+                      padding: "10px 12px",
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.borderColor = `color-mix(in srgb,${cfg.color} 50%,var(--border))`; e.currentTarget.style.borderLeftColor = cfg.color; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface)"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.borderLeftColor = cfg.color; }}
+                  >
+                    {/* Title row */}
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 7 }}>
+                      <div style={{ width: 26, height: 26, borderRadius: 6, background: `color-mix(in srgb,${cfg.color} 12%,var(--surface))`, border: `1px solid color-mix(in srgb,${cfg.color} 25%,transparent)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <Briefcase size={12} style={{ color: cfg.color }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {node.nodeName}
+                        </div>
+                        {curPhase && <div style={{ fontSize: 9, color: "var(--muted-fg)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curPhase.name}</div>}
+                      </div>
+                    </div>
+
+                    {/* Task progress bar */}
+                    <StatusBar counts={counts} />
+
+                    {/* Stats */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7 }}>
+                      {det?.contract_value != null && (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: "var(--primary)", background: "color-mix(in srgb,var(--primary) 8%,transparent)", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>
+                          {fmtBRL(det.contract_value)}
+                        </span>
+                      )}
+                      {late > 0 && (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: "#ef4444", background: "#fef2f2", borderRadius: 4, padding: "1px 5px" }}>
+                          {late}⚠
+                        </span>
+                      )}
+                      <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, color: pct === 100 ? "#16a34a" : "var(--muted-fg)" }}>{pct}%</span>
+                    </div>
+
+                    {/* Move to column selector */}
+                    <div style={{ marginTop: 8, borderTop: "1px solid var(--border)", paddingTop: 7, display: "flex", flexWrap: "wrap", gap: 4 }}
+                      onClick={(e) => e.stopPropagation()}>
+                      <span style={{ fontSize: 9, color: "var(--muted-fg)", fontWeight: 600, alignSelf: "center", marginRight: 2 }}>Mover:</span>
+                      {order.filter((s) => s !== colKey).map((s) => {
+                        const c = statuses[s]; if (!c) return null; const I = c.Icon;
+                        return (
+                          <button key={s} type="button" onClick={(e) => moveProject(node.nodeId, s, e)}
+                            style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 20, background: c.bg, border: `1px solid ${c.border}`, cursor: "pointer", fontSize: 9, fontWeight: 700, color: c.color, transition: "opacity 0.1s" }}
+                            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.75"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}>
+                            <I size={9} />{c.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── FolderProjectsBoard (main export) ───────────────────────────────────────
 
-export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folderKanbanColumnsRaw, onSelectProject, onSaveColumns }: {
+export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folderKanbanColumnsRaw, folderNodeId, onSelectProject, onSaveColumns }: {
   projectNodes: FolderProjectNode[];
   nodeLabel: string;
   podeEditar: boolean;
   /** Colunas kanban da PASTA (aplicadas a todos os projetos dentro dela). */
   folderKanbanColumnsRaw?: unknown;
+  /** ID do nó da pasta (para persistência do kanban de projetos). */
+  folderNodeId: string;
   onSelectProject: (nodeId: string) => void;
   /** Salva as colunas da pasta no banco. */
   onSaveColumns?: (cols: KanbanColumnDef[]) => void;
@@ -1582,15 +1742,18 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folde
               </div>
             )}
 
-            {/* Quadro */}
+            {/* Quadro — mostra PROJETOS como cards (não tarefas) */}
             {activeView === "kanban" && (
               <div style={{ flex: 1, overflow: "hidden" }}>
-                <DynamicKanbanView
-                  tasks={filteredTasks}
+                <FolderProjectKanbanView
+                  projectNodes={projectNodes}
+                  projectDetails={projectDetails}
+                  tasksByProject={tasksByProject}
+                  phasesByProject={phasesByProject}
                   statuses={effectiveStatuses}
                   order={effectiveOrder}
-                  onAdd={podeEditar ? (s) => { /* add task modal – future */ void s; } : undefined}
-                  onTaskClick={setSelectedTask}
+                  folderNodeId={folderNodeId}
+                  onOpenProject={onSelectProject}
                 />
               </div>
             )}
