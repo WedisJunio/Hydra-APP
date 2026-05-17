@@ -292,7 +292,8 @@ function SidebarTree({
               type="button"
               onClick={() => {
                 onSelectNode(node.id);
-                if (isFolder) onToggleFolder(node.id);
+                // Expande a pasta ao selecionar, mas NÃO fecha — colapsar é só pelo chevron
+                if (isFolder && !open) onToggleFolder(node.id);
               }}
               style={{
                 background: "none",
@@ -1683,7 +1684,33 @@ export default function SpacesPage() {
                     })()}
                   </div>
                 ) : selectedNode.kind === "folder" ? (() => {
-                  /* Folder view — sempre mostra os filhos diretos como grid */
+                  /* Folder view:
+                   * - coleta todos os project_ids descendentes (listas filhas com projeto)
+                   * - se houver → exibe o ProjectTaskBoard (Quadro/Lista/Gantt)
+                   * - se não houver → exibe grade com os filhos diretos da pasta
+                   */
+                  const collectProjectIds = (parentId: string): string[] => {
+                    const ids: string[] = [];
+                    nodesInSpace.filter((n) => n.parent_id === parentId).forEach((child) => {
+                      if (child.kind === "list" && child.project_id) ids.push(child.project_id);
+                      else if (child.kind === "folder") ids.push(...collectProjectIds(child.id));
+                    });
+                    return ids;
+                  };
+                  const folderProjectIds = collectProjectIds(selectedNode.id);
+
+                  // ── Pasta COM projetos → board de tarefas ───────────────────
+                  if (folderProjectIds.length > 0) {
+                    return (
+                      <ProjectTaskBoard
+                        projectIds={folderProjectIds}
+                        nodeLabel={selectedNode.name}
+                        podeEditar={podeEditarNos}
+                      />
+                    );
+                  }
+
+                  // ── Pasta SEM projetos → grade de filhos diretos ────────────
                   const childNodes = nodesInSpace
                     .filter((n) => n.parent_id === selectedNode.id)
                     .sort((a, b) => a.sort_order - b.sort_order);
@@ -1693,40 +1720,32 @@ export default function SpacesPage() {
                       {childNodes.length === 0 ? (
                         <EmptyState
                           title="Pasta vazia"
-                          description={podeEditarNos ? "Adicione subpastas ou listas usando o sidebar." : "Nenhum item nesta pasta."}
+                          description={podeEditarNos ? "Adicione subpastas ou listas usando os botões na barra lateral." : "Nenhum item nesta pasta."}
                         />
                       ) : (
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                          {childNodes.map((node) => {
-                            const isChildFolder = node.kind === "folder";
-                            const nodeColor = node.color || (isChildFolder ? "var(--warning)" : "var(--primary)");
-                            const childCount = isChildFolder
-                              ? nodesInSpace.filter((n) => n.parent_id === node.id).length
-                              : null;
+                          {childNodes.map((child) => {
+                            const isChildFolder = child.kind === "folder";
+                            const childColor = child.color || (isChildFolder ? "var(--warning)" : "var(--primary)");
                             return (
                               <button
-                                key={node.id}
+                                key={child.id}
                                 type="button"
                                 onClick={() => {
-                                  setSelectedNodeId(node.id);
-                                  if (isChildFolder) setExpandedFolders((prev) => ({ ...prev, [node.id]: true }));
+                                  setSelectedNodeId(child.id);
+                                  if (isChildFolder) setExpandedFolders((prev) => ({ ...prev, [child.id]: true }));
                                 }}
                                 style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, textAlign: "left", transition: "all 0.15s" }}
                                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
                               >
                                 {isChildFolder
-                                  ? <Folder size={18} style={{ color: nodeColor, flexShrink: 0 }} />
-                                  : <ListTodo size={18} style={{ color: nodeColor, flexShrink: 0 }} />
+                                  ? <Folder size={18} style={{ color: childColor, flexShrink: 0 }} />
+                                  : <ListTodo size={18} style={{ color: childColor, flexShrink: 0 }} />
                                 }
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-semibold truncate">{node.name}</div>
-                                  <div className="text-xs text-muted">
-                                    {isChildFolder
-                                      ? (childCount !== null && childCount > 0 ? `${childCount} ${childCount === 1 ? "item" : "itens"}` : "Pasta vazia")
-                                      : (node.project_id ? "Projeto vinculado" : "Lista")
-                                    }
-                                  </div>
+                                  <div className="text-sm font-semibold truncate">{child.name}</div>
+                                  <div className="text-xs text-muted">{isChildFolder ? "Pasta" : "Lista"}</div>
                                 </div>
                               </button>
                             );
