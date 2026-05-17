@@ -18,6 +18,7 @@ import {
   Download,
   X,
   Link2,
+  Pencil,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase/client";
@@ -54,6 +55,12 @@ import {
 } from "@/lib/contratos/excel";
 
 type TabKey = "visao" | "licitacoes" | "atestados" | "cats" | "import" | "relatorios";
+
+type AppUser = {
+  id: string;
+  name: string | null;
+  email: string | null;
+};
 
 function fmtDate(iso: string | null | undefined) {
   if (!iso) return "—";
@@ -112,6 +119,11 @@ export default function ContratosHub() {
   const [atestados, setAtestados] = useState<ContractAtestado[]>([]);
   const [licitacoes, setLicitacoes] = useState<ContractLicitacao[]>([]);
   const [membros, setMembros] = useState<{ licitacao_id: string; professional_id: string }[]>([]);
+  const [licAtestadoLinks, setLicAtestadoLinks] = useState<{ licitacao_id: string; atestado_id: string }[]>(
+    []
+  );
+  const [licCatLinks, setLicCatLinks] = useState<{ licitacao_id: string; cat_id: string }[]>([]);
+  const [appUsers, setAppUsers] = useState<AppUser[]>([]);
 
   const [qSearch, setQSearch] = useState("");
   const [licDetail, setLicDetail] = useState<ContractLicitacao | null>(null);
@@ -124,6 +136,11 @@ export default function ContratosHub() {
   const [modalCat, setModalCat] = useState(false);
   const [teamModalLic, setTeamModalLic] = useState<ContractLicitacao | null>(null);
   const [teamSelectedIds, setTeamSelectedIds] = useState<string[]>([]);
+  const [manageLic, setManageLic] = useState<ContractLicitacao | null>(null);
+  const [manageInternalId, setManageInternalId] = useState("");
+  const [manageStatus, setManageStatus] = useState("");
+  const [manageAtestIds, setManageAtestIds] = useState<string[]>([]);
+  const [manageCatIds, setManageCatIds] = useState<string[]>([]);
   const [licStep, setLicStep] = useState(1);
 
   const [fPro, setFPro] = useState({
@@ -172,6 +189,7 @@ export default function ContratosHub() {
     status: "em_analise" as ContractLicitacao["status"],
     req_types: "" as string,
     req_keywords: "",
+    internal_responsible_id: "",
     notes: "",
   });
 
@@ -206,14 +224,18 @@ export default function ContratosHub() {
       { data: a, error: e3 },
       { data: l, error: e4 },
       { data: m, error: e5 },
+      { data: la, error: e6 },
+      { data: lc, error: e7 },
     ] = await Promise.all([
       supabase.from("contract_professionals").select(sel).order("full_name"),
       supabase.from("contract_cats").select("*").order("cat_number"),
       supabase.from("contract_atestados").select("*").order("created_at", { ascending: false }),
       supabase.from("contract_licitacoes").select("*").order("proposal_deadline", { ascending: true }),
       supabase.from("contract_licitacao_members").select("licitacao_id, professional_id"),
+      supabase.from("contract_licitacao_atestados").select("licitacao_id, atestado_id"),
+      supabase.from("contract_licitacao_cats").select("licitacao_id, cat_id"),
     ]);
-    const err = e1 || e2 || e3 || e4 || e5;
+    const err = e1 || e2 || e3 || e4 || e5 || e6 || e7;
     if (err) {
       setLoadError(getSupabaseErrorMessage(err));
       setLoading(false);
@@ -224,6 +246,27 @@ export default function ContratosHub() {
     setAtestados((a as ContractAtestado[]) || []);
     setLicitacoes((l as ContractLicitacao[]) || []);
     setMembros((m as { licitacao_id: string; professional_id: string }[]) || []);
+    setLicAtestadoLinks(
+      ((la as { licitacao_id: string; atestado_id: string }[]) || []).map((row) => ({
+        licitacao_id: row.licitacao_id,
+        atestado_id: row.atestado_id,
+      }))
+    );
+    setLicCatLinks(
+      ((lc as { licitacao_id: string; cat_id: string }[]) || []).map((row) => ({
+        licitacao_id: row.licitacao_id,
+        cat_id: row.cat_id,
+      }))
+    );
+    let uRes = await supabase
+      .from("users")
+      .select("id, name, email")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+    if (uRes.error) {
+      uRes = await supabase.from("users").select("id, name, email").order("name", { ascending: true });
+    }
+    setAppUsers((uRes.data as AppUser[]) || []);
     setLoading(false);
   }, []);
 
@@ -240,6 +283,12 @@ export default function ContratosHub() {
     }
     return map;
   }, [membros]);
+
+  const usersById = useMemo(() => {
+    const map = new Map<string, AppUser>();
+    for (const u of appUsers) map.set(u.id, u);
+    return map;
+  }, [appUsers]);
 
   const alerts = useMemo(() => {
     const items: { level: "danger" | "warning"; text: string }[] = [];
@@ -369,6 +418,75 @@ export default function ContratosHub() {
     showSuccessToast("Equipe atualizada", teamModalLic.title);
     setTeamModalLic(null);
     await loadAll();
+  }
+
+  function openManageLic(lic: ContractLicitacao) {
+    setManageInternalId(lic.internal_responsible_id || "");
+    setManageStatus(lic.status);
+    setManageAtestIds(licAtestadoLinks.filter((x) => x.licitacao_id === lic.id).map((x) => x.atestado_id));
+    setManageCatIds(licCatLinks.filter((x) => x.licitacao_id === lic.id).map((x) => x.cat_id));
+    setManageLic(lic);
+  }
+
+  function toggleManageAtest(id: string) {
+    setManageAtestIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function toggleManageCat(id: string) {
+    setManageCatIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function saveManageLic() {
+    if (!manageLic || !canEdit) return;
+    const licId = manageLic.id;
+    const { error: upErr } = await supabase
+      .from("contract_licitacoes")
+      .update({
+        internal_responsible_id: manageInternalId || null,
+        status: manageStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", licId);
+    if (upErr) {
+      showErrorToast("Erro ao atualizar", getSupabaseErrorMessage(upErr));
+      return;
+    }
+    const { error: daErr } = await supabase.from("contract_licitacao_atestados").delete().eq("licitacao_id", licId);
+    if (daErr) {
+      showErrorToast("Atestados", getSupabaseErrorMessage(daErr));
+      return;
+    }
+    if (manageAtestIds.length > 0) {
+      const { error: iaErr } = await supabase.from("contract_licitacao_atestados").insert(
+        manageAtestIds.map((atestado_id) => ({ licitacao_id: licId, atestado_id }))
+      );
+      if (iaErr) {
+        showErrorToast("Vínculo atestados", getSupabaseErrorMessage(iaErr));
+        return;
+      }
+    }
+    const { error: dcErr } = await supabase.from("contract_licitacao_cats").delete().eq("licitacao_id", licId);
+    if (dcErr) {
+      showErrorToast("CATs", getSupabaseErrorMessage(dcErr));
+      return;
+    }
+    if (manageCatIds.length > 0) {
+      const { error: icErr } = await supabase.from("contract_licitacao_cats").insert(
+        manageCatIds.map((cat_id) => ({ licitacao_id: licId, cat_id }))
+      );
+      if (icErr) {
+        showErrorToast("Vínculo CATs", getSupabaseErrorMessage(icErr));
+        return;
+      }
+    }
+    showSuccessToast("Licitação atualizada", manageLic.title);
+    setManageLic(null);
+    await loadAll();
+    setLicDetail((cur) =>
+      cur?.id === licId
+        ? { ...cur, internal_responsible_id: manageInternalId || null, status: manageStatus }
+        : cur
+    );
   }
 
   async function submitCat() {
@@ -528,6 +646,7 @@ export default function ContratosHub() {
       status: fLic.status,
       requirements_json: requirements,
       notes: fLic.notes || null,
+      internal_responsible_id: fLic.internal_responsible_id || null,
     });
     if (error) {
       showErrorToast("Erro ao salvar", getSupabaseErrorMessage(error));
@@ -551,6 +670,7 @@ export default function ContratosHub() {
       status: "em_analise",
       req_types: "",
       req_keywords: "",
+      internal_responsible_id: "",
       notes: "",
     });
     await loadAll();
@@ -707,13 +827,21 @@ export default function ContratosHub() {
   }
 
   function exportReport() {
-    const rows = licitacoes.map((l) => ({
-      titulo: l.title,
-      orgao: l.org_name,
-      cidade: l.city,
-      status: LICITACAO_STATUS_LABEL[l.status as keyof typeof LICITACAO_STATUS_LABEL] || l.status,
-      prazo: l.proposal_deadline,
-    }));
+    const rows = licitacoes.map((l) => {
+      const resp = l.internal_responsible_id ? usersById.get(l.internal_responsible_id) : undefined;
+      const nA = licAtestadoLinks.filter((x) => x.licitacao_id === l.id).length;
+      const nC = licCatLinks.filter((x) => x.licitacao_id === l.id).length;
+      return {
+        titulo: l.title,
+        orgao: l.org_name,
+        cidade: l.city,
+        status: LICITACAO_STATUS_LABEL[l.status as keyof typeof LICITACAO_STATUS_LABEL] || l.status,
+        responsavel: resp ? resp.name?.trim() || resp.email || "" : "",
+        atestados_vinculados: nA,
+        cats_vinculadas: nC,
+        prazo: l.proposal_deadline,
+      };
+    });
     exportRowsToExcel(`relatorio_licitacoes_${Date.now()}.xlsx`, rows);
   }
 
@@ -855,7 +983,12 @@ export default function ContratosHub() {
             </div>
           </div>
           <div className="grid gap-3">
-            {filteredLicitacoes.map((lic) => (
+            {filteredLicitacoes.map((lic) => {
+              const resp = lic.internal_responsible_id ? usersById.get(lic.internal_responsible_id) : undefined;
+              const respLabel = resp ? resp.name?.trim() || resp.email || "Usuário" : null;
+              const nA = licAtestadoLinks.filter((x) => x.licitacao_id === lic.id).length;
+              const nC = licCatLinks.filter((x) => x.licitacao_id === lic.id).length;
+              return (
               <Card key={lic.id} padded>
                 <div className="flex flex-wrap justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -874,10 +1007,33 @@ export default function ContratosHub() {
                         </span>
                       )}
                       <span>Prazo: {lic.proposal_deadline ? fmtDate(lic.proposal_deadline) : "—"}</span>
+                      {respLabel ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Users size={13} /> Resp.: {respLabel}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-warning">
+                          <Users size={13} /> Sem responsável interno
+                        </span>
+                      )}
+                      {nA > 0 || nC > 0 ? (
+                        <span>
+                          Vínculos: {nA} atest. · {nC} CAT
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 items-center">
                     <Badge variant="info">{LICITACAO_STATUS_LABEL[lic.status as never] || lic.status}</Badge>
+                    {canEdit ? (
+                    <Button
+                      variant="ghost"
+                      leftIcon={<Pencil size={14} />}
+                      onClick={() => openManageLic(lic)}
+                    >
+                      Gerir
+                    </Button>
+                    ) : null}
                     {canEdit ? (
                     <Button
                       variant="ghost"
@@ -900,7 +1056,8 @@ export default function ContratosHub() {
                   </div>
                 </div>
               </Card>
-            ))}
+            );
+            })}
             {filteredLicitacoes.length === 0 ? (
               <EmptyState title="Nenhuma licitação" description="Cadastre ou importe pela aba correspondente." />
             ) : null}
@@ -1085,6 +1242,11 @@ export default function ContratosHub() {
             </Badge>
             <p className="text-sm mt-3 leading-relaxed">{compatForSelected.narrative}</p>
             <div className="mt-4 text-xs text-muted space-y-2">
+              <div>
+                <strong className="text-foreground">Vínculos na licitação:</strong>{" "}
+                {licAtestadoLinks.filter((x) => x.licitacao_id === licDetail.id).length} atestado(s),{" "}
+                {licCatLinks.filter((x) => x.licitacao_id === licDetail.id).length} CAT(s)
+              </div>
               <div>
                 <strong className="text-foreground">Atestados alinh:</strong> {compatForSelected.matchingAtestados.length}
               </div>
@@ -1310,6 +1472,19 @@ export default function ContratosHub() {
                     onChange={(e) => setFLic({ ...fLic, req_keywords: e.target.value })}
                   />
                 </Field>
+                <Field label="Responsável interno">
+                  <Select
+                    value={fLic.internal_responsible_id}
+                    onChange={(e) => setFLic({ ...fLic, internal_responsible_id: e.target.value })}
+                  >
+                    <option value="">— Não definido —</option>
+                    {appUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name?.trim() || u.email || u.id}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
                 <Field label="Status inicial">
                   <Select value={fLic.status} onChange={(e) => setFLic({ ...fLic, status: e.target.value })}>
                     {LICITACAO_STATUS.map((s) => (
@@ -1459,6 +1634,99 @@ export default function ContratosHub() {
                 Cancelar
               </Button>
               <Button onClick={() => void saveTeamAllocation()}>Salvar equipe</Button>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {manageLic ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          onClick={() => setManageLic(null)}
+        >
+          <Card
+            padded
+            className="max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold mb-1">Gerir licitação · {manageLic.title}</h3>
+            <p className="text-sm text-muted m-0 mb-4">
+              Responsável interno, status e documentos já previstos para esta licitação (atestados e CATs).
+            </p>
+            <div className="space-y-3">
+              <Field label="Responsável interno">
+                <Select
+                  value={manageInternalId}
+                  onChange={(e) => setManageInternalId(e.target.value)}
+                  disabled={!canEdit}
+                >
+                  <option value="">— Não definido —</option>
+                  {appUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name?.trim() || u.email || u.id}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Status">
+                <Select value={manageStatus} onChange={(e) => setManageStatus(e.target.value)} disabled={!canEdit}>
+                  {LICITACAO_STATUS.map((s) => (
+                    <option key={s} value={s}>
+                      {LICITACAO_STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <div>
+                <div className="text-xs font-semibold text-muted mb-2 uppercase tracking-wide">Atestados vinculados</div>
+                <div className="space-y-1 max-h-36 overflow-y-auto border border-[var(--border)] rounded-lg p-2">
+                  {atestados.length === 0 ? (
+                    <p className="text-sm text-muted m-0">Nenhum atestado cadastrado.</p>
+                  ) : (
+                    atestados.map((a) => (
+                      <label key={a.id} className="flex items-start gap-2 text-sm cursor-pointer py-1">
+                        <input
+                          type="checkbox"
+                          checked={manageAtestIds.includes(a.id)}
+                          onChange={() => toggleManageAtest(a.id)}
+                          disabled={!canEdit}
+                        />
+                        <span className="min-w-0">{a.title}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-muted mb-2 uppercase tracking-wide">CATs vinculadas</div>
+                <div className="space-y-1 max-h-36 overflow-y-auto border border-[var(--border)] rounded-lg p-2">
+                  {cats.length === 0 ? (
+                    <p className="text-sm text-muted m-0">Nenhuma CAT cadastrada.</p>
+                  ) : (
+                    cats.map((c) => (
+                      <label key={c.id} className="flex items-start gap-2 text-sm cursor-pointer py-1">
+                        <input
+                          type="checkbox"
+                          checked={manageCatIds.includes(c.id)}
+                          onChange={() => toggleManageCat(c.id)}
+                          disabled={!canEdit}
+                        />
+                        <span className="min-w-0">
+                          {c.cat_number}
+                          {c.service_type ? ` · ${c.service_type}` : ""}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="ghost" onClick={() => setManageLic(null)}>
+                Fechar
+              </Button>
+              {canEdit ? <Button onClick={() => void saveManageLic()}>Salvar</Button> : null}
             </div>
           </Card>
         </div>

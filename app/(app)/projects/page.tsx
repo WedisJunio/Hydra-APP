@@ -96,6 +96,7 @@ type Project = {
   manager_id: string | null;
   coordinator_id: string | null;
   leader_id: string | null;
+  contract_number?: string | null;
   planned_end_date: string | null;
   planned_end_target: string | null;
   actual_end_date: string | null;
@@ -226,11 +227,11 @@ type ViewMode = "grid" | "list";
 
 /** Select de projetos: versão Legacy sem coluna planned_end_target (antes da migration SQL). */
 const PROJECT_SELECT_WITHOUT_TARGET =
-  "id, name, discipline, sanitation_type, municipality, state, manager_id, coordinator_id, leader_id, planned_end_date, actual_end_date, created_at";
+  "id, name, discipline, sanitation_type, municipality, state, manager_id, coordinator_id, leader_id, contract_number, planned_end_date, actual_end_date, created_at";
 
 /** Inclui meta de entrega quando a coluna existir no Supabase. */
 const PROJECT_SELECT_FULL =
-  "id, name, discipline, sanitation_type, municipality, state, manager_id, coordinator_id, leader_id, planned_end_date, planned_end_target, actual_end_date, created_at";
+  "id, name, discipline, sanitation_type, municipality, state, manager_id, coordinator_id, leader_id, contract_number, planned_end_date, planned_end_target, actual_end_date, created_at";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -882,21 +883,51 @@ export default function ProjectsPage() {
     setNewNotes("");
   }
 
-  /** Quando o usuário seleciona um projeto base na criação de nova disciplina, pré-preenche os campos. */
+  /** Quando o usuário seleciona um projeto base na criação de nova disciplina, pré-preenche município, UF e contrato. Equipe fica em branco para o responsável preencher. */
   function applyBaseProject(projectId: string) {
     setNewBaseProjectId(projectId);
-    if (!projectId) return;
+    if (!projectId) {
+      setNewMunicipality("");
+      setNewState("MG");
+      setNewContractNumber("");
+      return;
+    }
     const base = projects.find((p) => p.id === projectId);
     if (!base) return;
     if (base.municipality) setNewMunicipality(base.municipality);
     if (base.state) setNewState(base.state);
-    if (base.manager_id) setNewManagerId(base.manager_id);
-    if (base.coordinator_id) setNewCoordinatorId(base.coordinator_id);
-    if (base.leader_id) setNewLeaderId(base.leader_id);
+    if (base.contract_number) setNewContractNumber(base.contract_number);
+  }
+
+  const DISCIPLINE_LABELS: Record<string, string> = {
+    saneamento: "Saneamento",
+    ampliacao: "Ampliação",
+    estrutural: "Estrutural",
+    hidraulico: "Hidráulico",
+    eletrico: "Elétrico",
+    civil: "Civil",
+    arquitetura: "Arquitetura",
+    urbanismo: "Urbanismo",
+    infraestrutura: "Infraestrutura",
+    processos_internos: "Processos internos",
+    outro: "Outro",
+  };
+
+  /** Nome gerado automaticamente para nova disciplina: "{nome base} — {disciplina}" ou só a disciplina. */
+  function getDisciplineAutoName(baseId: string, discipline: string): string {
+    const label = DISCIPLINE_LABELS[discipline] ?? discipline;
+    const base = projects.find((p) => p.id === baseId);
+    if (base) return `${base.name} — ${label}`;
+    return label;
   }
 
   async function handleCreateProject() {
-    if (!newProjectName.trim()) return;
+    // No modo disciplina o nome é gerado automaticamente
+    const resolvedName = newProjectMode === "discipline"
+      ? getDisciplineAutoName(newBaseProjectId, newDiscipline)
+      : newProjectName.trim();
+
+    if (!resolvedName) return;
     const profile = await getCurrentProfile();
     if (!profile) {
       showErrorToast("Sessão inválida", "Entre novamente para criar projetos.");
@@ -904,11 +935,11 @@ export default function ProjectsPage() {
     }
     setCreating(true);
 
-    const managerId = newManagerId || profile.id;
+    const managerId = newManagerId || (newProjectMode === "discipline" ? null : profile.id);
     const target = newPlannedEndTarget.trim().slice(0, 10) || null;
 
     const baseInsert: Record<string, unknown> = {
-      name: newProjectName,
+      name: resolvedName,
       planned_end_date: mergeProjectPlannedEnd(target, null),
       actual_end_date: null,
       manager_id: managerId,
@@ -944,7 +975,7 @@ export default function ProjectsPage() {
     }
 
     const membersToInsert = [
-      { project_id: project.id, user_id: managerId, role: "manager" },
+      ...(managerId ? [{ project_id: project.id, user_id: managerId, role: "manager" }] : []),
       ...(newCoordinatorId
         ? [{ project_id: project.id, user_id: newCoordinatorId, role: "coordinator" }]
         : []),
@@ -953,18 +984,21 @@ export default function ProjectsPage() {
         : []),
     ];
 
-    const { error: membersError } = await supabase
-      .from("project_members")
-      .upsert(membersToInsert, { onConflict: "project_id,user_id" });
-    if (membersError) {
-      showErrorToast("Projeto criado com pendência", getSupabaseErrorMessage(membersError));
+    if (membersToInsert.length > 0) {
+      const { error: membersError } = await supabase
+        .from("project_members")
+        .upsert(membersToInsert, { onConflict: "project_id,user_id" });
+      if (membersError) {
+        showErrorToast("Projeto criado com pendência", getSupabaseErrorMessage(membersError));
+      }
     }
 
     resetNewProjectForm();
     setShowNewForm(false);
 
     await reloadAll({ silent: true });
-    showSuccessToast("Projeto criado", "O projeto foi cadastrado com sucesso.");
+    const successMsg = newProjectMode === "discipline" ? "Disciplina criada" : "Projeto criado";
+    showSuccessToast(successMsg, "O registro foi cadastrado com sucesso.");
     setCreating(false);
   }
 
@@ -3427,12 +3461,10 @@ export default function ProjectsPage() {
 
               {/* Body */}
               <div style={{ padding: "20px 22px" }} className="flex flex-col gap-4">
+
                 {/* Projeto base (opcional) */}
-                <Field label="Projeto base" help="Opcional — ao selecionar, município, UF e equipe são pré-preenchidos automaticamente.">
-                  <Select
-                    value={newBaseProjectId}
-                    onChange={(e) => applyBaseProject(e.target.value)}
-                  >
+                <Field label="Projeto base" help="Opcional — ao selecionar, município, UF e Nº do contrato são pré-preenchidos.">
+                  <Select value={newBaseProjectId} onChange={(e) => applyBaseProject(e.target.value)}>
                     <option value="">Nenhum (disciplina independente)</option>
                     {projects.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
@@ -3440,20 +3472,9 @@ export default function ProjectsPage() {
                   </Select>
                 </Field>
 
-                {/* Nome */}
-                <Field label="Nome da disciplina">
-                  <Input
-                    autoFocus
-                    placeholder="Ex.: Elétrico — Sistema de Ampliação Leopoldina/MG"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleCreateProject(); }}
-                  />
-                </Field>
-
                 {/* Disciplina — obrigatória */}
                 <Field label="Disciplina *">
-                  <Select value={newDiscipline} onChange={(e) => setNewDiscipline(e.target.value)}>
+                  <Select autoFocus value={newDiscipline} onChange={(e) => setNewDiscipline(e.target.value)}>
                     <option value="">Selecione a disciplina</option>
                     <option value="saneamento">Saneamento</option>
                     <option value="ampliacao">Ampliação</option>
@@ -3469,7 +3490,18 @@ export default function ProjectsPage() {
                   </Select>
                 </Field>
 
-                {/* Previsão + Município + UF */}
+                {/* Preview do nome que será gerado */}
+                {newDiscipline && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, background: "color-mix(in srgb,#8b5cf6 8%,var(--surface))", border: "1px solid color-mix(in srgb,#8b5cf6 20%,transparent)" }}>
+                    <Layers size={13} style={{ color: "#8b5cf6", flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: "var(--muted-fg)" }}>Nome gerado: </span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>
+                      {getDisciplineAutoName(newBaseProjectId, newDiscipline)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Município + UF */}
                 <div className="grid-2">
                   <Field label="Município">
                     <Input value={newMunicipality} onChange={(e) => setNewMunicipality(e.target.value)} placeholder="Ex.: Belo Horizonte" />
@@ -3494,48 +3526,21 @@ export default function ProjectsPage() {
                   <Input type="date" value={newPlannedEndTarget} onChange={(e) => setNewPlannedEndTarget(e.target.value)} />
                 </Field>
 
-                {/* Nº Contrato */}
-                <Field label="Nº do contrato" help="Opcional.">
+                {/* Nº Contrato — pré-preenchido da base, editável */}
+                <Field label="Nº do contrato" help="Herdado do projeto base — pode ser alterado.">
                   <Input value={newContractNumber} onChange={(e) => setNewContractNumber(e.target.value)} placeholder="Ex.: COPASA-2026-145" />
                 </Field>
 
-                {/* Equipe */}
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted-fg)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                    <UsersIcon size={12} /> Equipe responsável
-                  </div>
-                  <div className="grid-3">
-                    <Field label="Gerente">
-                      <Select value={newManagerId} onChange={(e) => setNewManagerId(e.target.value)}>
-                        <option value="">Selecione</option>
-                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </Select>
-                    </Field>
-                    <Field label="Coordenador">
-                      <Select value={newCoordinatorId} onChange={(e) => setNewCoordinatorId(e.target.value)}>
-                        <option value="">Selecione</option>
-                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </Select>
-                    </Field>
-                    <Field label="Líder">
-                      <Select value={newLeaderId} onChange={(e) => setNewLeaderId(e.target.value)}>
-                        <option value="">Selecione</option>
-                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </Select>
-                    </Field>
-                  </div>
-                </div>
-
                 {/* Observações */}
                 <Field label="Observações">
-                  <Textarea value={newNotes} onChange={(e) => setNewNotes(e.target.value)} placeholder="Escopo, particularidades, contatos importantes..." style={{ minHeight: 80 }} />
+                  <Textarea value={newNotes} onChange={(e) => setNewNotes(e.target.value)} placeholder="Escopo, particularidades, contatos importantes..." style={{ minHeight: 70 }} />
                 </Field>
               </div>
 
               {/* Footer */}
               <div style={{ padding: "16px 22px", borderTop: "1px solid var(--border)", background: "var(--surface)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontSize: 12, color: "var(--muted-fg)" }}>
-                  Detalhes técnicos podem ser adicionados depois.
+                  Equipe e tarefas podem ser adicionadas depois.
                 </span>
                 <div className="flex gap-2">
                   <Button variant="ghost" onClick={() => { setShowNewForm(false); resetNewProjectForm(); }} disabled={creating}>
@@ -3544,7 +3549,7 @@ export default function ProjectsPage() {
                   <Button
                     onClick={handleCreateProject}
                     loading={creating}
-                    disabled={!newProjectName.trim() || !newDiscipline}
+                    disabled={!newDiscipline}
                     style={{ background: "#8b5cf6", boxShadow: "0 2px 8px color-mix(in srgb,#8b5cf6 30%,transparent)" }}
                   >
                     Criar disciplina
