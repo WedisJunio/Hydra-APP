@@ -1620,23 +1620,24 @@ export default function SpacesPage() {
               {/* Content body */}
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                 {!selectedNode ? (
-                  /* Space overview — mostra apenas as pastas raiz */
+                  /* Space overview — todos os nós raiz (pastas + listas) */
                   <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
                     {(() => {
-                      const rootFolders = nodesInSpace
-                        .filter((n) => n.parent_id === null && n.kind === "folder")
-                        .sort((a, b) => a.sort_order - b.sort_order);
+                      const rootNodes = nodesInSpace
+                        .filter((n) => n.parent_id === null)
+                        .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, "pt-BR"));
 
-                      if (rootFolders.length === 0) {
+                      if (rootNodes.length === 0) {
                         return (
                           <div>
                             <EmptyState
-                              title="Nenhuma pasta ainda"
-                              description={podeEditarNos ? "Crie pastas para organizar seus projetos." : "Nenhuma pasta criada ainda."}
+                              title="Espaço vazio"
+                              description={podeEditarNos ? "Adicione pastas ou listas usando os botões abaixo." : "Nenhum item criado ainda."}
                             />
                             {podeEditarNos && (
                               <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 16 }}>
                                 <Button size="sm" variant="secondary" leftIcon={<Folder size={13} />} onClick={() => setAddingNode({ kind: "folder", parentId: null })}>Nova pasta</Button>
+                                <Button size="sm" variant="secondary" leftIcon={<ListTodo size={13} />} onClick={() => setAddingNode({ kind: "list", parentId: null })}>Nova lista</Button>
                               </div>
                             )}
                           </div>
@@ -1645,16 +1646,17 @@ export default function SpacesPage() {
 
                       return (
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
-                          {rootFolders.map((node) => {
-                            const nodeColor = node.color || "var(--warning)";
-                            const childCount = nodesInSpace.filter((n) => n.parent_id === node.id).length;
+                          {rootNodes.map((node) => {
+                            const isFolder = node.kind === "folder";
+                            const nodeColor = node.color || (isFolder ? "var(--warning)" : "var(--primary)");
+                            const childCount = isFolder ? nodesInSpace.filter((n) => n.parent_id === node.id).length : null;
                             return (
                               <button
                                 key={node.id}
                                 type="button"
                                 onClick={() => {
                                   setSelectedNodeId(node.id);
-                                  setExpandedFolders((prev) => ({ ...prev, [node.id]: true }));
+                                  if (isFolder) setExpandedFolders((prev) => ({ ...prev, [node.id]: true }));
                                 }}
                                 style={{
                                   background: "var(--surface-2)",
@@ -1671,10 +1673,18 @@ export default function SpacesPage() {
                                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
                               >
-                                <Folder size={20} style={{ color: nodeColor, flexShrink: 0 }} />
+                                {isFolder
+                                  ? <Folder size={20} style={{ color: nodeColor, flexShrink: 0 }} />
+                                  : <ListTodo size={20} style={{ color: nodeColor, flexShrink: 0 }} />
+                                }
                                 <div className="min-w-0 flex-1">
                                   <div className="text-sm font-semibold truncate">{node.name}</div>
-                                  <div className="text-xs text-muted">{childCount > 0 ? `${childCount} ${childCount === 1 ? "item" : "itens"}` : "Pasta vazia"}</div>
+                                  <div className="text-xs text-muted">
+                                    {isFolder
+                                      ? (childCount! > 0 ? `${childCount} ${childCount === 1 ? "item" : "itens"}` : "Pasta")
+                                      : "Lista"
+                                    }
+                                  </div>
                                 </div>
                               </button>
                             );
