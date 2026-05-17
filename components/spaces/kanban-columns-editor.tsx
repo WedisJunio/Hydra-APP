@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, ArrowUp, ArrowDown, Code2 } from "lucide-react";
 
 import type { KanbanColumnDef } from "@/lib/workspaces/spaces-shared";
@@ -8,6 +8,12 @@ import { parseKanbanColumns, DEFAULT_KANBAN_COLUMNS, slugKey } from "@/lib/works
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/input";
+
+const COLOR_PRESETS = [
+  "#6366f1", "#2563eb", "#0d9488", "#16a34a",
+  "#d97706", "#ea580c", "#dc2626", "#c026d3",
+  "#64748b", "#94a3b8",
+];
 
 type Props = {
   valueRaw: unknown;
@@ -19,6 +25,7 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
   const [cols, setCols] = useState<KanbanColumnDef[]>(() => parseKanbanColumns(valueRaw));
   const [showJson, setShowJson] = useState(false);
   const [jsonDraft, setJsonDraft] = useState("");
+  const colorPickerRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   useEffect(() => {
     setCols(parseKanbanColumns(valueRaw));
@@ -59,6 +66,10 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
 
   function updateLabel(i: number, label: string) {
     setCols((prev) => prev.map((c, j) => (j === i ? { ...c, label } : c)));
+  }
+
+  function updateColor(i: number, color: string) {
+    setCols((prev) => prev.map((c, j) => (j === i ? { ...c, color } : c)));
   }
 
   function updateKey(i: number, key: string) {
@@ -139,19 +150,51 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
               boxShadow: "var(--shadow-sm)",
             }}
           >
+            {/* Color strip */}
             <div
               className="w-1 self-stretch rounded-full shrink-0"
-              style={{
-                background: `color-mix(in srgb, var(--primary) ${40 + (i % 4) * 15}%, var(--surface-3))`,
-                minHeight: 44,
-              }}
+              style={{ background: col.color ?? `color-mix(in srgb, var(--primary) ${40 + (i % 4) * 15}%, var(--surface-3))`, minHeight: 44 }}
             />
+
+            {/* Color picker */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center", flexShrink: 0 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Cor</span>
+              <button
+                type="button"
+                disabled={!podeEditar}
+                onClick={() => colorPickerRefs.current[i]?.click()}
+                style={{ width: 28, height: 28, borderRadius: 6, background: col.color ?? "#6366f1", border: "2px solid var(--border)", cursor: podeEditar ? "pointer" : "default", flexShrink: 0 }}
+                title="Escolher cor"
+              />
+              <input
+                ref={(el) => { colorPickerRefs.current[i] = el; }}
+                type="color"
+                value={col.color ?? "#6366f1"}
+                onChange={(e) => updateColor(i, e.target.value)}
+                disabled={!podeEditar}
+                style={{ width: 0, height: 0, opacity: 0, position: "absolute", pointerEvents: "none" }}
+              />
+              {/* Quick presets */}
+              {podeEditar && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 2, width: 62 }}>
+                  {COLOR_PRESETS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => updateColor(i, c)}
+                      style={{ width: 12, height: 12, borderRadius: 3, background: c, border: col.color === c ? "2px solid var(--foreground)" : "1px solid transparent", cursor: "pointer", padding: 0 }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
             <Field label="Título exibido" className="flex-1 min-w-[140px] mb-0">
               <Input
                 value={col.label}
                 onChange={(e) => updateLabel(i, e.target.value)}
                 disabled={!podeEditar}
-                placeholder="Ex.: Aprovação Copasa"
+                placeholder="Ex.: Aguardando documentos"
               />
             </Field>
             <Field

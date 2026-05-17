@@ -2,7 +2,7 @@
 
 export type WorkspaceViewMode = "list" | "kanban";
 
-export type KanbanColumnDef = { key: string; label: string };
+export type KanbanColumnDef = { key: string; label: string; color?: string };
 
 export type CustomFieldDef = {
   id: string;
@@ -12,9 +12,12 @@ export type CustomFieldDef = {
 };
 
 export const DEFAULT_KANBAN_COLUMNS: KanbanColumnDef[] = [
-  { key: "todo", label: "A fazer" },
-  { key: "doing", label: "Em andamento" },
-  { key: "done", label: "Feito" },
+  { key: "previsto",         label: "Previsto",         color: "#64748b" },
+  { key: "planejado",        label: "Planejado",        color: "#c026d3" },
+  { key: "em_andamento",     label: "Em andamento",     color: "#d97706" },
+  { key: "paralisado",       label: "Paralisado",       color: "#dc2626" },
+  { key: "cancelado",        label: "Cancelado",        color: "#94a3b8" },
+  { key: "aprovacao_copasa", label: "Aprovação COPASA", color: "#2563eb" },
 ];
 
 export type WorkspaceTreeNode = {

@@ -1728,6 +1728,8 @@ export default function SpacesPage() {
                     projectIds={[selectedNode.project_id]}
                     nodeLabel={selectedNode.name}
                     podeEditar={podeEditarNos}
+                    kanbanColumnsRaw={selectedNode.kanban_columns}
+                    onSaveColumns={(cols) => void updateNodePatch(selectedNode.id, { kanban_columns: cols })}
                   />
                 ) : (
                   /* List without project → show workspace list items */

@@ -49,6 +49,9 @@ import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { KanbanColumnsEditor } from "@/components/spaces/kanban-columns-editor";
+import type { KanbanColumnDef } from "@/lib/workspaces/spaces-shared";
+import { parseKanbanColumns, DEFAULT_KANBAN_COLUMNS } from "@/lib/workspaces/spaces-shared";
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -99,6 +102,28 @@ const TAG_STYLES: Record<string, { bg: string; color: string }> = {
   "aprovado":       { bg: "#dcfce7", color: "#15803d" },
   "revisão":        { bg: "#fef3c7", color: "#b45309" },
 };
+
+// ─── Dynamic status builder (custom columns) ──────────────────────────────────
+
+const ICON_CYCLE: LucideIcon[] = [Circle, Clock, PlayCircle, PauseCircle, CheckCircle2, XCircle];
+
+export function buildDynamicStatuses(cols: KanbanColumnDef[]): {
+  statuses: Record<string, StatusConfig>;
+  order: string[];
+} {
+  const statuses: Record<string, StatusConfig> = {};
+  cols.forEach((col, i) => {
+    const color = col.color ?? "#6366f1";
+    statuses[col.key] = {
+      label: col.label.toUpperCase(),
+      color,
+      bg:     `color-mix(in srgb,${color} 10%,transparent)`,
+      border: `color-mix(in srgb,${color} 25%,transparent)`,
+      Icon:   ICON_CYCLE[i % ICON_CYCLE.length],
+    };
+  });
+  return { statuses, order: cols.map((c) => c.key) };
+}
 
 // ─── Task type ────────────────────────────────────────────────────────────────
 
@@ -277,59 +302,95 @@ function KanbanCol({ statusKey, tasks, onAdd, onTaskClick }: {
   );
 }
 
-// ─── Kanban view ──────────────────────────────────────────────────────────────
+// ─── Dynamic views (support custom statuses) ──────────────────────────────────
 
-function KanbanView({ tasks, onAdd, onTaskClick }: {
-  tasks: ProjectTask[]; onAdd: (s: StatusKey) => void; onTaskClick: (t: ProjectTask) => void;
+type DynViewProps = {
+  tasks: ProjectTask[];
+  statuses: Record<string, StatusConfig>;
+  order: string[];
+};
+
+function DynamicKanbanView({ tasks, statuses, order, onAdd, onTaskClick }: DynViewProps & {
+  onAdd: (s: string) => void; onTaskClick: (t: ProjectTask) => void;
 }) {
   const grouped = useMemo(() => {
-    const m: Record<StatusKey, ProjectTask[]> = { previsto: [], planejado: [], em_andamento: [], paralisado: [], cancelado: [], aprovacao_copasa: [] };
-    for (const t of tasks) m[normalizeStatus(t.status)].push(t);
+    const m: Record<string, ProjectTask[]> = {};
+    for (const k of order) m[k] = [];
+    for (const t of tasks) {
+      const k = order.includes(t.status) ? t.status : (order.includes(normalizeStatus(t.status)) ? normalizeStatus(t.status) : order[0]);
+      if (k && m[k]) m[k].push(t); else if (order[0]) m[order[0]].push(t);
+    }
     return m;
-  }, [tasks]);
+  }, [tasks, order]);
 
   return (
     <div style={{ display: "flex", gap: 10, overflowX: "auto", overflowY: "hidden", height: "100%", padding: "14px 16px", alignItems: "flex-start" }}>
-      {STATUS_ORDER.map((key) => (
-        <KanbanCol key={key} statusKey={key} tasks={grouped[key]} onAdd={() => onAdd(key)} onTaskClick={onTaskClick} />
-      ))}
+      {order.map((key) => {
+        const cfg = statuses[key];
+        if (!cfg) return null;
+        const Ic = cfg.Icon;
+        return (
+          <div key={key} style={{ flexShrink: 0, width: 268, display: "flex", flexDirection: "column", background: cfg.bg, borderRadius: "var(--radius-lg)", border: `1px solid ${cfg.border}`, maxHeight: "100%", overflow: "hidden" }}>
+            <div style={{ padding: "9px 10px", borderBottom: `1px solid ${cfg.border}`, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <Ic size={12} style={{ color: cfg.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: cfg.color, textTransform: "uppercase", letterSpacing: "0.06em", flex: 1 }}>{cfg.label}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: cfg.color, background: `${cfg.color}28`, borderRadius: 20, padding: "1px 7px" }}>{(grouped[key] ?? []).length}</span>
+              <button type="button" onClick={() => onAdd(key)} style={{ background: "none", border: "none", cursor: "pointer", color: cfg.color, opacity: 0.6, padding: 2, borderRadius: "var(--radius-sm)", display: "flex" }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }} onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.6"; }}>
+                <Plus size={13} />
+              </button>
+              <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: cfg.color, opacity: 0.45, padding: 2, borderRadius: "var(--radius-sm)", display: "flex" }}>
+                <MoreHorizontal size={13} />
+              </button>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, padding: "8px 8px 4px" }}>
+              {(grouped[key] ?? []).map((t) => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} />)}
+              <button type="button" onClick={() => onAdd(key)}
+                style={{ width: "100%", background: "none", border: "1px dashed var(--border)", borderRadius: "var(--radius-sm)", padding: "6px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600, color: "var(--muted-fg)", display: "flex", alignItems: "center", gap: 4, marginBottom: 4, transition: "all 0.12s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = cfg.color; e.currentTarget.style.color = cfg.color; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--muted-fg)"; }}>
+                <Plus size={11} /> Adicionar Tarefa
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// ─── List view ────────────────────────────────────────────────────────────────
+// ─── Dynamic list view ────────────────────────────────────────────────────────
 
-function ListView({ tasks, onTaskClick }: { tasks: ProjectTask[]; onTaskClick: (t: ProjectTask) => void }) {
-  const sorted = [...tasks].sort((a, b) => STATUS_ORDER.indexOf(normalizeStatus(a.status)) - STATUS_ORDER.indexOf(normalizeStatus(b.status)));
+function DynamicListView({ tasks, statuses, order, onTaskClick }: DynViewProps & { onTaskClick: (t: ProjectTask) => void }) {
+  const sorted = [...tasks].sort((a, b) => {
+    const ai = order.indexOf(a.status) >= 0 ? order.indexOf(a.status) : order.indexOf(normalizeStatus(a.status));
+    const bi = order.indexOf(b.status) >= 0 ? order.indexOf(b.status) : order.indexOf(normalizeStatus(b.status));
+    return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+  });
 
   return (
     <div style={{ overflowY: "auto", height: "100%", padding: "0 16px 16px" }}>
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", borderBottom: "2px solid var(--border)", padding: "8px 0", position: "sticky", top: 0, background: "var(--surface)", zIndex: 5 }}>
-        {[["OS", 72], ["Tarefa / Município", "auto"], ["Tipo", 60], ["Status", 164], ["Prioridade", 84], ["Prazo", 84]].map(([col, w]) => (
-          <div key={col as string} style={{ width: w === "auto" ? "auto" : w as number, flex: w === "auto" ? 1 : "none", fontSize: 10, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0 8px", whiteSpace: "nowrap" }}>
-            {col}
-          </div>
+        {[["OS", 72], ["Tarefa / Município", "auto"], ["Tipo", 60], ["Status", 180], ["Prioridade", 84], ["Prazo", 84]].map(([col, w]) => (
+          <div key={col as string} style={{ width: w === "auto" ? "auto" : w as number, flex: w === "auto" ? 1 : "none", fontSize: 10, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.05em", padding: "0 8px", whiteSpace: "nowrap" }}>{col}</div>
         ))}
       </div>
-
       {sorted.length === 0 && (
         <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted-fg)" }}>
           <ListTodo size={40} style={{ margin: "0 auto 12px", opacity: 0.2 }} />
           <p style={{ fontSize: 13, fontWeight: 600 }}>Nenhuma tarefa encontrada</p>
         </div>
       )}
-
       {sorted.map((task) => {
         const { osCode, systemType, municipality } = parseTitle(task.title);
-        const sk = normalizeStatus(task.status);
-        const cfg = STATUSES[sk];
+        const sk = order.includes(task.status) ? task.status : (order.includes(normalizeStatus(task.status)) ? normalizeStatus(task.status) : order[0]);
+        const cfg = statuses[sk ?? ""] ?? statuses[order[0]];
+        if (!cfg) return null;
         const SIcon = cfg.Icon;
         const due = fmtDate(task.planned_due_date);
         const late = overdue(task);
         const tags = extractTags(task.description);
         const prio = PRIORITY_CONFIG[task.priority ?? "normal"];
-
         return (
           <div key={task.id} onClick={() => onTaskClick(task)}
             style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)", padding: "8px 0", cursor: "pointer", transition: "background 0.1s", minHeight: 44 }}
@@ -337,15 +398,13 @@ function ListView({ tasks, onTaskClick }: { tasks: ProjectTask[]; onTaskClick: (
             onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
             <div style={{ width: 72, flexShrink: 0, fontSize: 11, fontWeight: 700, color: "var(--muted-fg)", padding: "0 8px", whiteSpace: "nowrap" }}>{osCode ?? "—"}</div>
             <div style={{ flex: 1, padding: "0 8px", minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {municipality || task.title}
-              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{municipality || task.title}</div>
               {tags.length > 0 && <div style={{ display: "flex", gap: 3, marginTop: 3 }}>{tags.map((t) => <TagPill key={t} tag={t} />)}</div>}
             </div>
             <div style={{ width: 60, flexShrink: 0, padding: "0 8px" }}>
               {systemType ? <Badge variant="neutral" style={{ fontSize: 9, padding: "1px 5px" }}>{systemType}</Badge> : <span style={{ color: "var(--border)" }}>—</span>}
             </div>
-            <div style={{ width: 164, flexShrink: 0, padding: "0 8px" }}>
+            <div style={{ width: 180, flexShrink: 0, padding: "0 8px" }}>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 8px", borderRadius: 20, background: cfg.bg, border: `1px solid ${cfg.border}` }}>
                 <SIcon size={10} style={{ color: cfg.color }} />
                 <span style={{ fontSize: 10, fontWeight: 700, color: cfg.color, whiteSpace: "nowrap" }}>{cfg.label}</span>
@@ -364,12 +423,11 @@ function ListView({ tasks, onTaskClick }: { tasks: ProjectTask[]; onTaskClick: (
   );
 }
 
-// ─── Gantt view ───────────────────────────────────────────────────────────────
+// ─── Dynamic Gantt view ───────────────────────────────────────────────────────
 
-function GanttView({ tasks }: { tasks: ProjectTask[] }) {
+function DynamicGanttView({ tasks, statuses, order }: DynViewProps) {
   const today = new Date();
   const withDates = tasks.filter((t) => t.planned_due_date);
-
   if (withDates.length === 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted-fg)", gap: 10 }}>
@@ -379,19 +437,14 @@ function GanttView({ tasks }: { tasks: ProjectTask[] }) {
       </div>
     );
   }
-
   const allDates = withDates.map((t) => new Date(t.planned_due_date!)).filter((d) => !isNaN(d.getTime()));
   const minD = new Date(Math.min(...allDates.map((d) => d.getTime())));
   const maxD = new Date(Math.max(...allDates.map((d) => d.getTime())));
   minD.setDate(minD.getDate() - 14);
   maxD.setDate(maxD.getDate() + 21);
-
   const totalDays = Math.max(1, Math.ceil((maxD.getTime() - minD.getTime()) / 86400000));
-  const DAY_W = 28;
-  const LEFT = 248;
+  const DAY_W = 28; const LEFT = 248;
   const todayOff = Math.floor((today.getTime() - minD.getTime()) / 86400000);
-
-  // Month headers
   const months: { label: string; days: number }[] = [];
   let cur = new Date(minD.getFullYear(), minD.getMonth(), 1);
   while (cur <= maxD) {
@@ -401,21 +454,17 @@ function GanttView({ tasks }: { tasks: ProjectTask[] }) {
     months.push({ label: cur.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }), days: Math.ceil((ce.getTime() - cs.getTime()) / 86400000) + 1 });
     cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
   }
-
   return (
     <div style={{ overflowX: "auto", overflowY: "auto", height: "100%", padding: 16 }}>
       <div style={{ minWidth: LEFT + totalDays * DAY_W, position: "relative" }}>
-        {/* Month header */}
         <div style={{ display: "flex", marginLeft: LEFT, borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 4 }}>
           {months.map((m, i) => (
             <div key={i} style={{ width: m.days * DAY_W, flexShrink: 0, fontSize: 11, fontWeight: 700, color: "var(--foreground)", padding: "6px 8px", borderRight: "1px solid var(--border)", background: "var(--surface-2)", textTransform: "capitalize" }}>{m.label}</div>
           ))}
         </div>
-
         {todayOff >= 0 && todayOff <= totalDays && (
           <div style={{ position: "absolute", left: LEFT + todayOff * DAY_W, top: 32, bottom: 0, width: 2, background: "#ef4444", opacity: 0.4, zIndex: 3, pointerEvents: "none" }} />
         )}
-
         {withDates.map((task) => {
           const { osCode, systemType, municipality } = parseTitle(task.title);
           const endDate = new Date(task.planned_due_date!);
@@ -423,9 +472,9 @@ function GanttView({ tasks }: { tasks: ProjectTask[] }) {
           const startOff = Math.max(0, Math.floor((startDate.getTime() - minD.getTime()) / 86400000));
           const endOff = Math.floor((endDate.getTime() - minD.getTime()) / 86400000);
           const barW = Math.max(DAY_W, (endOff - startOff) * DAY_W);
-          const sk = normalizeStatus(task.status);
-          const cfg = STATUSES[sk];
-
+          const sk = order.includes(task.status) ? task.status : (order.includes(normalizeStatus(task.status)) ? normalizeStatus(task.status) : order[0]);
+          const cfg = statuses[sk ?? ""] ?? statuses[order[0]];
+          if (!cfg) return null;
           return (
             <div key={task.id} style={{ display: "flex", alignItems: "center", height: 44, borderBottom: "1px solid var(--border)" }}>
               <div style={{ width: LEFT, flexShrink: 0, padding: "0 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 5 }}>
@@ -449,18 +498,21 @@ function GanttView({ tasks }: { tasks: ProjectTask[] }) {
   );
 }
 
-// ─── Task detail side panel ───────────────────────────────────────────────────
+// ─── Dynamic detail side panel ───────────────────────────────────────────────
 
-function DetailPanel({ task, onClose, onStatusChange, onDelete, podeEditar }: {
-  task: ProjectTask; onClose: () => void;
-  onStatusChange: (id: string, s: StatusKey) => void;
+function DynamicDetailPanel({ task, statuses, order, onClose, onStatusChange, onDelete, podeEditar }: {
+  task: ProjectTask;
+  statuses: Record<string, StatusConfig>;
+  order: string[];
+  onClose: () => void;
+  onStatusChange: (id: string, s: string) => void;
   onDelete: (id: string) => void;
   podeEditar: boolean;
 }) {
   const { osCode, systemType, municipality } = parseTitle(task.title);
-  const sk = normalizeStatus(task.status);
-  const cfg = STATUSES[sk];
-  const SIcon = cfg.Icon;
+  const sk = order.includes(task.status) ? task.status : (order.includes(normalizeStatus(task.status)) ? normalizeStatus(task.status) : order[0]);
+  const cfg = statuses[sk ?? ""] ?? statuses[order[0]];
+  const SIcon = cfg?.Icon ?? Circle;
   const tags = extractTags(task.description);
   const due  = fmtDate(task.planned_due_date);
   const late = overdue(task);
@@ -519,8 +571,8 @@ function DetailPanel({ task, onClose, onStatusChange, onDelete, podeEditar }: {
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 7 }}>Mover para</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {STATUS_ORDER.filter((s) => s !== sk).map((s) => {
-                const c = STATUSES[s]; const I = c.Icon;
+              {order.filter((s) => s !== sk).map((s) => {
+                const c = statuses[s]; if (!c) return null; const I = c.Icon;
                 return (
                   <button key={s} type="button" onClick={() => onStatusChange(task.id, s)}
                     style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, background: c.bg, border: `1px solid ${c.border}`, cursor: "pointer", fontSize: 10, fontWeight: 700, color: c.color, transition: "opacity 0.1s" }}
@@ -547,12 +599,19 @@ function DetailPanel({ task, onClose, onStatusChange, onDelete, podeEditar }: {
 
 // ─── Add task modal ───────────────────────────────────────────────────────────
 
-function AddTaskModal({ defaultStatus, projectId, onClose, onCreated }: {
-  defaultStatus: StatusKey; projectId: string | null;
-  onClose: () => void; onCreated: () => void;
+function AddTaskModal({ defaultStatus, availableStatuses, statusLabels, projectId, onClose, onCreated }: {
+  defaultStatus: StatusKey;
+  availableStatuses?: string[];
+  statusLabels?: Record<string, string>;
+  projectId: string | null;
+  onClose: () => void;
+  onCreated: () => void;
 }) {
+  const statList = availableStatuses ?? STATUS_ORDER;
+  const getLabel = (k: string) => statusLabels?.[k] ?? STATUSES[k as StatusKey]?.label ?? k;
+
   const [title, setTitle] = useState("");
-  const [status, setStatus] = useState<StatusKey>(defaultStatus);
+  const [status, setStatus] = useState<string>(statList.includes(defaultStatus) ? defaultStatus : statList[0] ?? defaultStatus);
   const [priority, setPriority] = useState("normal");
   const [dueDate, setDueDate] = useState("");
   const [description, setDescription] = useState("");
@@ -587,8 +646,8 @@ function AddTaskModal({ defaultStatus, projectId, onClose, onCreated }: {
           </Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Status">
-              <Select value={status} onChange={(e) => setStatus(e.target.value as StatusKey)}>
-                {STATUS_ORDER.map((k) => <option key={k} value={k}>{STATUSES[k].label}</option>)}
+              <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                {statList.map((k) => <option key={k} value={k}>{getLabel(k)}</option>)}
               </Select>
             </Field>
             <Field label="Prioridade">
@@ -613,17 +672,42 @@ function AddTaskModal({ defaultStatus, projectId, onClose, onCreated }: {
 
 // ─── Main export: ProjectTaskBoard ────────────────────────────────────────────
 
-export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar }: {
+export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar, kanbanColumnsRaw, onSaveColumns }: {
   projectIds: string[];
   nodeLabel: string;
   podeEditar: boolean;
+  kanbanColumnsRaw?: unknown;
+  onSaveColumns?: (cols: KanbanColumnDef[]) => void;
 }) {
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeView, setActiveView] = useState<"kanban" | "list" | "gantt">("kanban");
   const [search, setSearch] = useState("");
   const [selectedTask, setSelectedTask] = useState<ProjectTask | null>(null);
-  const [addModal, setAddModal] = useState<{ status: StatusKey } | null>(null);
+  const [addModal, setAddModal] = useState<{ status: string } | null>(null);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+
+  // ── Determine effective statuses (custom or default) ──────────────────────
+  const { statuses: effectiveStatuses, order: effectiveOrder } = useMemo(() => {
+    const cols = parseKanbanColumns(kanbanColumnsRaw);
+    // If the columns exactly match the DEFAULT_KANBAN_COLUMNS keys, use hardcoded STATUSES
+    // (which have semantic icons). Otherwise build dynamic ones.
+    const defaultKeys = DEFAULT_KANBAN_COLUMNS.map((c) => c.key).join(",");
+    const colKeys = cols.map((c) => c.key).join(",");
+    if (colKeys === defaultKeys) {
+      return { statuses: STATUSES as Record<string, StatusConfig>, order: STATUS_ORDER as string[] };
+    }
+    return buildDynamicStatuses(cols);
+  }, [kanbanColumnsRaw]);
+
+  function normalizeStatusDynamic(s: string | null | undefined): string {
+    if (!s) return effectiveOrder[0] ?? "previsto";
+    if (effectiveOrder.includes(s)) return s;
+    // legacy mapping fallback
+    const mapped = normalizeStatus(s);
+    if (effectiveOrder.includes(mapped)) return mapped;
+    return effectiveOrder[0] ?? "previsto";
+  }
 
   const loadTasks = useCallback(async () => {
     if (projectIds.length === 0) { setTasks([]); return; }
@@ -724,9 +808,24 @@ export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar }: {
               style={{ background: "none", border: "none", outline: "none", fontSize: 11, color: "var(--foreground)", width: 120 }} />
             {search && <button type="button" onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-fg)", padding: 0, display: "flex" }}><X size={11} /></button>}
           </div>
-          <Chip label="Personalizar" icon={<Settings size={10} />} />
           {podeEditar && (
-            <Button size="sm" leftIcon={<Plus size={11} />} onClick={() => setAddModal({ status: "em_andamento" })}>
+            <button
+              type="button"
+              onClick={() => setCustomizeOpen(true)}
+              style={{
+                background: customizeOpen ? "color-mix(in srgb,var(--primary) 12%,transparent)" : "none",
+                border: `1px solid ${customizeOpen ? "color-mix(in srgb,var(--primary) 35%,transparent)" : "transparent"}`,
+                borderRadius: "var(--radius-sm, 5px)", padding: "3px 8px", fontSize: 11,
+                fontWeight: customizeOpen ? 600 : 500,
+                color: customizeOpen ? "var(--primary)" : "var(--muted-fg)",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+              }}
+            >
+              <Settings size={10} /> Personalizar colunas
+            </button>
+          )}
+          {podeEditar && (
+            <Button size="sm" leftIcon={<Plus size={11} />} onClick={() => setAddModal({ status: effectiveOrder[0] ?? "previsto" })}>
               Add Tarefa
             </Button>
           )}
@@ -744,22 +843,81 @@ export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar }: {
             </div>
           ) : (
             <>
-              {activeView === "kanban" && <KanbanView tasks={filtered} onAdd={(s) => setAddModal({ status: s })} onTaskClick={setSelectedTask} />}
-              {activeView === "list"   && <ListView tasks={filtered} onTaskClick={setSelectedTask} />}
-              {activeView === "gantt"  && <GanttView tasks={filtered} />}
+              {activeView === "kanban" && (
+                <DynamicKanbanView
+                  tasks={filtered}
+                  statuses={effectiveStatuses}
+                  order={effectiveOrder}
+                  onAdd={(s) => setAddModal({ status: s })}
+                  onTaskClick={setSelectedTask}
+                />
+              )}
+              {activeView === "list" && (
+                <DynamicListView
+                  tasks={filtered}
+                  statuses={effectiveStatuses}
+                  order={effectiveOrder}
+                  onTaskClick={setSelectedTask}
+                />
+              )}
+              {activeView === "gantt" && (
+                <DynamicGanttView
+                  tasks={filtered}
+                  statuses={effectiveStatuses}
+                  order={effectiveOrder}
+                />
+              )}
             </>
           )}
         </div>
 
         {selectedTask && (
-          <DetailPanel task={selectedTask} onClose={() => setSelectedTask(null)}
-            onStatusChange={handleStatusChange} onDelete={handleDelete} podeEditar={podeEditar} />
+          <DynamicDetailPanel
+            task={selectedTask}
+            statuses={effectiveStatuses}
+            order={effectiveOrder}
+            onClose={() => setSelectedTask(null)}
+            onStatusChange={handleStatusChange}
+            onDelete={handleDelete}
+            podeEditar={podeEditar}
+          />
         )}
       </div>
 
+      {/* Customize columns panel */}
+      {customizeOpen && podeEditar && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", padding: 16 }}
+          onClick={() => setCustomizeOpen(false)}>
+          <div style={{ width: "100%", maxWidth: 520, maxHeight: "calc(100vh - 32px)", background: "var(--background)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", boxShadow: "var(--shadow-lg)", overflowY: "auto" }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-2)", borderRadius: "var(--radius-xl) var(--radius-xl) 0 0" }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Personalizar colunas</div>
+                <div style={{ fontSize: 12, color: "var(--muted-fg)", marginTop: 2 }}>
+                  Defina os status disponíveis neste board. A chave interna é salva nas tarefas.
+                </div>
+              </div>
+              <button type="button" onClick={() => setCustomizeOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-fg)", display: "flex" }}><X size={16} /></button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <KanbanColumnsEditor
+                valueRaw={kanbanColumnsRaw}
+                podeEditar={podeEditar}
+                onSave={(cols) => {
+                  onSaveColumns?.(cols);
+                  setCustomizeOpen(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {addModal && (
         <AddTaskModal
-          defaultStatus={addModal.status}
+          defaultStatus={addModal.status as StatusKey}
+          availableStatuses={effectiveOrder}
+          statusLabels={Object.fromEntries(effectiveOrder.map((k) => [k, effectiveStatuses[k]?.label ?? k]))}
           projectId={projectIds[0] ?? null}
           onClose={() => setAddModal(null)}
           onCreated={() => { setAddModal(null); void loadTasks(); }}
