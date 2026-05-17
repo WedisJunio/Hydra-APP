@@ -2530,6 +2530,7 @@ export function DashboardDisciplina({
   phases,
   liveSecondsMap,
   period,
+  onNavigateToProject,
 }: {
   discipline: string;
   projects: Project[];
@@ -2539,6 +2540,7 @@ export function DashboardDisciplina({
   phases: Phase[];
   liveSecondsMap: Record<string, number>;
   period: PeriodKey;
+  onNavigateToProject?: (projectId: string) => void;
 }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
@@ -2673,7 +2675,7 @@ export function DashboardDisciplina({
         {projectCards.map((pc) => {
           const isSelected = selectedProjectId === pc.id;
           return (
-            <button
+            <div
               key={pc.id}
               onClick={() => setSelectedProjectId(isSelected ? null : pc.id)}
               style={{
@@ -2689,20 +2691,37 @@ export function DashboardDisciplina({
               }}
               onMouseEnter={(e) => {
                 if (!isSelected) {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--primary)";
-                  (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 0 3px rgba(37,99,235,0.08)";
+                  e.currentTarget.style.borderColor = "var(--primary)";
+                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,0.08)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!isSelected) {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--border)";
-                  (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
+                  e.currentTarget.style.borderColor = "var(--border)";
+                  e.currentTarget.style.boxShadow = "none";
                 }
               }}
             >
               <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="font-semibold text-sm" style={{ lineHeight: 1.4 }}>{pc.name}</div>
-                <div className="flex items-center gap-1">
+                {/* Nome clicável — navega para o projeto; não propaga para o card */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigateToProject?.(pc.id);
+                  }}
+                  style={{
+                    background: "none", border: "none", padding: 0, cursor: onNavigateToProject ? "pointer" : "default",
+                    textAlign: "left", fontWeight: 600, fontSize: 14, lineHeight: 1.4,
+                    color: "var(--foreground)",
+                  }}
+                  onMouseEnter={(e) => { if (onNavigateToProject) e.currentTarget.style.color = "var(--primary)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--foreground)"; }}
+                  title={onNavigateToProject ? "Abrir projeto" : undefined}
+                >
+                  {pc.name}
+                </button>
+                <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
                   {isSelected && (
                     <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: "var(--primary)", color: "#fff", whiteSpace: "nowrap" }}>
                       Filtrado
@@ -2742,7 +2761,7 @@ export function DashboardDisciplina({
                   {pc.openApprovals} aprovação(ões) pendente(s)
                 </div>
               )}
-            </button>
+            </div>
           );
         })}
       </div>

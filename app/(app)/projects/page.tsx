@@ -2793,6 +2793,7 @@ export default function ProjectsPage() {
               phases={phases}
               liveSecondsMap={liveSecondsMap}
               period={period}
+              onNavigateToProject={(id) => router.push(`/saneamento/${id}`)}
             />
           ) : (
             <GanttChart
@@ -2818,6 +2819,7 @@ export default function ProjectsPage() {
               phases={phases}
               liveSecondsMap={liveSecondsMap}
               period={period}
+              onNavigateToProject={(id) => router.push(`/saneamento/${id}`)}
             />
           ) : activeSaneamentoView === "gantt" ? (
             <GanttChart
