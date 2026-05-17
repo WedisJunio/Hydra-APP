@@ -930,14 +930,55 @@ export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar, kanbanColu
 // ─── FolderProjectsBoard ──────────────────────────────────────────────────────
 // Exibido quando uma PASTA está selecionada no Espaço.
 // Mostra um painel resumo de cada projeto (lista vinculada) dentro da pasta,
-// com distribuição de status das tarefas e progresso. Clicar em um projeto
-// navega para o board de tarefas daquele projeto específico.
+// com distribuição de status das tarefas, progresso, fase atual e valor de contrato.
+// Clicar em um projeto expande um painel inline com fases e detalhes do projeto.
 
 export type FolderProjectNode = {
   nodeId: string;     // id do nó workspace_space_node (lista)
   nodeName: string;   // nome da lista (ex.: "Sistema de ampliação")
   projectId: string;  // project_id vinculado
 };
+
+// ─── Phase types ──────────────────────────────────────────────────────────────
+
+type PhaseStatus = "pending" | "in_progress" | "in_review" | "approved" | "on_hold" | "skipped";
+
+type FolderProjectPhase = {
+  id: string;
+  project_id: string;
+  name: string;
+  code: string | null;
+  order: number;
+  status: PhaseStatus;
+};
+
+type FolderProjectDetails = {
+  id: string;
+  name: string;
+  contract_value: number | null;
+  municipality: string | null;
+  state: string | null;
+  discipline: string | null;
+  contract_number: string | null;
+};
+
+const PHASE_STATUS_CFG: Record<PhaseStatus, { label: string; color: string; bg: string; border: string }> = {
+  pending:     { label: "Pendente",      color: "#64748b", bg: "color-mix(in srgb,#64748b 10%,transparent)", border: "color-mix(in srgb,#64748b 25%,transparent)" },
+  in_progress: { label: "Em andamento", color: "#d97706", bg: "color-mix(in srgb,#d97706 10%,transparent)", border: "color-mix(in srgb,#d97706 25%,transparent)" },
+  in_review:   { label: "Em análise",   color: "#7c3aed", bg: "color-mix(in srgb,#7c3aed 10%,transparent)", border: "color-mix(in srgb,#7c3aed 25%,transparent)" },
+  approved:    { label: "Aprovada",     color: "#16a34a", bg: "color-mix(in srgb,#16a34a 10%,transparent)", border: "color-mix(in srgb,#16a34a 25%,transparent)" },
+  on_hold:     { label: "Em espera",    color: "#c026d3", bg: "color-mix(in srgb,#c026d3 10%,transparent)", border: "color-mix(in srgb,#c026d3 25%,transparent)" },
+  skipped:     { label: "Não aplic.",   color: "#94a3b8", bg: "color-mix(in srgb,#94a3b8 10%,transparent)", border: "color-mix(in srgb,#94a3b8 25%,transparent)" },
+};
+
+const ALL_PHASE_STATUSES: PhaseStatus[] = ["pending", "in_progress", "in_review", "approved", "on_hold", "skipped"];
+
+function fmtBRL(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+}
+
+// ─── StatusBar ────────────────────────────────────────────────────────────────
 
 function StatusBar({ counts }: { counts: Record<StatusKey, number> }) {
   const total = STATUS_ORDER.reduce((s, k) => s + (counts[k] ?? 0), 0);
@@ -953,10 +994,216 @@ function StatusBar({ counts }: { counts: Record<StatusKey, number> }) {
   );
 }
 
-function ProjectRow({ node, tasks, onClick }: {
+// ─── PhaseSelector (inline dropdown) ─────────────────────────────────────────
+
+function PhaseStatusBadge({ status, phaseId, onUpdate }: {
+  status: PhaseStatus;
+  phaseId: string;
+  onUpdate: (phaseId: string, newStatus: PhaseStatus) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const cfg = PHASE_STATUS_CFG[status];
+
+  async function pick(s: PhaseStatus) {
+    if (s === status) { setOpen(false); return; }
+    setSaving(true);
+    await onUpdate(phaseId, s);
+    setSaving(false);
+    setOpen(false);
+  }
+
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button
+        type="button"
+        disabled={saving}
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        style={{
+          fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
+          background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
+          cursor: "pointer", whiteSpace: "nowrap", opacity: saving ? 0.6 : 1,
+        }}
+      >
+        {saving ? "…" : cfg.label}
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
+            background: "var(--surface)", border: "1px solid var(--border)",
+            borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.15)", minWidth: 140, padding: 4,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {ALL_PHASE_STATUSES.map((s) => {
+            const c = PHASE_STATUS_CFG[s];
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => void pick(s)}
+                style={{
+                  display: "block", width: "100%", textAlign: "left",
+                  padding: "6px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+                  background: s === status ? c.bg : "transparent",
+                  color: c.color, border: "none", cursor: "pointer",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = c.bg; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = s === status ? c.bg : "transparent"; }}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ProjectExpandedPanel ─────────────────────────────────────────────────────
+
+function ProjectExpandedPanel({ project, phases, onUpdatePhase, onOpenTasks }: {
+  project: FolderProjectDetails | undefined;
+  phases: FolderProjectPhase[];
+  onUpdatePhase: (phaseId: string, status: PhaseStatus) => Promise<void>;
+  onOpenTasks: () => void;
+}) {
+  const sorted = [...phases].sort((a, b) => a.order - b.order);
+  const currentPhase = sorted.find((p) => p.status === "in_progress") ?? sorted.find((p) => p.status === "in_review") ?? null;
+
+  return (
+    <div
+      style={{ borderTop: "1px solid var(--border)", padding: "16px 16px 12px", background: "var(--surface)" }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Project meta row */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 16 }}>
+        {/* Contract value */}
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Valor do Contrato</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: project?.contract_value ? "var(--primary)" : "var(--muted-fg)" }}>
+            {fmtBRL(project?.contract_value)}
+          </div>
+        </div>
+
+        {/* Contract number */}
+        {project?.contract_number && (
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Contrato</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{project.contract_number}</div>
+          </div>
+        )}
+
+        {/* Municipality / State */}
+        {(project?.municipality || project?.state) && (
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Localização</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
+              {[project.municipality, project.state].filter(Boolean).join(" — ")}
+            </div>
+          </div>
+        )}
+
+        {/* Discipline */}
+        {project?.discipline && (
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Disciplina</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", textTransform: "capitalize" }}>{project.discipline}</div>
+          </div>
+        )}
+
+        {/* Current phase summary */}
+        {currentPhase && (
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Fase atual</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{currentPhase.name}</div>
+          </div>
+        )}
+      </div>
+
+      {/* Phases timeline */}
+      {sorted.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Fases do projeto</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {sorted.map((ph, idx) => {
+              const cfg = PHASE_STATUS_CFG[ph.status];
+              const isActive = ph.status === "in_progress" || ph.status === "in_review";
+              return (
+                <div
+                  key={ph.id}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "6px 10px",
+                    borderRadius: 8, background: isActive ? cfg.bg : "transparent",
+                    border: `1px solid ${isActive ? cfg.border : "transparent"}`,
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {/* Step number */}
+                  <div style={{
+                    width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                    background: ph.status === "approved" ? "#16a34a" : ph.status === "skipped" ? "var(--border)" : isActive ? cfg.color : "var(--surface-3)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 10, fontWeight: 800, color: ph.status === "approved" || isActive ? "#fff" : "var(--muted-fg)",
+                  }}>
+                    {ph.status === "approved" ? "✓" : ph.status === "skipped" ? "—" : idx + 1}
+                  </div>
+
+                  {/* Phase name */}
+                  <span style={{
+                    flex: 1, fontSize: 12, fontWeight: isActive ? 700 : 500,
+                    color: ph.status === "skipped" ? "var(--muted-fg)" : "var(--foreground)",
+                    textDecoration: ph.status === "skipped" ? "line-through" : "none",
+                  }}>
+                    {ph.name}
+                  </span>
+
+                  {/* Status badge / dropdown */}
+                  <PhaseStatusBadge status={ph.status} phaseId={ph.id} onUpdate={onUpdatePhase} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* No phases yet */}
+      {sorted.length === 0 && (
+        <p style={{ fontSize: 11, color: "var(--muted-fg)", marginBottom: 14, fontStyle: "italic" }}>
+          Nenhuma fase cadastrada. Acesse o projeto completo para adicionar etapas.
+        </p>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          onClick={onOpenTasks}
+          style={{
+            fontSize: 11, fontWeight: 700, padding: "5px 14px", borderRadius: 8,
+            background: "var(--primary)", color: "#fff", border: "none", cursor: "pointer",
+          }}
+        >
+          Ver tarefas do projeto →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── ProjectRow ───────────────────────────────────────────────────────────────
+
+function ProjectRow({ node, tasks, project, phases, expanded, onToggle, onOpenTasks, onUpdatePhase }: {
   node: FolderProjectNode;
   tasks: ProjectTask[];
-  onClick: () => void;
+  project: FolderProjectDetails | undefined;
+  phases: FolderProjectPhase[];
+  expanded: boolean;
+  onToggle: () => void;
+  onOpenTasks: () => void;
+  onUpdatePhase: (phaseId: string, status: PhaseStatus) => Promise<void>;
 }) {
   const counts = useMemo(() => {
     const m: Record<StatusKey, number> = { previsto: 0, planejado: 0, em_andamento: 0, paralisado: 0, cancelado: 0, aprovacao_copasa: 0 };
@@ -969,77 +1216,124 @@ function ProjectRow({ node, tasks, onClick }: {
   const inProgress = counts.em_andamento;
   const paused = counts.paralisado;
   const pctDone = total > 0 ? Math.round((done / total) * 100) : 0;
-
   const lateTasks = tasks.filter(overdue);
+
+  const currentPhase = useMemo(() => {
+    const sorted = [...phases].sort((a, b) => a.order - b.order);
+    return sorted.find((p) => p.status === "in_progress") ?? sorted.find((p) => p.status === "in_review") ?? null;
+  }, [phases]);
 
   return (
     <div
-      onClick={onClick}
       style={{
-        display: "flex", alignItems: "center", gap: 14,
-        padding: "12px 16px",
-        background: "var(--surface-2)",
-        border: "1px solid var(--border)",
+        background: expanded ? "var(--surface)" : "var(--surface-2)",
+        border: `1px solid ${expanded ? "color-mix(in srgb,var(--primary) 40%,transparent)" : "var(--border)"}`,
         borderRadius: "var(--radius-md)",
-        cursor: "pointer",
-        transition: "all 0.15s",
+        overflow: "hidden",
+        transition: "border-color 0.15s, background 0.15s",
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "color-mix(in srgb,var(--primary) 40%,transparent)"; e.currentTarget.style.background = "var(--surface)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
     >
-      {/* Icon */}
-      <div style={{ width: 36, height: 36, borderRadius: 8, background: "color-mix(in srgb,var(--primary) 12%,var(--surface))", border: "1px solid color-mix(in srgb,var(--primary) 20%,transparent)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Briefcase size={16} style={{ color: "var(--primary)" }} />
-      </div>
-
-      {/* Name + status bar */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {node.nodeName}
-        </div>
-        <StatusBar counts={counts} />
-      </div>
-
-      {/* Stats */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
-        {/* Task counts per status */}
-        <div style={{ display: "flex", gap: 8 }}>
-          {[
-            { key: "em_andamento" as StatusKey, value: inProgress },
-            { key: "paralisado"   as StatusKey, value: paused },
-            { key: "aprovacao_copasa" as StatusKey, value: done },
-          ].map(({ key, value }) => {
-            const cfg = STATUSES[key];
-            const Ic = cfg.Icon;
-            return (
-              <div key={key} style={{ display: "flex", alignItems: "center", gap: 3 }} title={cfg.label}>
-                <Ic size={11} style={{ color: cfg.color }} />
-                <span style={{ fontSize: 11, fontWeight: 700, color: value > 0 ? cfg.color : "var(--muted-fg)" }}>{value}</span>
-              </div>
-            );
-          })}
+      {/* Row header — clickable to expand */}
+      <div
+        onClick={onToggle}
+        style={{
+          display: "flex", alignItems: "center", gap: 14,
+          padding: "12px 16px",
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => { if (!expanded) e.currentTarget.style.background = "var(--surface)"; }}
+        onMouseLeave={(e) => { if (!expanded) e.currentTarget.style.background = ""; }}
+      >
+        {/* Icon */}
+        <div style={{ width: 36, height: 36, borderRadius: 8, background: "color-mix(in srgb,var(--primary) 12%,var(--surface))", border: "1px solid color-mix(in srgb,var(--primary) 20%,transparent)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Briefcase size={16} style={{ color: "var(--primary)" }} />
         </div>
 
-        {/* Late indicator */}
-        {lateTasks.length > 0 && (
-          <span style={{ fontSize: 10, fontWeight: 700, color: "#ef4444", background: "#fef2f2", borderRadius: 20, padding: "1px 8px" }}>
-            {lateTasks.length} atrasada{lateTasks.length > 1 ? "s" : ""}
-          </span>
-        )}
-
-        {/* Progress */}
-        <div style={{ textAlign: "right", minWidth: 52 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: pctDone === 100 ? STATUSES.aprovacao_copasa.color : "var(--foreground)" }}>
-            {pctDone}%
+        {/* Name + status bar */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {node.nodeName}
+            </span>
+            {currentPhase && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 20,
+                background: PHASE_STATUS_CFG[currentPhase.status].bg,
+                color: PHASE_STATUS_CFG[currentPhase.status].color,
+                border: `1px solid ${PHASE_STATUS_CFG[currentPhase.status].border}`,
+                whiteSpace: "nowrap", flexShrink: 0,
+              }}>
+                {currentPhase.name}
+              </span>
+            )}
           </div>
-          <div style={{ fontSize: 10, color: "var(--muted-fg)" }}>{total} tarefa{total !== 1 ? "s" : ""}</div>
+          <StatusBar counts={counts} />
         </div>
 
-        <ChevronRight size={14} style={{ color: "var(--muted-fg)" }} />
+        {/* Stats */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+          {/* Contract value */}
+          {project?.contract_value != null && (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--primary)" }}>{fmtBRL(project.contract_value)}</div>
+              <div style={{ fontSize: 9, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.05em" }}>contrato</div>
+            </div>
+          )}
+
+          {/* Task counts per status */}
+          <div style={{ display: "flex", gap: 8 }}>
+            {([
+              { key: "em_andamento" as StatusKey, value: inProgress },
+              { key: "paralisado"   as StatusKey, value: paused },
+              { key: "aprovacao_copasa" as StatusKey, value: done },
+            ]).map(({ key, value }) => {
+              const cfg = STATUSES[key];
+              const Ic = cfg.Icon;
+              return (
+                <div key={key} style={{ display: "flex", alignItems: "center", gap: 3 }} title={cfg.label}>
+                  <Ic size={11} style={{ color: cfg.color }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: value > 0 ? cfg.color : "var(--muted-fg)" }}>{value}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Late indicator */}
+          {lateTasks.length > 0 && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#ef4444", background: "#fef2f2", borderRadius: 20, padding: "1px 8px" }}>
+              {lateTasks.length} atrasada{lateTasks.length > 1 ? "s" : ""}
+            </span>
+          )}
+
+          {/* Progress */}
+          <div style={{ textAlign: "right", minWidth: 52 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: pctDone === 100 ? STATUSES.aprovacao_copasa.color : "var(--foreground)" }}>
+              {pctDone}%
+            </div>
+            <div style={{ fontSize: 10, color: "var(--muted-fg)" }}>{total} tarefa{total !== 1 ? "s" : ""}</div>
+          </div>
+
+          {/* Expand chevron */}
+          <div style={{ transition: "transform 0.2s", transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+            <ChevronRight size={14} style={{ color: "var(--muted-fg)" }} />
+          </div>
+        </div>
       </div>
+
+      {/* Expanded panel */}
+      {expanded && (
+        <ProjectExpandedPanel
+          project={project}
+          phases={phases}
+          onUpdatePhase={onUpdatePhase}
+          onOpenTasks={onOpenTasks}
+        />
+      )}
     </div>
   );
 }
+
+// ─── FolderProjectsBoard (main export) ───────────────────────────────────────
 
 export function FolderProjectsBoard({ projectNodes, nodeLabel, onSelectProject }: {
   projectNodes: FolderProjectNode[];
@@ -1047,23 +1341,54 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, onSelectProject }
   onSelectProject: (nodeId: string) => void;
 }) {
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
+  const [projectDetails, setProjectDetails] = useState<Record<string, FolderProjectDetails>>({});
+  const [phasesByProject, setPhasesByProject] = useState<Record<string, FolderProjectPhase[]>>({});
   const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const projectIds = useMemo(() => projectNodes.map((p) => p.projectId), [projectNodes]);
 
-  const loadTasks = useCallback(async () => {
-    if (projectIds.length === 0) { setTasks([]); return; }
+  const loadAll = useCallback(async () => {
+    if (projectIds.length === 0) { setTasks([]); setProjectDetails({}); setPhasesByProject({}); return; }
     setLoading(true);
-    const { data, error } = await supabase
-      .from("tasks")
-      .select("id, title, status, priority, planned_due_date, project_id, assigned_to, description, created_at")
-      .in("project_id", projectIds);
-    if (error) logSupabaseUnlessJwt("[folder-projects-board]", error);
-    setTasks((data ?? []) as ProjectTask[]);
+
+    const [tasksRes, detailsRes, phasesRes] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id, title, status, priority, planned_due_date, project_id, assigned_to, description, created_at")
+        .in("project_id", projectIds),
+      supabase
+        .from("projects")
+        .select("id, name, contract_value, municipality, state, discipline, contract_number")
+        .in("id", projectIds),
+      supabase
+        .from("project_phases")
+        .select("id, project_id, name, code, order, status")
+        .in("project_id", projectIds)
+        .order("order", { ascending: true }),
+    ]);
+
+    if (tasksRes.error) logSupabaseUnlessJwt("[folder-projects-board/tasks]", tasksRes.error);
+    if (detailsRes.error) logSupabaseUnlessJwt("[folder-projects-board/projects]", detailsRes.error);
+    if (phasesRes.error) logSupabaseUnlessJwt("[folder-projects-board/phases]", phasesRes.error);
+
+    setTasks((tasksRes.data ?? []) as ProjectTask[]);
+
+    const detMap: Record<string, FolderProjectDetails> = {};
+    for (const p of (detailsRes.data ?? []) as FolderProjectDetails[]) detMap[p.id] = p;
+    setProjectDetails(detMap);
+
+    const phMap: Record<string, FolderProjectPhase[]> = {};
+    for (const ph of (phasesRes.data ?? []) as FolderProjectPhase[]) {
+      if (!phMap[ph.project_id]) phMap[ph.project_id] = [];
+      phMap[ph.project_id].push(ph);
+    }
+    setPhasesByProject(phMap);
+
     setLoading(false);
   }, [projectIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { void loadTasks(); }, [loadTasks]);
+  useEffect(() => { void loadAll(); }, [loadAll]);
 
   const tasksByProject = useMemo(() => {
     const map: Record<string, ProjectTask[]> = {};
@@ -1074,6 +1399,26 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, onSelectProject }
     }
     return map;
   }, [tasks]);
+
+  async function handleUpdatePhase(phaseId: string, newStatus: PhaseStatus) {
+    const { error } = await supabase
+      .from("project_phases")
+      .update({ status: newStatus })
+      .eq("id", phaseId);
+    if (error) {
+      showErrorToast("Erro ao atualizar fase", getSupabaseErrorMessage(error));
+      return;
+    }
+    showSuccessToast("Fase atualizada", "");
+    // Update local state
+    setPhasesByProject((prev) => {
+      const next = { ...prev };
+      for (const pid of Object.keys(next)) {
+        next[pid] = next[pid].map((ph) => ph.id === phaseId ? { ...ph, status: newStatus } : ph);
+      }
+      return next;
+    });
+  }
 
   const totalTasks = tasks.length;
   const totalDone  = tasks.filter((t) => normalizeStatus(t.status) === "aprovacao_copasa").length;
@@ -1131,7 +1476,12 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, onSelectProject }
                 key={node.nodeId}
                 node={node}
                 tasks={tasksByProject[node.projectId] ?? []}
-                onClick={() => onSelectProject(node.nodeId)}
+                project={projectDetails[node.projectId]}
+                phases={phasesByProject[node.projectId] ?? []}
+                expanded={expandedId === node.nodeId}
+                onToggle={() => setExpandedId((prev) => prev === node.nodeId ? null : node.nodeId)}
+                onOpenTasks={() => onSelectProject(node.nodeId)}
+                onUpdatePhase={handleUpdatePhase}
               />
             ))}
           </div>
