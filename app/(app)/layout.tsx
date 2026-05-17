@@ -15,6 +15,7 @@ import {
   Moon,
   Sun,
   Droplets,
+  FileText,
   Layers,
 } from "lucide-react";
 
@@ -35,6 +36,7 @@ const menuItems: SidebarMenuItem[] = [
   // Opcional: defina `minRole` para esconder itens (ex.: { ..., minRole: "leader" }).
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Projetos", href: "/projects", icon: FolderKanban },
+  { label: "Contratos", href: "/contratos", icon: FileText },
   { label: "Espaços", href: "/spaces", icon: Layers },
   { label: "Tarefas", href: "/tasks", icon: CheckSquare },
   { label: "Ponto", href: "/ponto", icon: Clock },
