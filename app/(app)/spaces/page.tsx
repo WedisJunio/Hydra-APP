@@ -290,7 +290,10 @@ function SidebarTree({
             {/* Icon + name */}
             <button
               type="button"
-              onClick={() => onSelectNode(node.id)}
+              onClick={() => {
+                onSelectNode(node.id);
+                if (isFolder) onToggleFolder(node.id);
+              }}
               style={{
                 background: "none",
                 border: "none",
@@ -1616,24 +1619,23 @@ export default function SpacesPage() {
               {/* Content body */}
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                 {!selectedNode ? (
-                  /* Space overview — grid unificado de todos os nós raiz */
+                  /* Space overview — mostra apenas as pastas raiz */
                   <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
                     {(() => {
-                      const rootNodes = nodesInSpace
-                        .filter((n) => n.parent_id === null)
+                      const rootFolders = nodesInSpace
+                        .filter((n) => n.parent_id === null && n.kind === "folder")
                         .sort((a, b) => a.sort_order - b.sort_order);
 
-                      if (rootNodes.length === 0) {
+                      if (rootFolders.length === 0) {
                         return (
                           <div>
                             <EmptyState
-                              title="Espaço vazio"
-                              description={podeEditarNos ? "Adicione pastas ou listas usando os botões abaixo." : "Nenhum item criado ainda."}
+                              title="Nenhuma pasta ainda"
+                              description={podeEditarNos ? "Crie pastas para organizar seus projetos." : "Nenhuma pasta criada ainda."}
                             />
                             {podeEditarNos && (
                               <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 16 }}>
                                 <Button size="sm" variant="secondary" leftIcon={<Folder size={13} />} onClick={() => setAddingNode({ kind: "folder", parentId: null })}>Nova pasta</Button>
-                                <Button size="sm" variant="secondary" leftIcon={<ListTodo size={13} />} onClick={() => setAddingNode({ kind: "list", parentId: null })}>Nova lista</Button>
                               </div>
                             )}
                           </div>
@@ -1642,16 +1644,17 @@ export default function SpacesPage() {
 
                       return (
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
-                          {rootNodes.map((node) => {
-                            const isFolder = node.kind === "folder";
-                            const nodeColor = node.color || (isFolder ? "var(--warning)" : "var(--primary)");
-                            const subtitle = isFolder ? "Pasta" : "Lista";
-
+                          {rootFolders.map((node) => {
+                            const nodeColor = node.color || "var(--warning)";
+                            const childCount = nodesInSpace.filter((n) => n.parent_id === node.id).length;
                             return (
                               <button
                                 key={node.id}
                                 type="button"
-                                onClick={() => setSelectedNodeId(node.id)}
+                                onClick={() => {
+                                  setSelectedNodeId(node.id);
+                                  setExpandedFolders((prev) => ({ ...prev, [node.id]: true }));
+                                }}
                                 style={{
                                   background: "var(--surface-2)",
                                   border: "1px solid var(--border)",
@@ -1667,14 +1670,10 @@ export default function SpacesPage() {
                                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
                               >
-                                {isFolder ? (
-                                  <Folder size={20} style={{ color: nodeColor, flexShrink: 0 }} />
-                                ) : (
-                                  <ListTodo size={20} style={{ color: nodeColor, flexShrink: 0 }} />
-                                )}
+                                <Folder size={20} style={{ color: nodeColor, flexShrink: 0 }} />
                                 <div className="min-w-0 flex-1">
                                   <div className="text-sm font-semibold truncate">{node.name}</div>
-                                  <div className="text-xs text-muted">{subtitle}</div>
+                                  <div className="text-xs text-muted">{childCount > 0 ? `${childCount} ${childCount === 1 ? "item" : "itens"}` : "Pasta vazia"}</div>
                                 </div>
                               </button>
                             );
@@ -1684,56 +1683,54 @@ export default function SpacesPage() {
                     })()}
                   </div>
                 ) : selectedNode.kind === "folder" ? (() => {
-                  // Collect project IDs from all descendant list nodes
-                  const collectProjectIds = (parentId: string): string[] => {
-                    const ids: string[] = [];
-                    nodesInSpace.filter((n) => n.parent_id === parentId).forEach((child) => {
-                      if (child.kind === "list" && child.project_id) ids.push(child.project_id);
-                      else if (child.kind === "folder") ids.push(...collectProjectIds(child.id));
-                    });
-                    return ids;
-                  };
-                  const folderProjectIds = collectProjectIds(selectedNode.id);
-                  const childNodes = nodesInSpace.filter((n) => n.parent_id === selectedNode.id).sort((a, b) => a.sort_order - b.sort_order);
+                  /* Folder view — sempre mostra os filhos diretos como grid */
+                  const childNodes = nodesInSpace
+                    .filter((n) => n.parent_id === selectedNode.id)
+                    .sort((a, b) => a.sort_order - b.sort_order);
 
-                  if (folderProjectIds.length > 0) {
-                    // Show task board for the folder's projects
-                    return (
-                      <ProjectTaskBoard
-                        projectIds={folderProjectIds}
-                        nodeLabel={selectedNode.name}
-                        podeEditar={podeEditarNos}
-                      />
-                    );
-                  }
-
-                  // No linked projects — show classic folder grid
                   return (
                     <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
-                      <p className="text-sm text-muted mb-4">Conteúdo da pasta <strong>{selectedNode.name}</strong>:</p>
                       {childNodes.length === 0 ? (
                         <EmptyState
                           title="Pasta vazia"
-                          description={podeEditarNos ? "Adicione subpastas ou listas via Configurar." : "Nenhum item ainda."}
+                          description={podeEditarNos ? "Adicione subpastas ou listas usando o sidebar." : "Nenhum item nesta pasta."}
                         />
                       ) : (
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                          {childNodes.map((node) => (
-                            <button
-                              key={node.id}
-                              type="button"
-                              onClick={() => setSelectedNodeId(node.id)}
-                              style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, textAlign: "left", transition: "all 0.15s" }}
-                              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
-                            >
-                              {node.kind === "folder" ? <Folder size={18} style={{ color: node.color || "var(--warning)", flexShrink: 0 }} /> : <ListTodo size={18} style={{ color: node.color || "var(--primary)", flexShrink: 0 }} />}
-                              <div className="min-w-0 flex-1">
-                                <div className="text-sm font-semibold truncate">{node.name}</div>
-                                <div className="text-xs text-muted">{node.kind === "folder" ? "Pasta" : "Lista"}</div>
-                              </div>
-                            </button>
-                          ))}
+                          {childNodes.map((node) => {
+                            const isChildFolder = node.kind === "folder";
+                            const nodeColor = node.color || (isChildFolder ? "var(--warning)" : "var(--primary)");
+                            const childCount = isChildFolder
+                              ? nodesInSpace.filter((n) => n.parent_id === node.id).length
+                              : null;
+                            return (
+                              <button
+                                key={node.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedNodeId(node.id);
+                                  if (isChildFolder) setExpandedFolders((prev) => ({ ...prev, [node.id]: true }));
+                                }}
+                                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, textAlign: "left", transition: "all 0.15s" }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
+                              >
+                                {isChildFolder
+                                  ? <Folder size={18} style={{ color: nodeColor, flexShrink: 0 }} />
+                                  : <ListTodo size={18} style={{ color: nodeColor, flexShrink: 0 }} />
+                                }
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-semibold truncate">{node.name}</div>
+                                  <div className="text-xs text-muted">
+                                    {isChildFolder
+                                      ? (childCount !== null && childCount > 0 ? `${childCount} ${childCount === 1 ? "item" : "itens"}` : "Pasta vazia")
+                                      : (node.project_id ? "Projeto vinculado" : "Lista")
+                                    }
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
