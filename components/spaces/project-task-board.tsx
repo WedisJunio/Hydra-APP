@@ -672,12 +672,14 @@ function AddTaskModal({ defaultStatus, availableStatuses, statusLabels, projectI
 
 // ─── Main export: ProjectTaskBoard ────────────────────────────────────────────
 
-export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar, kanbanColumnsRaw, onSaveColumns }: {
+export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar, kanbanColumnsRaw, onSaveColumns, embedded }: {
   projectIds: string[];
   nodeLabel: string;
   podeEditar: boolean;
   kanbanColumnsRaw?: unknown;
   onSaveColumns?: (cols: KanbanColumnDef[]) => void;
+  /** Quando true, o board é renderizado inline (sem height:100%, com minHeight). */
+  embedded?: boolean;
 }) {
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [loading, setLoading] = useState(false);
@@ -760,7 +762,12 @@ export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar, kanbanColu
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div style={{
+      display: "flex", flexDirection: "column",
+      ...(embedded
+        ? { minHeight: 420, borderTop: "1px solid var(--border)" }
+        : { height: "100%", overflow: "hidden" }),
+    }}>
       {/* View tabs + filter bar */}
       <div style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         {/* Tabs row */}
@@ -833,8 +840,8 @@ export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar, kanbanColu
       </div>
 
       {/* Content area */}
-      <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
-        <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
+      <div style={{ flex: 1, display: "flex", overflow: embedded ? "visible" : "hidden", minHeight: embedded ? 360 : 0 }}>
+        <div style={{ flex: 1, overflow: embedded ? "visible" : "hidden", minWidth: 0 }}>
           {loading ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 10, color: "var(--muted-fg)" }}>
               <div style={{ width: 28, height: 28, border: "3px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
@@ -934,9 +941,10 @@ export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar, kanbanColu
 // Clicar em um projeto expande um painel inline com fases e detalhes do projeto.
 
 export type FolderProjectNode = {
-  nodeId: string;     // id do nó workspace_space_node (lista)
-  nodeName: string;   // nome da lista (ex.: "Sistema de ampliação")
-  projectId: string;  // project_id vinculado
+  nodeId: string;           // id do nó workspace_space_node (lista)
+  nodeName: string;         // nome da lista (ex.: "Sistema de ampliação")
+  projectId: string;        // project_id vinculado
+  kanbanColumnsRaw?: unknown; // kanban_columns JSONB do nó
 };
 
 // ─── Phase types ──────────────────────────────────────────────────────────────
@@ -1064,103 +1072,93 @@ function PhaseStatusBadge({ status, phaseId, onUpdate }: {
 
 // ─── ProjectExpandedPanel ─────────────────────────────────────────────────────
 
-function ProjectExpandedPanel({ project, phases, onUpdatePhase, onOpenTasks }: {
+function ProjectExpandedPanel({ node, project, phases, podeEditar, onUpdatePhase, onSaveColumns }: {
+  node: FolderProjectNode;
   project: FolderProjectDetails | undefined;
   phases: FolderProjectPhase[];
+  podeEditar: boolean;
   onUpdatePhase: (phaseId: string, status: PhaseStatus) => Promise<void>;
-  onOpenTasks: () => void;
+  onSaveColumns: (cols: KanbanColumnDef[]) => void;
 }) {
+  const [showPhases, setShowPhases] = useState(false);
   const sorted = [...phases].sort((a, b) => a.order - b.order);
-  const currentPhase = sorted.find((p) => p.status === "in_progress") ?? sorted.find((p) => p.status === "in_review") ?? null;
 
   return (
-    <div
-      style={{ borderTop: "1px solid var(--border)", padding: "16px 16px 12px", background: "var(--surface)" }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {/* Project meta row */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 16 }}>
+    <div onClick={(e) => e.stopPropagation()}>
+      {/* ── Compact meta bar ────────────────────────────────────────── */}
+      <div style={{
+        display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 24px",
+        padding: "10px 16px",
+        background: "color-mix(in srgb,var(--primary) 4%,var(--surface))",
+        borderTop: "1px solid var(--border)",
+      }}>
         {/* Contract value */}
-        <div>
-          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Valor do Contrato</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: project?.contract_value ? "var(--primary)" : "var(--muted-fg)" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Contrato</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: project?.contract_value ? "var(--primary)" : "var(--muted-fg)" }}>
             {fmtBRL(project?.contract_value)}
-          </div>
+          </span>
+          {project?.contract_number && (
+            <span style={{ fontSize: 11, color: "var(--muted-fg)", fontWeight: 500 }}>· {project.contract_number}</span>
+          )}
         </div>
 
-        {/* Contract number */}
-        {project?.contract_number && (
-          <div>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Contrato</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{project.contract_number}</div>
-          </div>
-        )}
-
-        {/* Municipality / State */}
+        {/* Location */}
         {(project?.municipality || project?.state) && (
-          <div>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Localização</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Local</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)" }}>
               {[project.municipality, project.state].filter(Boolean).join(" — ")}
-            </div>
+            </span>
           </div>
         )}
 
         {/* Discipline */}
         {project?.discipline && (
-          <div>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Disciplina</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", textTransform: "capitalize" }}>{project.discipline}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Disciplina</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--foreground)", textTransform: "capitalize" }}>{project.discipline}</span>
           </div>
         )}
 
-        {/* Current phase summary */}
-        {currentPhase && (
-          <div>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Fase atual</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>{currentPhase.name}</div>
-          </div>
+        {/* Phases toggle */}
+        {sorted.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowPhases((v) => !v)}
+            style={{
+              marginLeft: "auto", fontSize: 10, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+              background: showPhases ? "color-mix(in srgb,var(--primary) 12%,transparent)" : "var(--surface-3)",
+              color: showPhases ? "var(--primary)" : "var(--muted-fg)",
+              border: `1px solid ${showPhases ? "color-mix(in srgb,var(--primary) 30%,transparent)" : "var(--border)"}`,
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+            }}
+          >
+            {showPhases ? "▲" : "▼"} Fases ({sorted.length})
+          </button>
         )}
       </div>
 
-      {/* Phases timeline */}
-      {sorted.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Fases do projeto</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {/* ── Phase panel (collapsible) ──────────────────────────────── */}
+      {showPhases && sorted.length > 0 && (
+        <div style={{ padding: "10px 16px 6px", background: "var(--surface-2)", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {sorted.map((ph, idx) => {
               const cfg = PHASE_STATUS_CFG[ph.status];
               const isActive = ph.status === "in_progress" || ph.status === "in_review";
               return (
-                <div
-                  key={ph.id}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10, padding: "6px 10px",
-                    borderRadius: 8, background: isActive ? cfg.bg : "transparent",
-                    border: `1px solid ${isActive ? cfg.border : "transparent"}`,
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {/* Step number */}
+                <div key={ph.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 7, background: isActive ? cfg.bg : "transparent" }}>
                   <div style={{
-                    width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                    width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
                     background: ph.status === "approved" ? "#16a34a" : ph.status === "skipped" ? "var(--border)" : isActive ? cfg.color : "var(--surface-3)",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 10, fontWeight: 800, color: ph.status === "approved" || isActive ? "#fff" : "var(--muted-fg)",
+                    fontSize: 9, fontWeight: 800, color: ph.status === "approved" || isActive ? "#fff" : "var(--muted-fg)",
                   }}>
                     {ph.status === "approved" ? "✓" : ph.status === "skipped" ? "—" : idx + 1}
                   </div>
-
-                  {/* Phase name */}
-                  <span style={{
-                    flex: 1, fontSize: 12, fontWeight: isActive ? 700 : 500,
-                    color: ph.status === "skipped" ? "var(--muted-fg)" : "var(--foreground)",
-                    textDecoration: ph.status === "skipped" ? "line-through" : "none",
-                  }}>
+                  <span style={{ flex: 1, fontSize: 11, fontWeight: isActive ? 700 : 400, color: ph.status === "skipped" ? "var(--muted-fg)" : "var(--foreground)", textDecoration: ph.status === "skipped" ? "line-through" : "none" }}>
                     {ph.name}
                   </span>
-
-                  {/* Status badge / dropdown */}
                   <PhaseStatusBadge status={ph.status} phaseId={ph.id} onUpdate={onUpdatePhase} />
                 </div>
               );
@@ -1169,41 +1167,31 @@ function ProjectExpandedPanel({ project, phases, onUpdatePhase, onOpenTasks }: {
         </div>
       )}
 
-      {/* No phases yet */}
-      {sorted.length === 0 && (
-        <p style={{ fontSize: 11, color: "var(--muted-fg)", marginBottom: 14, fontStyle: "italic" }}>
-          Nenhuma fase cadastrada. Acesse o projeto completo para adicionar etapas.
-        </p>
-      )}
-
-      {/* Actions */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button
-          type="button"
-          onClick={onOpenTasks}
-          style={{
-            fontSize: 11, fontWeight: 700, padding: "5px 14px", borderRadius: 8,
-            background: "var(--primary)", color: "#fff", border: "none", cursor: "pointer",
-          }}
-        >
-          Ver tarefas do projeto →
-        </button>
-      </div>
+      {/* ── Embedded task board (Quadro / Lista / Gantt) ──────────── */}
+      <ProjectTaskBoard
+        projectIds={[node.projectId]}
+        nodeLabel={node.nodeName}
+        podeEditar={podeEditar}
+        kanbanColumnsRaw={node.kanbanColumnsRaw}
+        onSaveColumns={onSaveColumns}
+        embedded
+      />
     </div>
   );
 }
 
 // ─── ProjectRow ───────────────────────────────────────────────────────────────
 
-function ProjectRow({ node, tasks, project, phases, expanded, onToggle, onOpenTasks, onUpdatePhase }: {
+function ProjectRow({ node, tasks, project, phases, expanded, podeEditar, onToggle, onUpdatePhase, onSaveColumns }: {
   node: FolderProjectNode;
   tasks: ProjectTask[];
   project: FolderProjectDetails | undefined;
   phases: FolderProjectPhase[];
   expanded: boolean;
+  podeEditar: boolean;
   onToggle: () => void;
-  onOpenTasks: () => void;
   onUpdatePhase: (phaseId: string, status: PhaseStatus) => Promise<void>;
+  onSaveColumns: (cols: KanbanColumnDef[]) => void;
 }) {
   const counts = useMemo(() => {
     const m: Record<StatusKey, number> = { previsto: 0, planejado: 0, em_andamento: 0, paralisado: 0, cancelado: 0, aprovacao_copasa: 0 };
@@ -1323,10 +1311,12 @@ function ProjectRow({ node, tasks, project, phases, expanded, onToggle, onOpenTa
       {/* Expanded panel */}
       {expanded && (
         <ProjectExpandedPanel
+          node={node}
           project={project}
           phases={phases}
+          podeEditar={podeEditar}
           onUpdatePhase={onUpdatePhase}
-          onOpenTasks={onOpenTasks}
+          onSaveColumns={onSaveColumns}
         />
       )}
     </div>
@@ -1335,10 +1325,13 @@ function ProjectRow({ node, tasks, project, phases, expanded, onToggle, onOpenTa
 
 // ─── FolderProjectsBoard (main export) ───────────────────────────────────────
 
-export function FolderProjectsBoard({ projectNodes, nodeLabel, onSelectProject }: {
+export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, onSelectProject, onSaveNodeColumns }: {
   projectNodes: FolderProjectNode[];
   nodeLabel: string;
+  podeEditar: boolean;
   onSelectProject: (nodeId: string) => void;
+  /** Chamado quando o usuário salva colunas personalizadas para um projeto inline. */
+  onSaveNodeColumns?: (nodeId: string, cols: KanbanColumnDef[]) => void;
 }) {
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [projectDetails, setProjectDetails] = useState<Record<string, FolderProjectDetails>>({});
@@ -1479,9 +1472,10 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, onSelectProject }
                 project={projectDetails[node.projectId]}
                 phases={phasesByProject[node.projectId] ?? []}
                 expanded={expandedId === node.nodeId}
+                podeEditar={podeEditar}
                 onToggle={() => setExpandedId((prev) => prev === node.nodeId ? null : node.nodeId)}
-                onOpenTasks={() => onSelectProject(node.nodeId)}
                 onUpdatePhase={handleUpdatePhase}
+                onSaveColumns={(cols) => onSaveNodeColumns?.(node.nodeId, cols)}
               />
             ))}
           </div>

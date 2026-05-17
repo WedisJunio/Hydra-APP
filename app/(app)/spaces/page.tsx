@@ -1706,7 +1706,12 @@ export default function SpacesPage() {
                       .sort((a, b) => a.sort_order - b.sort_order)
                       .forEach((child) => {
                         if (child.kind === "list" && child.project_id) {
-                          result.push({ nodeId: child.id, nodeName: child.name, projectId: child.project_id });
+                          result.push({
+                            nodeId: child.id,
+                            nodeName: child.name,
+                            projectId: child.project_id,
+                            kanbanColumnsRaw: child.kanban_columns,
+                          });
                         } else if (child.kind === "folder") {
                           result.push(...collectProjectNodes(child.id));
                         }
@@ -1719,7 +1724,9 @@ export default function SpacesPage() {
                     <FolderProjectsBoard
                       projectNodes={folderProjectNodes}
                       nodeLabel={selectedNode.name}
+                      podeEditar={podeEditarNos}
                       onSelectProject={(nodeId) => setSelectedNodeId(nodeId)}
+                      onSaveNodeColumns={(nodeId, cols) => void updateNodePatch(nodeId, { kanban_columns: cols })}
                     />
                   );
                 })() : selectedNode.project_id ? (
