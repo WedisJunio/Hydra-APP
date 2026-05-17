@@ -3501,13 +3501,22 @@ export default function ProjectsPage() {
                   </div>
                 )}
 
-                {/* Município + UF */}
+                {/* Município + UF — bloqueados quando há projeto base */}
                 <div className="grid-2">
-                  <Field label="Município">
-                    <Input value={newMunicipality} onChange={(e) => setNewMunicipality(e.target.value)} placeholder="Ex.: Belo Horizonte" />
+                  <Field label="Município" help={newBaseProjectId ? "Herdado do projeto base." : undefined}>
+                    <Input
+                      value={newMunicipality}
+                      onChange={(e) => setNewMunicipality(e.target.value)}
+                      placeholder="Ex.: Belo Horizonte"
+                      disabled={!!newBaseProjectId}
+                    />
                   </Field>
-                  <Field label="UF">
-                    <Select value={newState} onChange={(e) => setNewState(e.target.value)}>
+                  <Field label="UF" help={newBaseProjectId ? "Herdado do projeto base." : undefined}>
+                    <Select
+                      value={newState}
+                      onChange={(e) => setNewState(e.target.value)}
+                      disabled={!!newBaseProjectId}
+                    >
                       <option value="AC">AC</option><option value="AL">AL</option><option value="AP">AP</option>
                       <option value="AM">AM</option><option value="BA">BA</option><option value="CE">CE</option>
                       <option value="DF">DF</option><option value="ES">ES</option><option value="GO">GO</option>
@@ -3526,9 +3535,14 @@ export default function ProjectsPage() {
                   <Input type="date" value={newPlannedEndTarget} onChange={(e) => setNewPlannedEndTarget(e.target.value)} />
                 </Field>
 
-                {/* Nº Contrato — pré-preenchido da base, editável */}
-                <Field label="Nº do contrato" help="Herdado do projeto base — pode ser alterado.">
-                  <Input value={newContractNumber} onChange={(e) => setNewContractNumber(e.target.value)} placeholder="Ex.: COPASA-2026-145" />
+                {/* Nº Contrato — bloqueado quando há projeto base */}
+                <Field label="Nº do contrato" help={newBaseProjectId ? "Herdado do projeto base." : "Opcional."}>
+                  <Input
+                    value={newContractNumber}
+                    onChange={(e) => setNewContractNumber(e.target.value)}
+                    placeholder="Ex.: COPASA-2026-145"
+                    disabled={!!newBaseProjectId}
+                  />
                 </Field>
 
                 {/* Equipe responsável */}
