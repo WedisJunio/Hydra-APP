@@ -1345,6 +1345,25 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folde
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [activeView, setActiveView] = useState<"projetos" | "kanban" | "list" | "gantt">("projetos");
+  const [search, setSearch] = useState("");
+  const [selectedTask, setSelectedTask] = useState<ProjectTask | null>(null);
+
+  // ── Effective statuses from folder columns ────────────────────────────────
+  const { statuses: effectiveStatuses, order: effectiveOrder } = useMemo(() => {
+    const cols = parseKanbanColumns(folderKanbanColumnsRaw);
+    const defaultKeys = DEFAULT_KANBAN_COLUMNS.map((c) => c.key).join(",");
+    if (cols.map((c) => c.key).join(",") === defaultKeys) {
+      return { statuses: STATUSES as Record<string, StatusConfig>, order: STATUS_ORDER as string[] };
+    }
+    return buildDynamicStatuses(cols);
+  }, [folderKanbanColumnsRaw]);
+
+  const filteredTasks = useMemo(() => {
+    if (!search.trim()) return tasks;
+    const s = search.toLowerCase();
+    return tasks.filter((t) => t.title.toLowerCase().includes(s) || (t.description ?? "").toLowerCase().includes(s));
+  }, [tasks, search]);
 
   const projectIds = useMemo(() => projectNodes.map((p) => p.projectId), [projectNodes]);
 
@@ -1438,76 +1457,193 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folde
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)", padding: "8px 16px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          {/* Stats */}
-          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>
-            {projectNodes.length} projeto{projectNodes.length !== 1 ? "s" : ""}
-          </span>
-          <div style={{ display: "flex", gap: 12 }}>
-            <span style={{ fontSize: 11, color: "var(--muted-fg)" }}>
-              <span style={{ fontWeight: 700, color: "var(--foreground)" }}>{totalTasks}</span> tarefas
-            </span>
-            {totalDone > 0 && (
-              <span style={{ fontSize: 11, color: STATUSES.aprovacao_copasa.color, fontWeight: 600 }}>
-                {totalDone} aprovadas
-              </span>
-            )}
-            {totalLate > 0 && (
-              <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>
-                {totalLate} atrasada{totalLate !== 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
+      {/* ── Tab bar + actions ──────────────────────────────────────────── */}
+      <div style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        {/* Tabs row */}
+        <div style={{ display: "flex", alignItems: "center", padding: "0 16px" }}>
+          {([
+            { key: "projetos", label: "Projetos",  Icon: Layers },
+            { key: "kanban",   label: "Quadro",    Icon: LayoutGrid },
+            { key: "list",     label: "Lista",     Icon: List },
+            { key: "gantt",    label: "Gantt",     Icon: BarChart2 },
+          ] as const).map(({ key, label, Icon }) => {
+            const isActive = activeView === key;
+            return (
+              <button key={key} type="button" onClick={() => setActiveView(key)}
+                style={{
+                  background: "none", border: "none",
+                  borderBottom: isActive ? "2px solid var(--primary)" : "2px solid transparent",
+                  padding: "8px 12px", fontSize: 12,
+                  fontWeight: isActive ? 700 : 500,
+                  color: isActive ? "var(--primary)" : "var(--muted-fg)",
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+                  whiteSpace: "nowrap", transition: "all 0.1s",
+                }}>
+                <Icon size={13} />{label}
+              </button>
+            );
+          })}
 
           <div style={{ flex: 1 }} />
 
-          {/* Personalizar colunas da pasta */}
-          {podeEditar && (
+          {/* Stats (compact) */}
+          <span style={{ fontSize: 11, color: "var(--muted-fg)", fontWeight: 600 }}>
+            {projectNodes.length} projeto{projectNodes.length !== 1 ? "s" : ""} · {totalTasks} tarefa{totalTasks !== 1 ? "s" : ""}
+            {totalLate > 0 && <span style={{ color: "#ef4444", marginLeft: 6 }}>{totalLate} atrasada{totalLate !== 1 ? "s" : ""}</span>}
+          </span>
+        </div>
+
+        {/* Filter / action bar (Quadro / Lista / Gantt modes) */}
+        {activeView !== "projetos" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 16px 6px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 9px" }}>
+              <Search size={11} style={{ color: "var(--muted-fg)", flexShrink: 0 }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Pesquisar tarefas…"
+                style={{ background: "none", border: "none", outline: "none", fontSize: 11, color: "var(--foreground)", width: 160 }}
+              />
+              {search && (
+                <button type="button" onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-fg)", padding: 0, display: "flex" }}>
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+            {podeEditar && (
+              <button
+                type="button"
+                onClick={() => setCustomizeOpen(true)}
+                style={{
+                  background: customizeOpen ? "color-mix(in srgb,var(--primary) 12%,transparent)" : "none",
+                  border: `1px solid ${customizeOpen ? "color-mix(in srgb,var(--primary) 35%,transparent)" : "transparent"}`,
+                  borderRadius: "var(--radius-sm, 5px)", padding: "3px 8px", fontSize: 11,
+                  fontWeight: customizeOpen ? 600 : 500,
+                  color: customizeOpen ? "var(--primary)" : "var(--muted-fg)",
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+                }}
+              >
+                <Settings size={10} /> Personalizar colunas
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Action bar for Projetos mode */}
+        {activeView === "projetos" && podeEditar && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 16px 6px" }}>
             <button
               type="button"
               onClick={() => setCustomizeOpen(true)}
               style={{
                 background: customizeOpen ? "color-mix(in srgb,var(--primary) 12%,transparent)" : "none",
-                border: `1px solid ${customizeOpen ? "color-mix(in srgb,var(--primary) 35%,transparent)" : "var(--border)"}`,
-                borderRadius: "var(--radius-sm, 5px)", padding: "4px 10px", fontSize: 11,
-                fontWeight: 600,
+                border: `1px solid ${customizeOpen ? "color-mix(in srgb,var(--primary) 35%,transparent)" : "transparent"}`,
+                borderRadius: "var(--radius-sm, 5px)", padding: "3px 8px", fontSize: 11,
+                fontWeight: customizeOpen ? 600 : 500,
                 color: customizeOpen ? "var(--primary)" : "var(--muted-fg)",
-                cursor: "pointer", display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
               }}
             >
-              <Settings size={11} /> Personalizar colunas da pasta
+              <Settings size={10} /> Personalizar colunas da pasta
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Project list */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+      {/* ── Content area ───────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
         {loading ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 120, flexDirection: "column", gap: 10, color: "var(--muted-fg)" }}>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10, color: "var(--muted-fg)" }}>
             <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
             <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {projectNodes.map((node) => (
-              <ProjectRow
-                key={node.nodeId}
-                node={node}
-                tasks={tasksByProject[node.projectId] ?? []}
-                project={projectDetails[node.projectId]}
-                phases={phasesByProject[node.projectId] ?? []}
-                expanded={expandedId === node.nodeId}
+          <>
+            {/* Projetos (card list) */}
+            {activeView === "projetos" && (
+              <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {projectNodes.map((node) => (
+                    <ProjectRow
+                      key={node.nodeId}
+                      node={node}
+                      tasks={tasksByProject[node.projectId] ?? []}
+                      project={projectDetails[node.projectId]}
+                      phases={phasesByProject[node.projectId] ?? []}
+                      expanded={expandedId === node.nodeId}
+                      podeEditar={podeEditar}
+                      folderKanbanColumnsRaw={folderKanbanColumnsRaw}
+                      onToggle={() => setExpandedId((prev) => prev === node.nodeId ? null : node.nodeId)}
+                      onUpdatePhase={handleUpdatePhase}
+                      onSaveColumns={(cols) => onSaveColumns?.(cols)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quadro */}
+            {activeView === "kanban" && (
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <DynamicKanbanView
+                  tasks={filteredTasks}
+                  statuses={effectiveStatuses}
+                  order={effectiveOrder}
+                  onAdd={podeEditar ? (s) => { /* add task modal – future */ void s; } : undefined}
+                  onTaskClick={setSelectedTask}
+                />
+              </div>
+            )}
+
+            {/* Lista */}
+            {activeView === "list" && (
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <DynamicListView
+                  tasks={filteredTasks}
+                  statuses={effectiveStatuses}
+                  order={effectiveOrder}
+                  onTaskClick={setSelectedTask}
+                />
+              </div>
+            )}
+
+            {/* Gantt */}
+            {activeView === "gantt" && (
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <DynamicGanttView
+                  tasks={filteredTasks}
+                  statuses={effectiveStatuses}
+                  order={effectiveOrder}
+                />
+              </div>
+            )}
+
+            {/* Task detail panel (Quadro / Lista / Gantt) */}
+            {selectedTask && activeView !== "projetos" && (
+              <DynamicDetailPanel
+                task={selectedTask}
+                statuses={effectiveStatuses}
+                order={effectiveOrder}
+                onClose={() => setSelectedTask(null)}
+                onStatusChange={async (id, status) => {
+                  const { error } = await supabase.from("tasks").update({ status }).eq("id", id);
+                  if (error) { showErrorToast("Erro ao atualizar", getSupabaseErrorMessage(error)); return; }
+                  setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status } : t));
+                  setSelectedTask((t) => t && { ...t, status });
+                  showSuccessToast("Status atualizado");
+                }}
+                onDelete={async (id) => {
+                  if (!window.confirm("Excluir esta tarefa?")) return;
+                  const { error } = await supabase.from("tasks").delete().eq("id", id);
+                  if (error) { showErrorToast("Erro ao excluir", getSupabaseErrorMessage(error)); return; }
+                  setTasks((prev) => prev.filter((t) => t.id !== id));
+                  setSelectedTask(null);
+                  showSuccessToast("Tarefa excluída");
+                }}
                 podeEditar={podeEditar}
-                folderKanbanColumnsRaw={folderKanbanColumnsRaw}
-                onToggle={() => setExpandedId((prev) => prev === node.nodeId ? null : node.nodeId)}
-                onUpdatePhase={handleUpdatePhase}
-                onSaveColumns={(cols) => onSaveColumns?.(cols)}
               />
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
 
