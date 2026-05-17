@@ -3531,6 +3531,33 @@ export default function ProjectsPage() {
                   <Input value={newContractNumber} onChange={(e) => setNewContractNumber(e.target.value)} placeholder="Ex.: COPASA-2026-145" />
                 </Field>
 
+                {/* Equipe responsável */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted-fg)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <UsersIcon size={12} /> Equipe responsável
+                  </div>
+                  <div className="grid-3">
+                    <Field label="Gerente">
+                      <Select value={newManagerId} onChange={(e) => setNewManagerId(e.target.value)}>
+                        <option value="">Selecione</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </Select>
+                    </Field>
+                    <Field label="Coordenador">
+                      <Select value={newCoordinatorId} onChange={(e) => setNewCoordinatorId(e.target.value)}>
+                        <option value="">Selecione</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </Select>
+                    </Field>
+                    <Field label="Líder">
+                      <Select value={newLeaderId} onChange={(e) => setNewLeaderId(e.target.value)}>
+                        <option value="">Selecione</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </Select>
+                    </Field>
+                  </div>
+                </div>
+
                 {/* Observações */}
                 <Field label="Observações">
                   <Textarea value={newNotes} onChange={(e) => setNewNotes(e.target.value)} placeholder="Escopo, particularidades, contatos importantes..." style={{ minHeight: 70 }} />
