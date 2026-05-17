@@ -1,19 +1,114 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, ArrowUp, ArrowDown, Code2 } from "lucide-react";
+import { Plus, Trash2, ArrowUp, ArrowDown, Code2, GripVertical } from "lucide-react";
 
 import type { KanbanColumnDef } from "@/lib/workspaces/spaces-shared";
 import { parseKanbanColumns, DEFAULT_KANBAN_COLUMNS, slugKey } from "@/lib/workspaces/spaces-shared";
 import { showErrorToast, showSuccessToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/input";
+
+// ─── Color presets ────────────────────────────────────────────────────────────
 
 const COLOR_PRESETS = [
   "#6366f1", "#2563eb", "#0d9488", "#16a34a",
   "#d97706", "#ea580c", "#dc2626", "#c026d3",
   "#64748b", "#94a3b8",
 ];
+
+// ─── Inline color popover ─────────────────────────────────────────────────────
+
+function ColorPopover({ color, disabled, onChange }: {
+  color: string;
+  disabled?: boolean;
+  onChange: (c: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const nativeRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function close(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+      {/* Swatch button */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        title="Escolher cor"
+        style={{
+          width: 28, height: 28, borderRadius: 8,
+          background: color,
+          border: open ? "2px solid var(--foreground)" : "2px solid var(--border)",
+          cursor: disabled ? "default" : "pointer",
+          flexShrink: 0,
+          transition: "border-color 0.1s",
+          boxShadow: open ? "0 0 0 3px color-mix(in srgb,var(--primary) 20%,transparent)" : "none",
+        }}
+      />
+
+      {/* Popover */}
+      {open && !disabled && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 8px)", left: 0, zIndex: 100,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          boxShadow: "0 8px 28px rgba(0,0,0,.2)",
+          padding: 10,
+          minWidth: 150,
+        }}>
+          {/* Presets grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 5, marginBottom: 8 }}>
+            {COLOR_PRESETS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => { onChange(c); setOpen(false); }}
+                style={{
+                  width: 22, height: 22, borderRadius: 6,
+                  background: c,
+                  border: color === c ? "2px solid var(--foreground)" : "2px solid transparent",
+                  cursor: "pointer", padding: 0,
+                  transition: "transform 0.1s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.15)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+              />
+            ))}
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: "var(--border)", marginBottom: 8 }} />
+
+          {/* Custom color */}
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <div style={{ width: 22, height: 22, borderRadius: 6, background: color, border: "2px solid var(--border)", flexShrink: 0 }} />
+            <span style={{ fontSize: 10, color: "var(--muted-fg)", fontFamily: "monospace", flex: 1 }}>{color}</span>
+            <input
+              ref={nativeRef}
+              type="color"
+              value={color}
+              onChange={(e) => onChange(e.target.value)}
+              style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid var(--border)", cursor: "pointer", padding: 1, background: "none" }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 type Props = {
   valueRaw: unknown;
@@ -25,17 +120,12 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
   const [cols, setCols] = useState<KanbanColumnDef[]>(() => parseKanbanColumns(valueRaw));
   const [showJson, setShowJson] = useState(false);
   const [jsonDraft, setJsonDraft] = useState("");
-  const colorPickerRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  useEffect(() => {
-    setCols(parseKanbanColumns(valueRaw));
-  }, [valueRaw]);
+  useEffect(() => { setCols(parseKanbanColumns(valueRaw)); }, [valueRaw]);
 
   function takenKeys(exceptIndex?: number): Set<string> {
     const s = new Set<string>();
-    cols.forEach((c, i) => {
-      if (i !== exceptIndex) s.add(c.key);
-    });
+    cols.forEach((c, i) => { if (i !== exceptIndex) s.add(c.key); });
     return s;
   }
 
@@ -43,7 +133,7 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
     const t = takenKeys();
     const label = "Nova coluna";
     const key = slugKey(label, t);
-    setCols((prev) => [...prev, { key, label }]);
+    setCols((prev) => [...prev, { key, label, color: COLOR_PRESETS[prev.length % COLOR_PRESETS.length] }]);
   }
 
   function removeColumn(i: number) {
@@ -72,8 +162,8 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
     setCols((prev) => prev.map((c, j) => (j === i ? { ...c, color } : c)));
   }
 
-  function updateKey(i: number, key: string) {
-    const k = key.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^_|_$/g, "") || "col";
+  function updateKey(i: number, rawKey: string) {
+    const k = rawKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^_|_$/g, "") || "col";
     if (takenKeys(i).has(k)) {
       showErrorToast("Chave duplicada", "Use outra chave interna.");
       return;
@@ -82,17 +172,11 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
   }
 
   function persist() {
-    if (cols.length === 0) {
-      showErrorToast("Colunas vazias", "Defina ao menos uma coluna.");
-      return;
-    }
+    if (cols.length === 0) { showErrorToast("Colunas vazias", "Defina ao menos uma coluna."); return; }
     const empty = cols.find((c) => !c.label.trim());
-    if (empty) {
-      showErrorToast("Nome obrigatório", "Preencha o título de cada coluna.");
-      return;
-    }
+    if (empty) { showErrorToast("Nome obrigatório", "Preencha o título de cada coluna."); return; }
     onSave(cols);
-    showSuccessToast("Colunas do quadro salvas", "");
+    showSuccessToast("Colunas salvas", "");
   }
 
   function applyJsonImport() {
@@ -110,156 +194,204 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
   }
 
   return (
-    <div
-      className="rounded-xl overflow-hidden"
-      style={{
-        border: "1px solid var(--border)",
-        background: "linear-gradient(165deg, color-mix(in srgb, var(--primary) 6%, var(--surface)) 0%, var(--surface) 48%)",
-      }}
-    >
-      <div className="px-3 py-2.5 flex items-center justify-between gap-2 border-b" style={{ borderColor: "var(--border)" }}>
-        <span className="text-xs font-bold uppercase tracking-wide text-muted">Colunas do quadro</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+
+      {/* ── Toolbar ─────────────────────────────────────────────────── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+        marginBottom: 14,
+      }}>
         {podeEditar && (
-          <div className="flex gap-1 flex-wrap justify-end">
-            <Button size="sm" variant="secondary" leftIcon={<Plus size={14} />} onClick={addColumn}>
-              Coluna
+          <>
+            <Button size="sm" leftIcon={<Plus size={13} />} onClick={addColumn}>
+              Adicionar coluna
             </Button>
             <Button
               size="sm"
-              variant="ghost"
+              variant="secondary"
               onClick={() => {
                 setCols(DEFAULT_KANBAN_COLUMNS);
                 onSave(DEFAULT_KANBAN_COLUMNS);
-                showSuccessToast("Padrão restaurado", "Três colunas clássicas aplicadas.");
+                showSuccessToast("Padrão restaurado", "");
               }}
             >
-              Padrão Copasa
+              Padrão COPASA
             </Button>
-          </div>
+          </>
         )}
+        <span style={{ fontSize: 11, color: "var(--muted-fg)", marginLeft: "auto" }}>
+          {cols.length} coluna{cols.length !== 1 ? "s" : ""}
+        </span>
       </div>
 
-      <div className="p-3 space-y-2">
+      {/* ── Column header labels ─────────────────────────────────────── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "28px 28px 1fr 120px 70px",
+        gap: 8, alignItems: "center",
+        padding: "0 4px 6px",
+        borderBottom: "1px solid var(--border)",
+        marginBottom: 6,
+      }}>
+        <div />
+        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cor</div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Título exibido</div>
+        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Chave interna</div>
+        <div />
+      </div>
+
+      {/* ── Column rows ─────────────────────────────────────────────── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {cols.map((col, i) => (
           <div
             key={`${col.key}-${i}`}
-            className="flex flex-wrap gap-2 items-end p-3 rounded-lg"
             style={{
-              background: "var(--surface)",
-              border: "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
-              boxShadow: "var(--shadow-sm)",
+              display: "grid",
+              gridTemplateColumns: "28px 28px 1fr 120px 70px",
+              gap: 8, alignItems: "center",
+              padding: "6px 4px",
+              borderRadius: 8,
+              background: "var(--surface-2)",
+              border: "1px solid color-mix(in srgb,var(--border) 60%,transparent)",
+              transition: "background 0.1s",
             }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-2)"; }}
           >
-            {/* Color strip */}
-            <div
-              className="w-1 self-stretch rounded-full shrink-0"
-              style={{ background: col.color ?? `color-mix(in srgb, var(--primary) ${40 + (i % 4) * 15}%, var(--surface-3))`, minHeight: 44 }}
-            />
-
-            {/* Color picker */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center", flexShrink: 0 }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Cor</span>
-              <button
-                type="button"
-                disabled={!podeEditar}
-                onClick={() => colorPickerRefs.current[i]?.click()}
-                style={{ width: 28, height: 28, borderRadius: 6, background: col.color ?? "#6366f1", border: "2px solid var(--border)", cursor: podeEditar ? "pointer" : "default", flexShrink: 0 }}
-                title="Escolher cor"
-              />
-              <input
-                ref={(el) => { colorPickerRefs.current[i] = el; }}
-                type="color"
-                value={col.color ?? "#6366f1"}
-                onChange={(e) => updateColor(i, e.target.value)}
-                disabled={!podeEditar}
-                style={{ width: 0, height: 0, opacity: 0, position: "absolute", pointerEvents: "none" }}
-              />
-              {/* Quick presets */}
-              {podeEditar && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 2, width: 62 }}>
-                  {COLOR_PRESETS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => updateColor(i, c)}
-                      style={{ width: 12, height: 12, borderRadius: 3, background: c, border: col.color === c ? "2px solid var(--foreground)" : "1px solid transparent", cursor: "pointer", padding: 0 }}
-                    />
-                  ))}
-                </div>
-              )}
+            {/* Drag handle (visual only) */}
+            <div style={{ display: "flex", justifyContent: "center", opacity: 0.3 }}>
+              <GripVertical size={14} style={{ color: "var(--muted-fg)" }} />
             </div>
 
-            <Field label="Título exibido" className="flex-1 min-w-[140px] mb-0">
-              <Input
-                value={col.label}
-                onChange={(e) => updateLabel(i, e.target.value)}
-                disabled={!podeEditar}
-                placeholder="Ex.: Aguardando documentos"
-              />
-            </Field>
-            <Field
-              label="Chave interna"
-              className="w-[130px] mb-0"
-              help="Não mude após usar em cartões."
-            >
-              <Input
-                value={col.key}
-                onChange={(e) => updateKey(i, e.target.value)}
-                disabled={!podeEditar}
-                className="font-mono text-xs"
-              />
-            </Field>
-            {podeEditar && (
-              <div className="flex gap-0.5 pb-0.5">
-                <Button size="icon-sm" variant="ghost" title="Subir" onClick={() => moveColumn(i, -1)}>
-                  <ArrowUp size={14} />
-                </Button>
-                <Button size="icon-sm" variant="ghost" title="Descer" onClick={() => moveColumn(i, 1)}>
-                  <ArrowDown size={14} />
-                </Button>
-                <Button
-                  size="icon-sm"
-                  variant="danger-ghost"
-                  title="Remover coluna"
-                  onClick={() => removeColumn(i)}
+            {/* Color picker popover */}
+            <ColorPopover
+              color={col.color ?? "#6366f1"}
+              disabled={!podeEditar}
+              onChange={(c) => updateColor(i, c)}
+            />
+
+            {/* Title input */}
+            <input
+              value={col.label}
+              onChange={(e) => updateLabel(i, e.target.value)}
+              disabled={!podeEditar}
+              placeholder="Nome da coluna"
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "5px 8px",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--foreground)",
+                outline: "none",
+                width: "100%",
+                minWidth: 0,
+                borderLeft: `3px solid ${col.color ?? "#6366f1"}`,
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.borderLeftColor = col.color ?? "#6366f1"; }}
+            />
+
+            {/* Key input */}
+            <input
+              value={col.key}
+              onChange={(e) => updateKey(i, e.target.value)}
+              disabled={!podeEditar}
+              placeholder="chave_interna"
+              title="Chave interna — não mude após usar em cartões"
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "5px 8px",
+                fontSize: 10,
+                fontFamily: "monospace",
+                color: "var(--muted-fg)",
+                outline: "none",
+                width: "100%",
+                minWidth: 0,
+              }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
+            />
+
+            {/* Actions */}
+            {podeEditar ? (
+              <div style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => moveColumn(i, -1)}
+                  disabled={i === 0}
+                  title="Subir"
+                  style={{ background: "none", border: "none", cursor: i === 0 ? "default" : "pointer", color: "var(--muted-fg)", opacity: i === 0 ? 0.3 : 1, padding: "3px 4px", borderRadius: 4, display: "flex" }}
+                  onMouseEnter={(e) => { if (i > 0) e.currentTarget.style.background = "var(--surface-3)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
                 >
-                  <Trash2 size={14} />
-                </Button>
+                  <ArrowUp size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveColumn(i, 1)}
+                  disabled={i === cols.length - 1}
+                  title="Descer"
+                  style={{ background: "none", border: "none", cursor: i === cols.length - 1 ? "default" : "pointer", color: "var(--muted-fg)", opacity: i === cols.length - 1 ? 0.3 : 1, padding: "3px 4px", borderRadius: 4, display: "flex" }}
+                  onMouseEnter={(e) => { if (i < cols.length - 1) e.currentTarget.style.background = "var(--surface-3)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                >
+                  <ArrowDown size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeColumn(i)}
+                  title="Remover"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#ef4444", padding: "3px 4px", borderRadius: 4, display: "flex" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "#fef2f2"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
-            )}
+            ) : <div />}
           </div>
         ))}
       </div>
 
+      {/* ── Footer ──────────────────────────────────────────────────── */}
       {podeEditar && (
-        <div className="px-3 pb-3 flex flex-wrap gap-2 border-t pt-3" style={{ borderColor: "var(--border)" }}>
-          <Button size="sm" onClick={persist}>
+        <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Button onClick={persist}>
             Salvar colunas
           </Button>
           <button
             type="button"
-            className="text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-md"
-            style={{ color: "var(--muted-fg)", background: "var(--surface-2)" }}
             onClick={() => {
               setJsonDraft(JSON.stringify(cols, null, 2));
               setShowJson((v) => !v);
             }}
+            style={{
+              fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 5,
+              padding: "5px 10px", borderRadius: 7,
+              background: showJson ? "var(--surface-3)" : "none",
+              color: "var(--muted-fg)", border: "1px solid var(--border)", cursor: "pointer",
+            }}
           >
-            <Code2 size={14} />
-            {showJson ? "Fechar JSON" : "Importar / exportar JSON"}
+            <Code2 size={13} />
+            {showJson ? "Fechar JSON" : "JSON"}
           </button>
         </div>
       )}
 
+      {/* ── JSON panel ──────────────────────────────────────────────── */}
       {showJson && podeEditar && (
-        <div className="px-3 pb-3">
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           <Textarea
             value={jsonDraft}
             onChange={(e) => setJsonDraft(e.target.value)}
-            rows={6}
+            rows={7}
             className="font-mono text-xs"
           />
-          <div className="flex gap-2 mt-2">
+          <div style={{ display: "flex", gap: 8 }}>
             <Button size="sm" variant="secondary" onClick={() => setJsonDraft(JSON.stringify(cols, null, 2))}>
               Copiar estado atual
             </Button>

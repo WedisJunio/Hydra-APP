@@ -1327,10 +1327,297 @@ function ProjectRow({ node, tasks, project, phases, expanded, podeEditar, folder
   );
 }
 
+// ─── FolderProjectListView ────────────────────────────────────────────────────
+// Aba "Lista": projetos em tabela com fase, status, contrato e progresso.
+
+function FolderProjectListView({ projectNodes, projectDetails, tasksByProject, phasesByProject, statuses, order, folderNodeId, search, onOpenProject }: {
+  projectNodes: FolderProjectNode[];
+  projectDetails: Record<string, FolderProjectDetails>;
+  tasksByProject: Record<string, ProjectTask[]>;
+  phasesByProject: Record<string, FolderProjectPhase[]>;
+  statuses: Record<string, StatusConfig>;
+  order: string[];
+  folderNodeId: string;
+  search?: string;
+  onOpenProject: (nodeId: string) => void;
+}) {
+  const storageKey = `fp-kanban-${folderNodeId}`;
+  const [statusOverrides] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey) ?? "{}") as Record<string, string>; }
+    catch { return {}; }
+  });
+
+  function getProjectCol(node: FolderProjectNode): string {
+    if (statusOverrides[node.nodeId] && order.includes(statusOverrides[node.nodeId]))
+      return statusOverrides[node.nodeId];
+    const tasks = tasksByProject[node.projectId] ?? [];
+    if (tasks.length === 0) return order[0] ?? "";
+    for (let i = order.length - 1; i >= 0; i--) {
+      if (tasks.some((t) => normalizeStatus(t.status) === order[i])) return order[i];
+    }
+    return order[0] ?? "";
+  }
+
+  const COLS = [
+    { label: "Projeto",   width: "minmax(160px,1fr)" },
+    { label: "Fase atual",width: "minmax(140px,1.2fr)" },
+    { label: "Status",    width: "140px" },
+    { label: "Contrato",  width: "110px" },
+    { label: "Progresso", width: "90px" },
+    { label: "Tarefas",   width: "70px" },
+    { label: "Atraso",    width: "70px" },
+  ];
+  const gridTemplate = COLS.map((c) => c.width).join(" ");
+
+  const searchLower = search?.toLowerCase().trim() ?? "";
+  const visibleNodes = searchLower
+    ? projectNodes.filter((n) => n.nodeName.toLowerCase().includes(searchLower) || (projectDetails[n.projectId]?.municipality ?? "").toLowerCase().includes(searchLower) || (projectDetails[n.projectId]?.discipline ?? "").toLowerCase().includes(searchLower))
+    : projectNodes;
+
+  return (
+    <div style={{ padding: "0 0 20px" }}>
+      {/* Table header */}
+      <div style={{
+        display: "grid", gridTemplateColumns: gridTemplate,
+        gap: 0, padding: "8px 20px",
+        position: "sticky", top: 0, zIndex: 2,
+        background: "var(--surface-2)",
+        borderBottom: "1px solid var(--border)",
+      }}>
+        {COLS.map((c) => (
+          <span key={c.label} style={{ fontSize: 9, fontWeight: 800, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 6px" }}>
+            {c.label}
+          </span>
+        ))}
+      </div>
+
+      {/* Empty state */}
+      {visibleNodes.length === 0 && (
+        <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--muted-fg)", fontSize: 13 }}>
+          Nenhum projeto encontrado{searchLower ? ` para "${search}"` : ""}.
+        </div>
+      )}
+
+      {/* Rows */}
+      {visibleNodes.map((node, idx) => {
+        const tasks = tasksByProject[node.projectId] ?? [];
+        const det = projectDetails[node.projectId];
+        const total = tasks.length;
+        const done = tasks.filter((t) => normalizeStatus(t.status) === order[order.length - 1]).length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const late = tasks.filter(overdue).length;
+        const colKey = getProjectCol(node);
+        const cfg = statuses[colKey];
+        const Icon = cfg?.Icon ?? Circle;
+        const sortedPhases = [...(phasesByProject[node.projectId] ?? [])].sort((a, b) => a.order - b.order);
+        const curPhase = sortedPhases.find((p) => p.status === "in_progress" || p.status === "in_review");
+        const approvedCount = sortedPhases.filter((p) => p.status === "approved").length;
+        const phasePct = sortedPhases.length > 0 ? Math.round((approvedCount / sortedPhases.length) * 100) : 0;
+
+        return (
+          <div
+            key={node.nodeId}
+            onClick={() => onOpenProject(node.nodeId)}
+            style={{
+              display: "grid", gridTemplateColumns: gridTemplate,
+              gap: 0, padding: "10px 20px",
+              background: idx % 2 === 0 ? "transparent" : "color-mix(in srgb,var(--surface-2) 30%,transparent)",
+              borderBottom: "1px solid color-mix(in srgb,var(--border) 40%,transparent)",
+              cursor: "pointer", transition: "background 0.1s",
+              alignItems: "center",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "color-mix(in srgb,var(--primary) 5%,var(--surface))"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = idx % 2 === 0 ? "transparent" : "color-mix(in srgb,var(--surface-2) 30%,transparent)"; }}
+          >
+            {/* Project */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 6px", minWidth: 0 }}>
+              <div style={{ width: 26, height: 26, borderRadius: 6, background: cfg ? `color-mix(in srgb,${cfg.color} 12%,var(--surface))` : "var(--surface-3)", border: `1px solid ${cfg ? `color-mix(in srgb,${cfg.color} 25%,transparent)` : "var(--border)"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Briefcase size={12} style={{ color: cfg?.color ?? "var(--muted-fg)" }} />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {node.nodeName}
+              </span>
+            </div>
+
+            {/* Current phase */}
+            <div style={{ padding: "0 6px", minWidth: 0 }}>
+              {curPhase ? (
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", display: "block", whiteSpace: "nowrap" }}>{curPhase.name}</span>
+                  {sortedPhases.length > 0 && (
+                    <span style={{ fontSize: 9, color: "var(--muted-fg)" }}>{phasePct}% concluído</span>
+                  )}
+                </div>
+              ) : sortedPhases.length > 0 ? (
+                <span style={{ fontSize: 11, color: "var(--muted-fg)" }}>{phasePct === 100 ? "✓ Concluído" : "Pendente"}</span>
+              ) : (
+                <span style={{ fontSize: 11, color: "var(--muted-fg)", fontStyle: "italic" }}>Sem fases</span>
+              )}
+            </div>
+
+            {/* Status badge */}
+            <div style={{ padding: "0 6px" }}>
+              {cfg && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, whiteSpace: "nowrap" }}>
+                  <Icon size={10} />{cfg.label}
+                </span>
+              )}
+            </div>
+
+            {/* Contract value */}
+            <div style={{ padding: "0 6px" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: det?.contract_value ? "var(--primary)" : "var(--muted-fg)" }}>
+                {fmtBRL(det?.contract_value)}
+              </span>
+            </div>
+
+            {/* Progress */}
+            <div style={{ padding: "0 6px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ flex: 1, height: 4, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: pct === 100 ? "#16a34a" : "var(--primary)", borderRadius: 2, transition: "width 0.3s" }} />
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: pct === 100 ? "#16a34a" : "var(--muted-fg)", minWidth: 28, textAlign: "right" }}>{pct}%</span>
+              </div>
+            </div>
+
+            {/* Task count */}
+            <div style={{ padding: "0 6px" }}>
+              <span style={{ fontSize: 11, color: "var(--muted-fg)" }}>{total}</span>
+            </div>
+
+            {/* Late */}
+            <div style={{ padding: "0 6px" }}>
+              {late > 0 ? (
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#ef4444" }}>⚠ {late}</span>
+              ) : (
+                <span style={{ fontSize: 11, color: "var(--muted-fg)" }}>—</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── FolderProjectGanttView ───────────────────────────────────────────────────
+// Aba "Gantt": cronograma de fases por projeto.
+
+function FolderProjectGanttView({ projectNodes, projectDetails, phasesByProject, search, onOpenProject }: {
+  projectNodes: FolderProjectNode[];
+  projectDetails: Record<string, FolderProjectDetails>;
+  phasesByProject: Record<string, FolderProjectPhase[]>;
+  search?: string;
+  onOpenProject: (nodeId: string) => void;
+}) {
+  const searchLower = search?.toLowerCase().trim() ?? "";
+  const visibleNodes = searchLower
+    ? projectNodes.filter((n) => n.nodeName.toLowerCase().includes(searchLower) || (projectDetails[n.projectId]?.municipality ?? "").toLowerCase().includes(searchLower) || (projectDetails[n.projectId]?.discipline ?? "").toLowerCase().includes(searchLower))
+    : projectNodes;
+
+  return (
+    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+      {visibleNodes.length === 0 && (
+        <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted-fg)", fontSize: 13 }}>
+          Nenhum projeto encontrado{searchLower ? ` para "${search}"` : ""}.
+        </div>
+      )}
+      {visibleNodes.map((node) => {
+        const det = projectDetails[node.projectId];
+        const phases = [...(phasesByProject[node.projectId] ?? [])].sort((a, b) => a.order - b.order);
+        const total = phases.length;
+        const approved = phases.filter((p) => p.status === "approved").length;
+        const pct = total > 0 ? Math.round((approved / total) * 100) : 0;
+
+        return (
+          <div
+            key={node.nodeId}
+            onClick={() => onOpenProject(node.nodeId)}
+            style={{
+              background: "var(--surface-2)", border: "1px solid var(--border)",
+              borderRadius: 10, overflow: "hidden", cursor: "pointer", transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface)"; e.currentTarget.style.borderColor = "color-mix(in srgb,var(--primary) 40%,var(--border))"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+          >
+            {/* Project header row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: phases.length > 0 ? "1px solid var(--border)" : "none" }}>
+              <Briefcase size={14} style={{ color: "var(--primary)", flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", flex: 1 }}>{node.nodeName}</span>
+              {det?.contract_value != null && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--primary)" }}>{fmtBRL(det.contract_value)}</span>
+              )}
+              <span style={{ fontSize: 11, fontWeight: 700, color: pct === 100 ? "#16a34a" : "var(--muted-fg)" }}>
+                {total > 0 ? `${approved}/${total} fases` : "Sem fases"}
+              </span>
+              <ChevronRight size={13} style={{ color: "var(--muted-fg)", flexShrink: 0 }} />
+            </div>
+
+            {/* Phase timeline */}
+            {phases.length > 0 && (
+              <div style={{ padding: "10px 14px" }}>
+                {/* Segmented bar */}
+                <div style={{ display: "flex", gap: 2, height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                  {phases.map((ph) => {
+                    const phCfg = PHASE_STATUS_CFG[ph.status];
+                    const isApproved = ph.status === "approved";
+                    const isActive = ph.status === "in_progress" || ph.status === "in_review";
+                    return (
+                      <div
+                        key={ph.id}
+                        title={`${ph.name}: ${phCfg.label}`}
+                        style={{
+                          flex: 1,
+                          background: isApproved ? "#16a34a" : isActive ? phCfg.color : "var(--border)",
+                          opacity: ph.status === "skipped" ? 0.3 : 1,
+                          transition: "background 0.2s",
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                {/* Phase labels */}
+                <div style={{ display: "flex", gap: 2 }}>
+                  {phases.map((ph) => {
+                    const phCfg = PHASE_STATUS_CFG[ph.status];
+                    const isApproved = ph.status === "approved";
+                    const isActive = ph.status === "in_progress" || ph.status === "in_review";
+                    return (
+                      <div key={ph.id} style={{ flex: 1, textAlign: "center" }}>
+                        <div style={{
+                          fontSize: 8, fontWeight: isActive ? 800 : 500,
+                          color: isApproved ? "#16a34a" : isActive ? phCfg.color : "var(--muted-fg)",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          padding: "0 2px",
+                        }}>
+                          {ph.name}
+                        </div>
+                        <div style={{ fontSize: 7, color: "var(--muted-fg)", marginTop: 1, opacity: 0.7 }}>
+                          {phCfg.label}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {phases.length === 0 && (
+              <div style={{ padding: "8px 14px", fontSize: 11, color: "var(--muted-fg)", fontStyle: "italic" }}>
+                Nenhuma fase cadastrada para este projeto
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── FolderProjectKanbanView ──────────────────────────────────────────────────
 // Quadro Kanban onde cada CARD é um PROJETO (não uma tarefa).
-// A coluna de cada projeto é determinada por um override manual (salvo em
-// localStorage), com fallback para o status predominante das tarefas.
+// Suporta arrastar e soltar entre colunas (HTML5 DnD nativo).
 
 function FolderProjectKanbanView({ projectNodes, projectDetails, tasksByProject, phasesByProject, statuses, order, folderNodeId, onOpenProject }: {
   projectNodes: FolderProjectNode[];
@@ -1349,20 +1636,22 @@ function FolderProjectKanbanView({ projectNodes, projectDetails, tasksByProject,
     catch { return {}; }
   });
 
+  // DnD state
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [overCol, setOverCol]       = useState<string | null>(null);
+
   function getProjectCol(node: FolderProjectNode): string {
     if (statusOverrides[node.nodeId] && order.includes(statusOverrides[node.nodeId]))
       return statusOverrides[node.nodeId];
     const tasks = tasksByProject[node.projectId] ?? [];
     if (tasks.length === 0) return order[0] ?? "";
-    // Most "critical" (latest in order) status present
     for (let i = order.length - 1; i >= 0; i--) {
       if (tasks.some((t) => normalizeStatus(t.status) === order[i])) return order[i];
     }
     return order[0] ?? "";
   }
 
-  function moveProject(nodeId: string, toCol: string, e: React.MouseEvent) {
-    e.stopPropagation();
+  function commitMove(nodeId: string, toCol: string) {
     setStatusOverrides((prev) => {
       const next = { ...prev, [nodeId]: toCol };
       try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* ignore */ }
@@ -1370,6 +1659,40 @@ function FolderProjectKanbanView({ projectNodes, projectDetails, tasksByProject,
     });
   }
 
+  // ── DnD handlers ──────────────────────────────────────────────────────────
+  function onDragStart(e: React.DragEvent, nodeId: string) {
+    setDraggingId(nodeId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", nodeId);
+  }
+
+  function onDragEnd() {
+    setDraggingId(null);
+    setOverCol(null);
+  }
+
+  function onDragOverCol(e: React.DragEvent, colKey: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setOverCol(colKey);
+  }
+
+  function onDropCol(e: React.DragEvent, colKey: string) {
+    e.preventDefault();
+    const nodeId = e.dataTransfer.getData("text/plain");
+    if (nodeId) commitMove(nodeId, colKey);
+    setDraggingId(null);
+    setOverCol(null);
+  }
+
+  function onDragLeaveCol(e: React.DragEvent, colKey: string) {
+    // Only clear if we're truly leaving the column (not entering a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setOverCol((prev) => (prev === colKey ? null : prev));
+    }
+  }
+
+  // Group projects by column
   const byCol: Record<string, FolderProjectNode[]> = {};
   for (const s of order) byCol[s] = [];
   for (const node of projectNodes) {
@@ -1383,101 +1706,129 @@ function FolderProjectKanbanView({ projectNodes, projectDetails, tasksByProject,
         const cfg = statuses[colKey]; if (!cfg) return null;
         const Icon = cfg.Icon;
         const projects = byCol[colKey] ?? [];
+        const isOver = overCol === colKey && draggingId !== null;
+
         return (
-          <div key={colKey} style={{ minWidth: 260, maxWidth: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div
+            key={colKey}
+            onDragOver={(e) => onDragOverCol(e, colKey)}
+            onDrop={(e) => onDropCol(e, colKey)}
+            onDragLeave={(e) => onDragLeaveCol(e, colKey)}
+            style={{
+              minWidth: 270, maxWidth: 310, flexShrink: 0, display: "flex", flexDirection: "column", gap: 8,
+              borderRadius: 10,
+              padding: "6px 6px 10px",
+              background: isOver ? `color-mix(in srgb,${cfg.color} 8%,var(--surface))` : "transparent",
+              border: isOver ? `2px dashed ${cfg.color}` : "2px solid transparent",
+              transition: "background 0.15s, border-color 0.15s",
+            }}
+          >
             {/* Column header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 6px 8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 4px 6px" }}>
               <Icon size={12} style={{ color: cfg.color }} />
               <span style={{ fontSize: 10, fontWeight: 800, color: cfg.color, textTransform: "uppercase", letterSpacing: "0.07em", flex: 1 }}>{cfg.label}</span>
               <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted-fg)", background: "var(--surface-3)", borderRadius: 20, padding: "0 7px", minWidth: 22, textAlign: "center" }}>{projects.length}</span>
             </div>
 
-            {/* Column body */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {projects.length === 0 && (
-                <div style={{ padding: "12px 8px", textAlign: "center", fontSize: 11, color: "var(--muted-fg)", border: "2px dashed var(--border)", borderRadius: 8, opacity: 0.5 }}>
-                  Nenhum projeto
-                </div>
-              )}
-              {projects.map((node) => {
-                const tasks = tasksByProject[node.projectId] ?? [];
-                const det = projectDetails[node.projectId];
-                const total = tasks.length;
-                const done = tasks.filter((t) => normalizeStatus(t.status) === order[order.length - 1]).length;
-                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                const late = tasks.filter(overdue).length;
-                const counts: Record<StatusKey, number> = { previsto: 0, planejado: 0, em_andamento: 0, paralisado: 0, cancelado: 0, aprovacao_copasa: 0 };
-                for (const t of tasks) counts[normalizeStatus(t.status)]++;
-                const sortedPhases = [...(phasesByProject[node.projectId] ?? [])].sort((a, b) => a.order - b.order);
-                const curPhase = sortedPhases.find((p) => p.status === "in_progress" || p.status === "in_review");
+            {/* Drop zone hint when empty */}
+            {projects.length === 0 && (
+              <div style={{
+                padding: "20px 8px", textAlign: "center", fontSize: 11,
+                color: isOver ? cfg.color : "var(--muted-fg)",
+                border: `2px dashed ${isOver ? cfg.color : "var(--border)"}`,
+                borderRadius: 8,
+                transition: "all 0.15s",
+                fontWeight: isOver ? 700 : 400,
+              }}>
+                {isOver ? "Soltar aqui" : "Sem projetos"}
+              </div>
+            )}
 
-                return (
-                  <div
-                    key={node.nodeId}
-                    onClick={() => onOpenProject(node.nodeId)}
-                    style={{
-                      background: "var(--surface)",
-                      border: `1px solid var(--border)`,
-                      borderLeft: `3px solid ${cfg.color}`,
-                      borderRadius: "var(--radius-md)",
-                      padding: "10px 12px",
-                      cursor: "pointer",
-                      transition: "all 0.15s",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.borderColor = `color-mix(in srgb,${cfg.color} 50%,var(--border))`; e.currentTarget.style.borderLeftColor = cfg.color; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface)"; e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.borderLeftColor = cfg.color; }}
-                  >
-                    {/* Title row */}
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 7 }}>
-                      <div style={{ width: 26, height: 26, borderRadius: 6, background: `color-mix(in srgb,${cfg.color} 12%,var(--surface))`, border: `1px solid color-mix(in srgb,${cfg.color} 25%,transparent)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <Briefcase size={12} style={{ color: cfg.color }} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {node.nodeName}
+            {/* Project cards */}
+            {projects.map((node) => {
+              const tasks = tasksByProject[node.projectId] ?? [];
+              const det = projectDetails[node.projectId];
+              const total = tasks.length;
+              const done = tasks.filter((t) => normalizeStatus(t.status) === order[order.length - 1]).length;
+              const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+              const late = tasks.filter(overdue).length;
+              const counts: Record<StatusKey, number> = { previsto: 0, planejado: 0, em_andamento: 0, paralisado: 0, cancelado: 0, aprovacao_copasa: 0 };
+              for (const t of tasks) counts[normalizeStatus(t.status)]++;
+              const curPhase = [...(phasesByProject[node.projectId] ?? [])].sort((a, b) => a.order - b.order).find((p) => p.status === "in_progress" || p.status === "in_review");
+              const isDragging = draggingId === node.nodeId;
+
+              return (
+                <div
+                  key={node.nodeId}
+                  draggable
+                  onDragStart={(e) => onDragStart(e, node.nodeId)}
+                  onDragEnd={onDragEnd}
+                  onClick={() => { if (!isDragging) onOpenProject(node.nodeId); }}
+                  style={{
+                    background: "var(--surface)",
+                    border: `1px solid var(--border)`,
+                    borderLeft: `3px solid ${cfg.color}`,
+                    borderRadius: "var(--radius-md)",
+                    padding: "10px 12px",
+                    cursor: isDragging ? "grabbing" : "grab",
+                    opacity: isDragging ? 0.4 : 1,
+                    transform: isDragging ? "scale(0.97)" : "scale(1)",
+                    transition: "opacity 0.15s, transform 0.15s, box-shadow 0.15s",
+                    boxShadow: isDragging ? "none" : undefined,
+                    userSelect: "none",
+                  }}
+                  onMouseEnter={(e) => { if (!isDragging) { e.currentTarget.style.background = "var(--surface-2)"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,.12)"; } }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface)"; e.currentTarget.style.boxShadow = ""; }}
+                >
+                  {/* Drag handle hint */}
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 7 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingTop: 4, flexShrink: 0, opacity: 0.35 }}>
+                      {[0,1,2].map((r) => (
+                        <div key={r} style={{ display: "flex", gap: 2 }}>
+                          {[0,1].map((c) => <div key={c} style={{ width: 3, height: 3, borderRadius: "50%", background: "var(--muted-fg)" }} />)}
                         </div>
-                        {curPhase && <div style={{ fontSize: 9, color: "var(--muted-fg)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curPhase.name}</div>}
+                      ))}
+                    </div>
+                    <div style={{ width: 26, height: 26, borderRadius: 6, background: `color-mix(in srgb,${cfg.color} 12%,var(--surface))`, border: `1px solid color-mix(in srgb,${cfg.color} 25%,transparent)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <Briefcase size={12} style={{ color: cfg.color }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {node.nodeName}
                       </div>
-                    </div>
-
-                    {/* Task progress bar */}
-                    <StatusBar counts={counts} />
-
-                    {/* Stats */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7 }}>
-                      {det?.contract_value != null && (
-                        <span style={{ fontSize: 9, fontWeight: 700, color: "var(--primary)", background: "color-mix(in srgb,var(--primary) 8%,transparent)", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>
-                          {fmtBRL(det.contract_value)}
-                        </span>
-                      )}
-                      {late > 0 && (
-                        <span style={{ fontSize: 9, fontWeight: 700, color: "#ef4444", background: "#fef2f2", borderRadius: 4, padding: "1px 5px" }}>
-                          {late}⚠
-                        </span>
-                      )}
-                      <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, color: pct === 100 ? "#16a34a" : "var(--muted-fg)" }}>{pct}%</span>
-                    </div>
-
-                    {/* Move to column selector */}
-                    <div style={{ marginTop: 8, borderTop: "1px solid var(--border)", paddingTop: 7, display: "flex", flexWrap: "wrap", gap: 4 }}
-                      onClick={(e) => e.stopPropagation()}>
-                      <span style={{ fontSize: 9, color: "var(--muted-fg)", fontWeight: 600, alignSelf: "center", marginRight: 2 }}>Mover:</span>
-                      {order.filter((s) => s !== colKey).map((s) => {
-                        const c = statuses[s]; if (!c) return null; const I = c.Icon;
-                        return (
-                          <button key={s} type="button" onClick={(e) => moveProject(node.nodeId, s, e)}
-                            style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 20, background: c.bg, border: `1px solid ${c.border}`, cursor: "pointer", fontSize: 9, fontWeight: 700, color: c.color, transition: "opacity 0.1s" }}
-                            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.75"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}>
-                            <I size={9} />{c.label}
-                          </button>
-                        );
-                      })}
+                      {curPhase && <div style={{ fontSize: 9, color: "var(--muted-fg)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curPhase.name}</div>}
                     </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  {/* Task progress bar */}
+                  <StatusBar counts={counts} />
+
+                  {/* Stats row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                    {det?.contract_value != null && (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "var(--primary)", background: "color-mix(in srgb,var(--primary) 8%,transparent)", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>
+                        {fmtBRL(det.contract_value)}
+                      </span>
+                    )}
+                    {late > 0 && (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "#ef4444", background: "#fef2f2", borderRadius: 4, padding: "1px 5px" }}>
+                        {late}⚠
+                      </span>
+                    )}
+                    <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, color: pct === 100 ? "#16a34a" : "var(--muted-fg)" }}>
+                      {total > 0 ? `${pct}%` : "—"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Drop hint at bottom when dragging over non-empty column */}
+            {isOver && projects.length > 0 && (
+              <div style={{ height: 48, borderRadius: 8, border: `2px dashed ${cfg.color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: cfg.color, background: `color-mix(in srgb,${cfg.color} 6%,transparent)`, transition: "all 0.15s" }}>
+                Soltar aqui
+              </div>
+            )}
           </div>
         );
       })}
@@ -1507,7 +1858,6 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folde
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [activeView, setActiveView] = useState<"projetos" | "kanban" | "list" | "gantt">("projetos");
   const [search, setSearch] = useState("");
-  const [selectedTask, setSelectedTask] = useState<ProjectTask | null>(null);
 
   // ── Effective statuses from folder columns ────────────────────────────────
   const { statuses: effectiveStatuses, order: effectiveOrder } = useMemo(() => {
@@ -1518,12 +1868,6 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folde
     }
     return buildDynamicStatuses(cols);
   }, [folderKanbanColumnsRaw]);
-
-  const filteredTasks = useMemo(() => {
-    if (!search.trim()) return tasks;
-    const s = search.toLowerCase();
-    return tasks.filter((t) => t.title.toLowerCase().includes(s) || (t.description ?? "").toLowerCase().includes(s));
-  }, [tasks, search]);
 
   const projectIds = useMemo(() => projectNodes.map((p) => p.projectId), [projectNodes]);
 
@@ -1661,7 +2005,7 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folde
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Pesquisar tarefas…"
+                placeholder="Pesquisar projetos…"
                 style={{ background: "none", border: "none", outline: "none", fontSize: 11, color: "var(--foreground)", width: 160 }}
               />
               {search && (
@@ -1758,80 +2102,82 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folde
               </div>
             )}
 
-            {/* Lista */}
+            {/* Lista — projetos em tabela */}
             {activeView === "list" && (
-              <div style={{ flex: 1, overflow: "hidden" }}>
-                <DynamicListView
-                  tasks={filteredTasks}
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                <FolderProjectListView
+                  projectNodes={projectNodes}
+                  projectDetails={projectDetails}
+                  tasksByProject={tasksByProject}
+                  phasesByProject={phasesByProject}
                   statuses={effectiveStatuses}
                   order={effectiveOrder}
-                  onTaskClick={setSelectedTask}
+                  folderNodeId={folderNodeId}
+                  search={search}
+                  onOpenProject={onSelectProject}
                 />
               </div>
             )}
 
-            {/* Gantt */}
+            {/* Gantt — fases dos projetos */}
             {activeView === "gantt" && (
-              <div style={{ flex: 1, overflow: "hidden" }}>
-                <DynamicGanttView
-                  tasks={filteredTasks}
-                  statuses={effectiveStatuses}
-                  order={effectiveOrder}
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                <FolderProjectGanttView
+                  projectNodes={projectNodes}
+                  projectDetails={projectDetails}
+                  phasesByProject={phasesByProject}
+                  search={search}
+                  onOpenProject={onSelectProject}
                 />
               </div>
-            )}
-
-            {/* Task detail panel (Quadro / Lista / Gantt) */}
-            {selectedTask && activeView !== "projetos" && (
-              <DynamicDetailPanel
-                task={selectedTask}
-                statuses={effectiveStatuses}
-                order={effectiveOrder}
-                onClose={() => setSelectedTask(null)}
-                onStatusChange={async (id, status) => {
-                  const { error } = await supabase.from("tasks").update({ status }).eq("id", id);
-                  if (error) { showErrorToast("Erro ao atualizar", getSupabaseErrorMessage(error)); return; }
-                  setTasks((prev) => prev.map((t) => t.id === id ? { ...t, status } : t));
-                  setSelectedTask((t) => t && { ...t, status });
-                  showSuccessToast("Status atualizado");
-                }}
-                onDelete={async (id) => {
-                  if (!window.confirm("Excluir esta tarefa?")) return;
-                  const { error } = await supabase.from("tasks").delete().eq("id", id);
-                  if (error) { showErrorToast("Erro ao excluir", getSupabaseErrorMessage(error)); return; }
-                  setTasks((prev) => prev.filter((t) => t.id !== id));
-                  setSelectedTask(null);
-                  showSuccessToast("Tarefa excluída");
-                }}
-                podeEditar={podeEditar}
-              />
             )}
           </>
         )}
       </div>
 
-      {/* Customize columns panel (folder-level) */}
+      {/* Customize columns — side drawer */}
       {customizeOpen && podeEditar && (
-        <div
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", padding: 16 }}
-          onClick={() => setCustomizeOpen(false)}
-        >
+        <>
+          {/* Backdrop */}
           <div
-            style={{ width: "100%", maxWidth: 520, maxHeight: "calc(100vh - 32px)", background: "var(--background)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", boxShadow: "var(--shadow-lg)", overflowY: "auto" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-2)", borderRadius: "var(--radius-xl) var(--radius-xl) 0 0" }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>Personalizar colunas da pasta</div>
-                <div style={{ fontSize: 12, color: "var(--muted-fg)", marginTop: 2 }}>
-                  Define os status disponíveis para todos os projetos nesta pasta.
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)", zIndex: 200 }}
+            onClick={() => setCustomizeOpen(false)}
+          />
+          {/* Drawer */}
+          <div style={{
+            position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 201,
+            width: 460,
+            background: "var(--background)",
+            borderLeft: "1px solid var(--border)",
+            boxShadow: "-8px 0 32px rgba(0,0,0,.2)",
+            display: "flex", flexDirection: "column",
+            overflow: "hidden",
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: "16px 20px",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--surface-2)",
+              display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>Colunas do quadro</div>
+                <div style={{ fontSize: 11, color: "var(--muted-fg)", marginTop: 2 }}>
+                  Define os status de todos os projetos nesta pasta
                 </div>
               </div>
-              <button type="button" onClick={() => setCustomizeOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-fg)", display: "flex" }}>
+              <button
+                type="button"
+                onClick={() => setCustomizeOpen(false)}
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--muted-fg)", display: "flex", borderRadius: 8, padding: 6 }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--foreground)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted-fg)"; }}
+              >
                 <X size={16} />
               </button>
             </div>
-            <div style={{ padding: 20 }}>
+            {/* Body */}
+            <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
               <KanbanColumnsEditor
                 valueRaw={folderKanbanColumnsRaw}
                 podeEditar={podeEditar}
@@ -1842,7 +2188,7 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folde
               />
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
