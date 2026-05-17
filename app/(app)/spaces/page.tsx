@@ -1725,8 +1725,9 @@ export default function SpacesPage() {
                       projectNodes={folderProjectNodes}
                       nodeLabel={selectedNode.name}
                       podeEditar={podeEditarNos}
+                      folderKanbanColumnsRaw={selectedNode.kanban_columns}
                       onSelectProject={(nodeId) => setSelectedNodeId(nodeId)}
-                      onSaveNodeColumns={(nodeId, cols) => void updateNodePatch(nodeId, { kanban_columns: cols })}
+                      onSaveColumns={(cols) => void updateNodePatch(selectedNode.id, { kanban_columns: cols })}
                     />
                   );
                 })() : selectedNode.project_id ? (

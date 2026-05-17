@@ -1072,11 +1072,13 @@ function PhaseStatusBadge({ status, phaseId, onUpdate }: {
 
 // ─── ProjectExpandedPanel ─────────────────────────────────────────────────────
 
-function ProjectExpandedPanel({ node, project, phases, podeEditar, onUpdatePhase, onSaveColumns }: {
+function ProjectExpandedPanel({ node, project, phases, podeEditar, folderKanbanColumnsRaw, onUpdatePhase, onSaveColumns }: {
   node: FolderProjectNode;
   project: FolderProjectDetails | undefined;
   phases: FolderProjectPhase[];
   podeEditar: boolean;
+  /** Colunas kanban definidas na PASTA (usadas por todos os projetos da pasta). */
+  folderKanbanColumnsRaw: unknown;
   onUpdatePhase: (phaseId: string, status: PhaseStatus) => Promise<void>;
   onSaveColumns: (cols: KanbanColumnDef[]) => void;
 }) {
@@ -1172,7 +1174,7 @@ function ProjectExpandedPanel({ node, project, phases, podeEditar, onUpdatePhase
         projectIds={[node.projectId]}
         nodeLabel={node.nodeName}
         podeEditar={podeEditar}
-        kanbanColumnsRaw={node.kanbanColumnsRaw}
+        kanbanColumnsRaw={folderKanbanColumnsRaw}
         onSaveColumns={onSaveColumns}
         embedded
       />
@@ -1182,13 +1184,14 @@ function ProjectExpandedPanel({ node, project, phases, podeEditar, onUpdatePhase
 
 // ─── ProjectRow ───────────────────────────────────────────────────────────────
 
-function ProjectRow({ node, tasks, project, phases, expanded, podeEditar, onToggle, onUpdatePhase, onSaveColumns }: {
+function ProjectRow({ node, tasks, project, phases, expanded, podeEditar, folderKanbanColumnsRaw, onToggle, onUpdatePhase, onSaveColumns }: {
   node: FolderProjectNode;
   tasks: ProjectTask[];
   project: FolderProjectDetails | undefined;
   phases: FolderProjectPhase[];
   expanded: boolean;
   podeEditar: boolean;
+  folderKanbanColumnsRaw: unknown;
   onToggle: () => void;
   onUpdatePhase: (phaseId: string, status: PhaseStatus) => Promise<void>;
   onSaveColumns: (cols: KanbanColumnDef[]) => void;
@@ -1315,6 +1318,7 @@ function ProjectRow({ node, tasks, project, phases, expanded, podeEditar, onTogg
           project={project}
           phases={phases}
           podeEditar={podeEditar}
+          folderKanbanColumnsRaw={folderKanbanColumnsRaw}
           onUpdatePhase={onUpdatePhase}
           onSaveColumns={onSaveColumns}
         />
@@ -1325,19 +1329,22 @@ function ProjectRow({ node, tasks, project, phases, expanded, podeEditar, onTogg
 
 // ─── FolderProjectsBoard (main export) ───────────────────────────────────────
 
-export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, onSelectProject, onSaveNodeColumns }: {
+export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, folderKanbanColumnsRaw, onSelectProject, onSaveColumns }: {
   projectNodes: FolderProjectNode[];
   nodeLabel: string;
   podeEditar: boolean;
+  /** Colunas kanban da PASTA (aplicadas a todos os projetos dentro dela). */
+  folderKanbanColumnsRaw?: unknown;
   onSelectProject: (nodeId: string) => void;
-  /** Chamado quando o usuário salva colunas personalizadas para um projeto inline. */
-  onSaveNodeColumns?: (nodeId: string, cols: KanbanColumnDef[]) => void;
+  /** Salva as colunas da pasta no banco. */
+  onSaveColumns?: (cols: KanbanColumnDef[]) => void;
 }) {
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [projectDetails, setProjectDetails] = useState<Record<string, FolderProjectDetails>>({});
   const [phasesByProject, setPhasesByProject] = useState<Record<string, FolderProjectPhase[]>>({});
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   const projectIds = useMemo(() => projectNodes.map((p) => p.projectId), [projectNodes]);
 
@@ -1432,14 +1439,15 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, onSel
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* Header */}
-      <div style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)", padding: "10px 16px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+      <div style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)", padding: "8px 16px", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          {/* Stats */}
           <span style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>
             {projectNodes.length} projeto{projectNodes.length !== 1 ? "s" : ""}
           </span>
           <div style={{ display: "flex", gap: 12 }}>
             <span style={{ fontSize: 11, color: "var(--muted-fg)" }}>
-              <span style={{ fontWeight: 700, color: "var(--foreground)" }}>{totalTasks}</span> tarefas no total
+              <span style={{ fontWeight: 700, color: "var(--foreground)" }}>{totalTasks}</span> tarefas
             </span>
             {totalDone > 0 && (
               <span style={{ fontSize: 11, color: STATUSES.aprovacao_copasa.color, fontWeight: 600 }}>
@@ -1452,6 +1460,26 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, onSel
               </span>
             )}
           </div>
+
+          <div style={{ flex: 1 }} />
+
+          {/* Personalizar colunas da pasta */}
+          {podeEditar && (
+            <button
+              type="button"
+              onClick={() => setCustomizeOpen(true)}
+              style={{
+                background: customizeOpen ? "color-mix(in srgb,var(--primary) 12%,transparent)" : "none",
+                border: `1px solid ${customizeOpen ? "color-mix(in srgb,var(--primary) 35%,transparent)" : "var(--border)"}`,
+                borderRadius: "var(--radius-sm, 5px)", padding: "4px 10px", fontSize: 11,
+                fontWeight: 600,
+                color: customizeOpen ? "var(--primary)" : "var(--muted-fg)",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+              }}
+            >
+              <Settings size={11} /> Personalizar colunas da pasta
+            </button>
+          )}
         </div>
       </div>
 
@@ -1473,14 +1501,50 @@ export function FolderProjectsBoard({ projectNodes, nodeLabel, podeEditar, onSel
                 phases={phasesByProject[node.projectId] ?? []}
                 expanded={expandedId === node.nodeId}
                 podeEditar={podeEditar}
+                folderKanbanColumnsRaw={folderKanbanColumnsRaw}
                 onToggle={() => setExpandedId((prev) => prev === node.nodeId ? null : node.nodeId)}
                 onUpdatePhase={handleUpdatePhase}
-                onSaveColumns={(cols) => onSaveNodeColumns?.(node.nodeId, cols)}
+                onSaveColumns={(cols) => onSaveColumns?.(cols)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Customize columns panel (folder-level) */}
+      {customizeOpen && podeEditar && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", padding: 16 }}
+          onClick={() => setCustomizeOpen(false)}
+        >
+          <div
+            style={{ width: "100%", maxWidth: 520, maxHeight: "calc(100vh - 32px)", background: "var(--background)", border: "1px solid var(--border)", borderRadius: "var(--radius-xl)", boxShadow: "var(--shadow-lg)", overflowY: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface-2)", borderRadius: "var(--radius-xl) var(--radius-xl) 0 0" }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Personalizar colunas da pasta</div>
+                <div style={{ fontSize: 12, color: "var(--muted-fg)", marginTop: 2 }}>
+                  Define os status disponíveis para todos os projetos nesta pasta.
+                </div>
+              </div>
+              <button type="button" onClick={() => setCustomizeOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-fg)", display: "flex" }}>
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <KanbanColumnsEditor
+                valueRaw={folderKanbanColumnsRaw}
+                podeEditar={podeEditar}
+                onSave={(cols) => {
+                  onSaveColumns?.(cols);
+                  setCustomizeOpen(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
