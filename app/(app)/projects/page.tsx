@@ -2543,48 +2543,7 @@ export default function ProjectsPage() {
     if (!podeCriarProjeto) setShowNewForm(false);
   }, [podeCriarProjeto]);
 
-  const pageHeaderDescription = useMemo(() => {
-    const contextual =
-      activeProjectsTab === "todos"
-        ? projetistaSomenteTarefas
-          ? "Projetos em que você participa — use busca, filtros e segmentos para achar rapidamente o que precisa."
-          : "Visão geral do portfólio com equipe, carga, risco e prazos. Escale para dezenas de segmentos sem perder clareza."
-        : isSaneamentoTab
-          ? activeSaneamentoView === "dashboard"
-            ? "Painel analítico do segmento de saneamento: ritmo, entregas e saúde das frentes."
-            : activeSaneamentoView === "gantt"
-              ? "Linha do tempo das tarefas, prazos e marcos visíveis num só lugar."
-              : "Cartões operacionais por obra — o mesmo fluxo da área Saneamento."
-          : activeDisciplineView === "gantt"
-            ? "Gantt com tarefas e prazos consolidados para esta disciplina."
-            : "Dashboard executivo do desempenho da disciplina selecionada.";
-    return (
-      <div style={{ maxWidth: 900 }}>
-        <p className="page-subtitle" style={{ marginBottom: 8 }}>
-          {contextual}
-        </p>
-        <p
-          style={{
-            fontSize: 13,
-            color: "var(--muted-fg)",
-            lineHeight: 1.55,
-            margin: 0,
-            fontWeight: 500,
-          }}
-        >
-          Organize o crescimento por <strong>segmentos</strong> (obras, disciplinas e processos internos),
-          refine a <strong>visão geral</strong> com filtros combinados e abra cada módulo para dashboards e Gantt
-          específicos — sem depender de poucas abas fixas.
-        </p>
-      </div>
-    );
-  }, [
-    activeProjectsTab,
-    isSaneamentoTab,
-    activeSaneamentoView,
-    activeDisciplineView,
-    projetistaSomenteTarefas,
-  ]);
+  const pageHeaderDescription = undefined;
 
   return (
     <div>
@@ -2624,62 +2583,6 @@ export default function ProjectsPage() {
             boxShadow: "var(--shadow-sm)",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-              gap: 14,
-              flexWrap: "wrap",
-              marginBottom: 14,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
-              <div
-                aria-hidden
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 14,
-                  background: "color-mix(in srgb, var(--primary) 14%, transparent)",
-                  color: "var(--primary)",
-                  border: "1px solid color-mix(in srgb, var(--primary) 28%, transparent)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Layers size={22} strokeWidth={1.75} />
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    letterSpacing: "0.08em",
-                    color: "var(--muted-fg)",
-                    textTransform: "uppercase",
-                    marginBottom: 4,
-                  }}
-                >
-                  Portfólio e segmentos
-                </div>
-                <div
-                  style={{
-                    fontSize: 13,
-                    color: "var(--muted-fg)",
-                    fontWeight: 500,
-                    lineHeight: 1.45,
-                    maxWidth: 640,
-                  }}
-                >
-                  Role horizontalmente para ver todos os tipos. Novos segmentos surgem na lista conforme o cadastro —
-                  sem limite rígido de abas na barra principal.
-                </div>
-              </div>
-            </div>
-          </div>
 
           <div
             className="projects-hub-rail"
