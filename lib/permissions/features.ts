@@ -32,3 +32,8 @@ export function canCreateProject(role: string | null | undefined): boolean {
 export function canEditProjectShell(role: string | null | undefined): boolean {
   return !isNarrowProjetista(role);
 }
+
+/** Contratos / licitações: mutações no banco exigem RLS has_full_portfolio_access. */
+export function canMutateContratosModule(role: string | null | undefined): boolean {
+  return hasFullPortfolioAccess(role);
+}

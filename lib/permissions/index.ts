@@ -22,6 +22,7 @@ export {
   canAccessPontoTeamViews,
   canCreateProject,
   canEditProjectShell,
+  canMutateContratosModule,
 } from "./features";
 
 export {

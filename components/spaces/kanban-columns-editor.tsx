@@ -227,7 +227,7 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
       {/* ── Column header labels ─────────────────────────────────────── */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "28px 28px 1fr 120px 70px",
+        gridTemplateColumns: "28px 28px 1fr 70px",
         gap: 8, alignItems: "center",
         padding: "0 4px 6px",
         borderBottom: "1px solid var(--border)",
@@ -236,7 +236,6 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
         <div />
         <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Cor</div>
         <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Título exibido</div>
-        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--muted-fg)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Chave interna</div>
         <div />
       </div>
 
@@ -247,7 +246,7 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
             key={`${col.key}-${i}`}
             style={{
               display: "grid",
-              gridTemplateColumns: "28px 28px 1fr 120px 70px",
+              gridTemplateColumns: "28px 28px 1fr 70px",
               gap: 8, alignItems: "center",
               padding: "6px 4px",
               borderRadius: 8,
@@ -291,29 +290,6 @@ export function KanbanColumnsEditor({ valueRaw, podeEditar, onSave }: Props) {
               }}
               onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.borderLeftColor = col.color ?? "#6366f1"; }}
-            />
-
-            {/* Key input */}
-            <input
-              value={col.key}
-              onChange={(e) => updateKey(i, e.target.value)}
-              disabled={!podeEditar}
-              placeholder="chave_interna"
-              title="Chave interna — não mude após usar em cartões"
-              style={{
-                background: "var(--surface)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                padding: "5px 8px",
-                fontSize: 10,
-                fontFamily: "monospace",
-                color: "var(--muted-fg)",
-                outline: "none",
-                width: "100%",
-                minWidth: 0,
-              }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
             />
 
             {/* Actions */}
