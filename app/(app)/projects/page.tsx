@@ -7,6 +7,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   UserPlus,
   X,
   FolderKanban,
@@ -601,6 +602,9 @@ export default function ProjectsPage() {
   const [detailProjectId, setDetailProjectId] = useState<string | null>(null);
 
   const [showNewForm, setShowNewForm] = useState(false);
+  /** null = tela de escolha | "project" = projeto novo | "discipline" = nova disciplina */
+  const [newProjectMode, setNewProjectMode] = useState<null | "project" | "discipline">(null);
+  const [newBaseProjectId, setNewBaseProjectId] = useState("");
   const [newProjectName, setNewProjectName] = useState("");
   const [newPlannedEndTarget, setNewPlannedEndTarget] = useState("");
   const [newManagerId, setNewManagerId] = useState("");
@@ -864,6 +868,8 @@ export default function ProjectsPage() {
   // ─── CRUD handlers ─────────────────────────────────────────────────────────
 
   function resetNewProjectForm() {
+    setNewProjectMode(null);
+    setNewBaseProjectId("");
     setNewProjectName("");
     setNewPlannedEndTarget("");
     setNewManagerId("");
@@ -874,6 +880,19 @@ export default function ProjectsPage() {
     setNewDiscipline("");
     setNewContractNumber("");
     setNewNotes("");
+  }
+
+  /** Quando o usuário seleciona um projeto base na criação de nova disciplina, pré-preenche os campos. */
+  function applyBaseProject(projectId: string) {
+    setNewBaseProjectId(projectId);
+    if (!projectId) return;
+    const base = projects.find((p) => p.id === projectId);
+    if (!base) return;
+    if (base.municipality) setNewMunicipality(base.municipality);
+    if (base.state) setNewState(base.state);
+    if (base.manager_id) setNewManagerId(base.manager_id);
+    if (base.coordinator_id) setNewCoordinatorId(base.coordinator_id);
+    if (base.leader_id) setNewLeaderId(base.leader_id);
   }
 
   async function handleCreateProject() {
@@ -2927,8 +2946,7 @@ export default function ProjectsPage() {
         />
       </div>}
 
-      {/* ─── Form de novo projeto ───────────────────────────── */}
-      {/* ─── Modal: Novo projeto ──────────────────────────────── */}
+      {/* ─── Modal: Novo projeto / Nova disciplina ──────────────── */}
       {activeProjectsTab === "todos" && podeCriarProjeto && showNewForm && (
         <div
           role="dialog"
@@ -2951,7 +2969,7 @@ export default function ProjectsPage() {
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "100%",
-              maxWidth: 660,
+              maxWidth: newProjectMode === null ? 580 : 660,
               maxHeight: "92vh",
               overflowY: "auto",
               background: "var(--background)",
@@ -2961,6 +2979,132 @@ export default function ProjectsPage() {
               animation: "popIn 160ms ease-out",
             }}
           >
+            {/* ── Tela de escolha (passo 0) ───────────────────────────── */}
+            {newProjectMode === null && (
+              <>
+                {/* Header */}
+                <div style={{
+                  padding: "18px 22px",
+                  borderBottom: "1px solid var(--border)",
+                  background: "linear-gradient(135deg, var(--primary-soft) 0%, transparent 60%)",
+                  display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14,
+                }}>
+                  <div className="flex items-center gap-3">
+                    <div style={{
+                      width: 40, height: 40, borderRadius: 11, background: "var(--primary)", color: "#fff",
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                      boxShadow: "0 4px 12px color-mix(in srgb, var(--primary) 35%, transparent)",
+                    }}>
+                      <Plus size={20} />
+                    </div>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
+                        O que deseja criar?
+                      </h2>
+                      <p style={{ margin: "3px 0 0", fontSize: 13, color: "var(--muted-fg)" }}>
+                        Escolha o tipo de registro para continuar.
+                      </p>
+                    </div>
+                  </div>
+                  <Button size="icon-sm" variant="ghost" onClick={() => { setShowNewForm(false); resetNewProjectForm(); }}>
+                    <X size={16} />
+                  </Button>
+                </div>
+
+                {/* Cards de escolha */}
+                <div style={{ padding: "28px 24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  {/* Card: Projeto novo */}
+                  <button
+                    type="button"
+                    onClick={() => setNewProjectMode("project")}
+                    style={{
+                      background: "var(--surface)",
+                      border: "2px solid var(--border)",
+                      borderRadius: 14,
+                      padding: "24px 20px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s",
+                      display: "flex", flexDirection: "column", gap: 12,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "var(--primary)";
+                      e.currentTarget.style.background = "color-mix(in srgb,var(--primary) 5%,var(--surface))";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.background = "var(--surface)";
+                    }}
+                  >
+                    <div style={{
+                      width: 44, height: 44, borderRadius: 12,
+                      background: "color-mix(in srgb,var(--primary) 14%,transparent)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <FolderKanban size={22} style={{ color: "var(--primary)" }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--foreground)", marginBottom: 6 }}>
+                        Projeto novo
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted-fg)", lineHeight: 1.5 }}>
+                        Cria um projeto independente com equipe, contrato e cronograma próprios.
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "var(--primary)", marginTop: "auto" }}>
+                      Continuar <ChevronRight size={14} />
+                    </div>
+                  </button>
+
+                  {/* Card: Nova disciplina */}
+                  <button
+                    type="button"
+                    onClick={() => setNewProjectMode("discipline")}
+                    style={{
+                      background: "var(--surface)",
+                      border: "2px solid var(--border)",
+                      borderRadius: 14,
+                      padding: "24px 20px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.15s",
+                      display: "flex", flexDirection: "column", gap: 12,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "#8b5cf6";
+                      e.currentTarget.style.background = "color-mix(in srgb,#8b5cf6 5%,var(--surface))";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.background = "var(--surface)";
+                    }}
+                  >
+                    <div style={{
+                      width: 44, height: 44, borderRadius: 12,
+                      background: "color-mix(in srgb,#8b5cf6 14%,transparent)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <Layers size={22} style={{ color: "#8b5cf6" }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--foreground)", marginBottom: 6 }}>
+                        Nova disciplina
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted-fg)", lineHeight: 1.5 }}>
+                        Adiciona uma nova disciplina técnica (elétrico, hidráulico, civil…) ao portfólio, opcionalmente vinculada a um projeto existente.
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "#8b5cf6", marginTop: "auto" }}>
+                      Continuar <ChevronRight size={14} />
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Formulário: Projeto novo (passo 1a) ─────────────────── */}
+            {newProjectMode === "project" && (
+            <>
             {/* Header */}
             <div
               style={{
@@ -2974,6 +3118,15 @@ export default function ProjectsPage() {
               }}
             >
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setNewProjectMode(null)}
+                  disabled={creating}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-fg)", display: "flex", alignItems: "center", padding: "2px 6px 2px 0" }}
+                  title="Voltar"
+                >
+                  <ChevronLeft size={18} />
+                </button>
                 <div
                   style={{
                     width: 40,
@@ -3227,6 +3380,180 @@ export default function ProjectsPage() {
                 </Button>
               </div>
             </div>
+            </>
+            )} {/* fim newProjectMode === "project" */}
+
+            {/* ── Formulário: Nova disciplina (passo 1b) ──────────────── */}
+            {newProjectMode === "discipline" && (
+            <>
+              {/* Header */}
+              <div style={{
+                padding: "18px 22px",
+                borderBottom: "1px solid var(--border)",
+                background: "linear-gradient(135deg, color-mix(in srgb,#8b5cf6 8%,transparent) 0%, transparent 60%)",
+                display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14,
+              }}>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setNewProjectMode(null); resetNewProjectForm(); }}
+                    disabled={creating}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted-fg)", display: "flex", alignItems: "center", padding: "2px 6px 2px 0" }}
+                    title="Voltar"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 11,
+                    background: "#8b5cf6", color: "#fff",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    boxShadow: "0 4px 12px color-mix(in srgb,#8b5cf6 35%,transparent)",
+                  }}>
+                    <Layers size={20} />
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--foreground)", letterSpacing: "-0.01em" }}>
+                      Nova disciplina
+                    </h2>
+                    <p style={{ margin: "3px 0 0", fontSize: 13, color: "var(--muted-fg)" }}>
+                      Registre uma nova disciplina técnica no portfólio.
+                    </p>
+                  </div>
+                </div>
+                <Button size="icon-sm" variant="ghost" onClick={() => { setShowNewForm(false); resetNewProjectForm(); }} disabled={creating}>
+                  <X size={16} />
+                </Button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: "20px 22px" }} className="flex flex-col gap-4">
+                {/* Projeto base (opcional) */}
+                <Field label="Projeto base" help="Opcional — ao selecionar, município, UF e equipe são pré-preenchidos automaticamente.">
+                  <Select
+                    value={newBaseProjectId}
+                    onChange={(e) => applyBaseProject(e.target.value)}
+                  >
+                    <option value="">Nenhum (disciplina independente)</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </Select>
+                </Field>
+
+                {/* Nome */}
+                <Field label="Nome da disciplina">
+                  <Input
+                    autoFocus
+                    placeholder="Ex.: Elétrico — Sistema de Ampliação Leopoldina/MG"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleCreateProject(); }}
+                  />
+                </Field>
+
+                {/* Disciplina — obrigatória */}
+                <Field label="Disciplina *">
+                  <Select value={newDiscipline} onChange={(e) => setNewDiscipline(e.target.value)}>
+                    <option value="">Selecione a disciplina</option>
+                    <option value="saneamento">Saneamento</option>
+                    <option value="ampliacao">Ampliação</option>
+                    <option value="estrutural">Estrutural</option>
+                    <option value="hidraulico">Hidráulico</option>
+                    <option value="eletrico">Elétrico</option>
+                    <option value="civil">Civil</option>
+                    <option value="arquitetura">Arquitetura</option>
+                    <option value="urbanismo">Urbanismo</option>
+                    <option value="infraestrutura">Infraestrutura</option>
+                    <option value="processos_internos">Processos internos</option>
+                    <option value="outro">Outro</option>
+                  </Select>
+                </Field>
+
+                {/* Previsão + Município + UF */}
+                <div className="grid-2">
+                  <Field label="Município">
+                    <Input value={newMunicipality} onChange={(e) => setNewMunicipality(e.target.value)} placeholder="Ex.: Belo Horizonte" />
+                  </Field>
+                  <Field label="UF">
+                    <Select value={newState} onChange={(e) => setNewState(e.target.value)}>
+                      <option value="AC">AC</option><option value="AL">AL</option><option value="AP">AP</option>
+                      <option value="AM">AM</option><option value="BA">BA</option><option value="CE">CE</option>
+                      <option value="DF">DF</option><option value="ES">ES</option><option value="GO">GO</option>
+                      <option value="MA">MA</option><option value="MT">MT</option><option value="MS">MS</option>
+                      <option value="MG">MG</option><option value="PA">PA</option><option value="PB">PB</option>
+                      <option value="PR">PR</option><option value="PE">PE</option><option value="PI">PI</option>
+                      <option value="RJ">RJ</option><option value="RN">RN</option><option value="RS">RS</option>
+                      <option value="RO">RO</option><option value="RR">RR</option><option value="SC">SC</option>
+                      <option value="SP">SP</option><option value="SE">SE</option><option value="TO">TO</option>
+                    </Select>
+                  </Field>
+                </div>
+
+                {/* Previsão de término */}
+                <Field label="Previsão de término">
+                  <Input type="date" value={newPlannedEndTarget} onChange={(e) => setNewPlannedEndTarget(e.target.value)} />
+                </Field>
+
+                {/* Nº Contrato */}
+                <Field label="Nº do contrato" help="Opcional.">
+                  <Input value={newContractNumber} onChange={(e) => setNewContractNumber(e.target.value)} placeholder="Ex.: COPASA-2026-145" />
+                </Field>
+
+                {/* Equipe */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--muted-fg)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <UsersIcon size={12} /> Equipe responsável
+                  </div>
+                  <div className="grid-3">
+                    <Field label="Gerente">
+                      <Select value={newManagerId} onChange={(e) => setNewManagerId(e.target.value)}>
+                        <option value="">Selecione</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </Select>
+                    </Field>
+                    <Field label="Coordenador">
+                      <Select value={newCoordinatorId} onChange={(e) => setNewCoordinatorId(e.target.value)}>
+                        <option value="">Selecione</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </Select>
+                    </Field>
+                    <Field label="Líder">
+                      <Select value={newLeaderId} onChange={(e) => setNewLeaderId(e.target.value)}>
+                        <option value="">Selecione</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </Select>
+                    </Field>
+                  </div>
+                </div>
+
+                {/* Observações */}
+                <Field label="Observações">
+                  <Textarea value={newNotes} onChange={(e) => setNewNotes(e.target.value)} placeholder="Escopo, particularidades, contatos importantes..." style={{ minHeight: 80 }} />
+                </Field>
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: "16px 22px", borderTop: "1px solid var(--border)", background: "var(--surface)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <span style={{ fontSize: 12, color: "var(--muted-fg)" }}>
+                  Detalhes técnicos podem ser adicionados depois.
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="ghost" onClick={() => { setShowNewForm(false); resetNewProjectForm(); }} disabled={creating}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={handleCreateProject}
+                    loading={creating}
+                    disabled={!newProjectName.trim() || !newDiscipline}
+                    style={{ background: "#8b5cf6", boxShadow: "0 2px 8px color-mix(in srgb,#8b5cf6 30%,transparent)" }}
+                  >
+                    Criar disciplina
+                  </Button>
+                </div>
+              </div>
+            </>
+            )} {/* fim newProjectMode === "discipline" */}
+
           </div>
         </div>
       )}
