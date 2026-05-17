@@ -36,6 +36,7 @@ import {
   ListTodo,
   Layers,
   Briefcase,
+  ChevronRight,
   type LucideIcon,
 } from "lucide-react";
 
@@ -764,6 +765,220 @@ export function ProjectTaskBoard({ projectIds, nodeLabel, podeEditar }: {
           onCreated={() => { setAddModal(null); void loadTasks(); }}
         />
       )}
+    </div>
+  );
+}
+
+// ─── FolderProjectsBoard ──────────────────────────────────────────────────────
+// Exibido quando uma PASTA está selecionada no Espaço.
+// Mostra um painel resumo de cada projeto (lista vinculada) dentro da pasta,
+// com distribuição de status das tarefas e progresso. Clicar em um projeto
+// navega para o board de tarefas daquele projeto específico.
+
+export type FolderProjectNode = {
+  nodeId: string;     // id do nó workspace_space_node (lista)
+  nodeName: string;   // nome da lista (ex.: "Sistema de ampliação")
+  projectId: string;  // project_id vinculado
+};
+
+function StatusBar({ counts }: { counts: Record<StatusKey, number> }) {
+  const total = STATUS_ORDER.reduce((s, k) => s + (counts[k] ?? 0), 0);
+  if (total === 0) return <span style={{ fontSize: 11, color: "var(--muted-fg)" }}>Sem tarefas</span>;
+  return (
+    <div style={{ display: "flex", height: 6, borderRadius: 4, overflow: "hidden", width: "100%", gap: 1 }}>
+      {STATUS_ORDER.map((k) => {
+        const pct = total > 0 ? ((counts[k] ?? 0) / total) * 100 : 0;
+        if (pct === 0) return null;
+        return <div key={k} style={{ width: `${pct}%`, background: STATUSES[k].color, borderRadius: 2 }} title={`${STATUSES[k].label}: ${counts[k]}`} />;
+      })}
+    </div>
+  );
+}
+
+function ProjectRow({ node, tasks, onClick }: {
+  node: FolderProjectNode;
+  tasks: ProjectTask[];
+  onClick: () => void;
+}) {
+  const counts = useMemo(() => {
+    const m: Record<StatusKey, number> = { previsto: 0, planejado: 0, em_andamento: 0, paralisado: 0, cancelado: 0, aprovacao_copasa: 0 };
+    for (const t of tasks) m[normalizeStatus(t.status)]++;
+    return m;
+  }, [tasks]);
+
+  const total = tasks.length;
+  const done = counts.aprovacao_copasa;
+  const inProgress = counts.em_andamento;
+  const paused = counts.paralisado;
+  const pctDone = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const lateTasks = tasks.filter(overdue);
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", gap: 14,
+        padding: "12px 16px",
+        background: "var(--surface-2)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-md)",
+        cursor: "pointer",
+        transition: "all 0.15s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "color-mix(in srgb,var(--primary) 40%,transparent)"; e.currentTarget.style.background = "var(--surface)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
+    >
+      {/* Icon */}
+      <div style={{ width: 36, height: 36, borderRadius: 8, background: "color-mix(in srgb,var(--primary) 12%,var(--surface))", border: "1px solid color-mix(in srgb,var(--primary) 20%,transparent)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Briefcase size={16} style={{ color: "var(--primary)" }} />
+      </div>
+
+      {/* Name + status bar */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {node.nodeName}
+        </div>
+        <StatusBar counts={counts} />
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+        {/* Task counts per status */}
+        <div style={{ display: "flex", gap: 8 }}>
+          {[
+            { key: "em_andamento" as StatusKey, value: inProgress },
+            { key: "paralisado"   as StatusKey, value: paused },
+            { key: "aprovacao_copasa" as StatusKey, value: done },
+          ].map(({ key, value }) => {
+            const cfg = STATUSES[key];
+            const Ic = cfg.Icon;
+            return (
+              <div key={key} style={{ display: "flex", alignItems: "center", gap: 3 }} title={cfg.label}>
+                <Ic size={11} style={{ color: cfg.color }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: value > 0 ? cfg.color : "var(--muted-fg)" }}>{value}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Late indicator */}
+        {lateTasks.length > 0 && (
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#ef4444", background: "#fef2f2", borderRadius: 20, padding: "1px 8px" }}>
+            {lateTasks.length} atrasada{lateTasks.length > 1 ? "s" : ""}
+          </span>
+        )}
+
+        {/* Progress */}
+        <div style={{ textAlign: "right", minWidth: 52 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: pctDone === 100 ? STATUSES.aprovacao_copasa.color : "var(--foreground)" }}>
+            {pctDone}%
+          </div>
+          <div style={{ fontSize: 10, color: "var(--muted-fg)" }}>{total} tarefa{total !== 1 ? "s" : ""}</div>
+        </div>
+
+        <ChevronRight size={14} style={{ color: "var(--muted-fg)" }} />
+      </div>
+    </div>
+  );
+}
+
+export function FolderProjectsBoard({ projectNodes, nodeLabel, onSelectProject }: {
+  projectNodes: FolderProjectNode[];
+  nodeLabel: string;
+  onSelectProject: (nodeId: string) => void;
+}) {
+  const [tasks, setTasks] = useState<ProjectTask[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const projectIds = useMemo(() => projectNodes.map((p) => p.projectId), [projectNodes]);
+
+  const loadTasks = useCallback(async () => {
+    if (projectIds.length === 0) { setTasks([]); return; }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("tasks")
+      .select("id, title, status, priority, planned_due_date, project_id, assigned_to, description, created_at")
+      .in("project_id", projectIds);
+    if (error) logSupabaseUnlessJwt("[folder-projects-board]", error);
+    setTasks((data ?? []) as ProjectTask[]);
+    setLoading(false);
+  }, [projectIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { void loadTasks(); }, [loadTasks]);
+
+  const tasksByProject = useMemo(() => {
+    const map: Record<string, ProjectTask[]> = {};
+    for (const t of tasks) {
+      if (!t.project_id) continue;
+      if (!map[t.project_id]) map[t.project_id] = [];
+      map[t.project_id].push(t);
+    }
+    return map;
+  }, [tasks]);
+
+  const totalTasks = tasks.length;
+  const totalDone  = tasks.filter((t) => normalizeStatus(t.status) === "aprovacao_copasa").length;
+  const totalLate  = tasks.filter(overdue).length;
+
+  if (projectNodes.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted-fg)", gap: 10 }}>
+        <Briefcase size={40} style={{ opacity: 0.2 }} />
+        <p style={{ fontSize: 13, fontWeight: 600 }}>Nenhum projeto nesta pasta</p>
+        <p style={{ fontSize: 11, maxWidth: 280, textAlign: "center" }}>
+          Passe o mouse sobre a pasta no sidebar e clique em 💼+ para vincular projetos.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ background: "var(--surface-2)", borderBottom: "1px solid var(--border)", padding: "10px 16px", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--foreground)" }}>
+            {projectNodes.length} projeto{projectNodes.length !== 1 ? "s" : ""}
+          </span>
+          <div style={{ display: "flex", gap: 12 }}>
+            <span style={{ fontSize: 11, color: "var(--muted-fg)" }}>
+              <span style={{ fontWeight: 700, color: "var(--foreground)" }}>{totalTasks}</span> tarefas no total
+            </span>
+            {totalDone > 0 && (
+              <span style={{ fontSize: 11, color: STATUSES.aprovacao_copasa.color, fontWeight: 600 }}>
+                {totalDone} aprovadas
+              </span>
+            )}
+            {totalLate > 0 && (
+              <span style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>
+                {totalLate} atrasada{totalLate !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Project list */}
+      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 120, flexDirection: "column", gap: 10, color: "var(--muted-fg)" }}>
+            <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {projectNodes.map((node) => (
+              <ProjectRow
+                key={node.nodeId}
+                node={node}
+                tasks={tasksByProject[node.projectId] ?? []}
+                onClick={() => onSelectProject(node.nodeId)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

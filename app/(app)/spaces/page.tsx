@@ -55,7 +55,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { ListItemsSection } from "@/components/spaces/list-items-section";
 import { KanbanColumnsEditor } from "@/components/spaces/kanban-columns-editor";
-import { ProjectTaskBoard } from "@/components/spaces/project-task-board";
+import { ProjectTaskBoard, FolderProjectsBoard, type FolderProjectNode } from "@/components/spaces/project-task-board";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1694,75 +1694,33 @@ export default function SpacesPage() {
                     })()}
                   </div>
                 ) : selectedNode.kind === "folder" ? (() => {
-                  /* Folder view:
-                   * - coleta todos os project_ids descendentes (listas filhas com projeto)
-                   * - se houver → exibe o ProjectTaskBoard (Quadro/Lista/Gantt)
-                   * - se não houver → exibe grade com os filhos diretos da pasta
+                  /* Pasta selecionada → FolderProjectsBoard:
+                   * Coleta recursivamente todas as listas com project_id
+                   * e exibe o painel de resumo por projeto.
+                   * Clicar num projeto navega para o board de tarefas dele.
                    */
-                  const collectProjectIds = (parentId: string): string[] => {
-                    const ids: string[] = [];
-                    nodesInSpace.filter((n) => n.parent_id === parentId).forEach((child) => {
-                      if (child.kind === "list" && child.project_id) ids.push(child.project_id);
-                      else if (child.kind === "folder") ids.push(...collectProjectIds(child.id));
-                    });
-                    return ids;
+                  const collectProjectNodes = (parentId: string): FolderProjectNode[] => {
+                    const result: FolderProjectNode[] = [];
+                    nodesInSpace
+                      .filter((n) => n.parent_id === parentId)
+                      .sort((a, b) => a.sort_order - b.sort_order)
+                      .forEach((child) => {
+                        if (child.kind === "list" && child.project_id) {
+                          result.push({ nodeId: child.id, nodeName: child.name, projectId: child.project_id });
+                        } else if (child.kind === "folder") {
+                          result.push(...collectProjectNodes(child.id));
+                        }
+                      });
+                    return result;
                   };
-                  const folderProjectIds = collectProjectIds(selectedNode.id);
-
-                  // ── Pasta COM projetos → board de tarefas ───────────────────
-                  if (folderProjectIds.length > 0) {
-                    return (
-                      <ProjectTaskBoard
-                        projectIds={folderProjectIds}
-                        nodeLabel={selectedNode.name}
-                        podeEditar={podeEditarNos}
-                      />
-                    );
-                  }
-
-                  // ── Pasta SEM projetos → grade de filhos diretos ────────────
-                  const childNodes = nodesInSpace
-                    .filter((n) => n.parent_id === selectedNode.id)
-                    .sort((a, b) => a.sort_order - b.sort_order);
+                  const folderProjectNodes = collectProjectNodes(selectedNode.id);
 
                   return (
-                    <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
-                      {childNodes.length === 0 ? (
-                        <EmptyState
-                          title="Pasta vazia"
-                          description={podeEditarNos ? "Adicione subpastas ou listas usando os botões na barra lateral." : "Nenhum item nesta pasta."}
-                        />
-                      ) : (
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                          {childNodes.map((child) => {
-                            const isChildFolder = child.kind === "folder";
-                            const childColor = child.color || (isChildFolder ? "var(--warning)" : "var(--primary)");
-                            return (
-                              <button
-                                key={child.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedNodeId(child.id);
-                                  if (isChildFolder) setExpandedFolders((prev) => ({ ...prev, [child.id]: true }));
-                                }}
-                                style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-md)", padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, textAlign: "left", transition: "all 0.15s" }}
-                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.background = "var(--surface)"; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--surface-2)"; }}
-                              >
-                                {isChildFolder
-                                  ? <Folder size={18} style={{ color: childColor, flexShrink: 0 }} />
-                                  : <ListTodo size={18} style={{ color: childColor, flexShrink: 0 }} />
-                                }
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-semibold truncate">{child.name}</div>
-                                  <div className="text-xs text-muted">{isChildFolder ? "Pasta" : "Lista"}</div>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                    <FolderProjectsBoard
+                      projectNodes={folderProjectNodes}
+                      nodeLabel={selectedNode.name}
+                      onSelectProject={(nodeId) => setSelectedNodeId(nodeId)}
+                    />
                   );
                 })() : selectedNode.project_id ? (
                   /* List with linked project → show task board */
