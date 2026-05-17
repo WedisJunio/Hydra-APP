@@ -856,31 +856,17 @@ export default function ContratosHub() {
               Atualizar
             </Button>
             {canEdit ? (
-              <>
-                <Button leftIcon={<Plus size={16} />} onClick={() => setModalLic(true)}>
-                  Nova licitação
-                </Button>
-                <Button variant="secondary" leftIcon={<Award size={16} />} onClick={() => setModalAtest(true)}>
-                  Novo atestado
-                </Button>
-                <Button variant="secondary" leftIcon={<Users size={16} />} onClick={() => setModalPro(true)}>
-                  Novo profissional
-                </Button>
-                <Button variant="secondary" leftIcon={<FileText size={16} />} onClick={() => setModalCat(true)}>
-                  Nova CAT
-                </Button>
-                <Button
-                  variant="primary"
-                  leftIcon={<FileSpreadsheet size={16} />}
-                  onClick={() => {
-                    setTab("import");
-                    setImpRows([]);
-                    setImpLog([]);
-                  }}
-                >
-                  Importar Excel
-                </Button>
-              </>
+              <Button
+                variant="primary"
+                leftIcon={<FileSpreadsheet size={16} />}
+                onClick={() => {
+                  setTab("import");
+                  setImpRows([]);
+                  setImpLog([]);
+                }}
+              >
+                Importar Excel
+              </Button>
             ) : null}
           </div>
         }
@@ -968,8 +954,8 @@ export default function ContratosHub() {
         </div>
       ) : tab === "licitacoes" ? (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap gap-3 items-center">
-            <div style={{ position: "relative", flex: "1 1 220px", maxWidth: 360 }}>
+          <div className="flex flex-wrap gap-2 items-center justify-between">
+            <div className="relative flex-1 min-w-[200px]" style={{ maxWidth: 420 }}>
               <Search
                 size={15}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
@@ -981,6 +967,11 @@ export default function ContratosHub() {
                 onChange={(e) => setQSearch(e.target.value)}
               />
             </div>
+            {canEdit ? (
+              <Button className="shrink-0" leftIcon={<Plus size={16} />} onClick={() => setModalLic(true)}>
+                Nova licitação
+              </Button>
+            ) : null}
           </div>
           <div className="grid gap-3">
             {filteredLicitacoes.map((lic) => {
@@ -1059,12 +1050,27 @@ export default function ContratosHub() {
             );
             })}
             {filteredLicitacoes.length === 0 ? (
-              <EmptyState title="Nenhuma licitação" description="Cadastre ou importe pela aba correspondente." />
+              <EmptyState
+                title="Nenhuma licitação"
+                description={
+                  canEdit
+                    ? "Use «Nova licitação» acima ou importe na aba Importar Excel."
+                    : "Nenhum registro encontrado."
+                }
+              />
             ) : null}
           </div>
         </div>
       ) : tab === "atestados" ? (
         <Card padded>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <h3 className="font-bold m-0 text-base">Banco de atestados</h3>
+            {canEdit ? (
+              <Button variant="secondary" leftIcon={<Plus size={16} />} onClick={() => setModalAtest(true)}>
+                Novo atestado
+              </Button>
+            ) : null}
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -1104,7 +1110,14 @@ export default function ContratosHub() {
       ) : tab === "cats" ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card padded>
-            <h3 className="font-bold mb-3">Profissionais cadastrados</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 className="font-bold m-0">Profissionais cadastrados</h3>
+              {canEdit ? (
+                <Button variant="secondary" leftIcon={<Plus size={16} />} onClick={() => setModalPro(true)}>
+                  Novo profissional
+                </Button>
+              ) : null}
+            </div>
             <div className="space-y-2 max-h-[420px] overflow-y-auto">
               {professionals.map((p) => (
                 <div
@@ -1123,7 +1136,14 @@ export default function ContratosHub() {
             </div>
           </Card>
           <Card padded>
-            <h3 className="font-bold mb-3">CATs</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 className="font-bold m-0">CATs</h3>
+              {canEdit ? (
+                <Button variant="secondary" leftIcon={<Plus size={16} />} onClick={() => setModalCat(true)}>
+                  Nova CAT
+                </Button>
+              ) : null}
+            </div>
             <div className="space-y-2 max-h-[420px] overflow-y-auto">
               {cats.map((c) => (
                 <div key={c.id} className="p-3 rounded-lg border border-[var(--border)] text-sm">
